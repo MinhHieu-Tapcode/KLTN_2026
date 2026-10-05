@@ -1,0 +1,256 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. ENUMS (DANH MỤC TRẠNG THÁI & VAI TRÒ)
+// ==========================================
+
+enum RoleCode {
+  ADMIN               // Quản trị viên toàn hệ thống
+  SCHOOL_MANAGER      // Quản nhiệm trường học
+  TEACHER             // Giáo viên giảng dạy
+  TEACHING_ASSISTANT  // Trợ giảng (TA)
+  STUDENT             // Học viên
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum SchoolType {
+  THCS
+  THPT
+  UNIVERSITY
+  OTHER
+}
+
+enum ClassProgram {
+  IELTS
+  SAT
+  CAMBRIDGE
+  OTHER
+}
+
+enum ClassStatus {
+  UPCOMING  // Sắp khai giảng
+  ACTIVE    // Đang diễn ra
+  FINISHED  // Đã kết thúc / Lưu trữ lịch sử
+  CANCELLED // Đã hủy
+}
+
+enum StaffClassRole {
+  TEACHER             // Giáo viên phụ trách giảng dạy
+  TEACHING_ASSISTANT  // Trợ giảng phụ trách lớp
+}
+
+enum StudentEnrollmentStatus {
+  STUDYING    // Đang học
+  COMPLETED   // Đã hoàn thành khóa học
+  DROPPED     // Nghỉ học / Bỏ học
+  TRANSFERRED // Chuyển sang lớp khác
+}
+
+// ==========================================
+// 2. TÀI KHOẢN & NGƯỜI DÙNG (AUTH & USERS)
+// ==========================================
+
+model Role {
+  id          String    @id @default(uuid())
+  code        RoleCode  @unique
+  name        String    // Tên tiếng Việt hiển thị
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users       User[]
+
+  @@map("roles")
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  username           String    @unique // Mã học viên hoặc Username đăng nhập
+  email              String    @unique // Bắt buộc - Dùng để đăng nhập & nhận thông tin tài khoản
+  passwordHash       String
+  roleId             String
+  mustChangePassword Boolean   @default(true) // Bắt buộc đổi mật khẩu khi đăng nhập lần đầu
+  isActive           Boolean   @default(true) // Xóa mềm tài khoản
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Quan hệ
+  role               Role                 @relation(fields: [roleId], references: [id])
+  profile            UserProfile?
+  managedSchools     School[]             // 1 Quản nhiệm có thể quản lý nhiều Trường (1:N)
+  classAssignments   ClassAssignment[]    // Danh sách lớp GV/TA được phân công
+  classEnrollments   ClassEnrollment[]    // Danh sách lớp Học sinh theo học
+  importLogs         ImportLog[]          // Lịch sử các đợt Import Excel
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([roleId])
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}
+
+model UserProfile {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  fullName    String    // Họ và tên
+  phoneNumber String?
+  dateOfBirth DateTime?
+  gender      Gender?
+  avatarUrl   String?
+  address     String?
+  extraInfo   Json?     // Mở rộng linh hoạt: Band IELTS, chứng chỉ đối với GV/TA
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("password_reset_tokens")
+}
+
+// ==========================================
+// 3. QUẢN LÝ TRƯỜNG HỌC (SCHOOLS)
+// ==========================================
+
+model School {
+  id           String      @id @default(uuid())
+  managerId    String?     // Quản nhiệm phụ trách (Mỗi trường có đúng 1 Quản nhiệm)
+  code         String      @unique // Mã trường (VD: THPT_TD, THPT_KL)
+  name         String      // Tên trường (VD: THPT Trương Định)
+  type         SchoolType  @default(THPT)
+  address      String?
+  contactName  String?     // Đại diện ban giám hiệu / giáo vụ trường
+  contactPhone String?
+  isActive     Boolean     @default(true) // Xóa mềm
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  manager      User?       @relation(fields: [managerId], references: [id], onDelete: SetNull)
+  classes      Class[]
+
+  @@index([code])
+  @@index([managerId])
+  @@map("schools")
+}
+
+// ==========================================
+// 4. QUẢN LÝ LỚP HỌC (CLASSES)
+// ==========================================
+
+model Class {
+  id          String        @id @default(uuid())
+  schoolId    String        // Lớp thuộc trường đối tác nào
+  code        String        @unique // Mã lớp IELTS (VD: IELTS_TD_01) - Khớp với file Excel
+  name        String        // Tên lớp hiển thị (VD: IELTS Bứt Phá - 10A1)
+  program     ClassProgram  @default(IELTS)
+  level       String?       // Cấp độ mục tiêu (VD: 5.5 - 6.5, Foundation)
+  capacity    Int           @default(30)
+  startDate   DateTime?
+  endDate     DateTime?
+  status      ClassStatus   @default(UPCOMING)
+  description String?
+  isActive    Boolean       @default(true) // Xóa mềm
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  school      School            @relation(fields: [schoolId], references: [id])
+  assignments ClassAssignment[] // Phân công Giáo viên, Trợ giảng
+  enrollments ClassEnrollment[] // Danh sách Học sinh theo học
+
+  @@index([schoolId])
+  @@index([code])
+  @@index([status])
+  @@map("classes")
+}
+
+model ClassAssignment {
+  id          String         @id @default(uuid())
+  classId     String
+  userId      String         // Tài khoản GV hoặc TA
+  roleInClass StaffClassRole
+  assignedAt  DateTime       @default(now())
+
+  class       Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
+  staff       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, userId]) // Một nhân sự không bị gán lặp trong cùng 1 lớp
+  @@map("class_assignments")
+}
+
+model ClassEnrollment {
+  id         String                  @id @default(uuid())
+  classId    String
+  studentId  String                  // Tài khoản Học sinh
+  status     StudentEnrollmentStatus @default(STUDYING)
+  enrolledAt DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  class      Class                   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student    User                    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, studentId]) // Một học sinh không bị gán 2 lần vào cùng 1 lớp
+  @@map("class_enrollments")
+}
+
+// ==========================================
+// 5. NHẬT KÝ IMPORT EXCEL HÀNG LOẠT
+// ==========================================
+
+model ImportLog {
+  id           String   @id @default(uuid())
+  importedById String
+  fileName     String
+  totalRows    Int
+  successCount Int
+  errorCount   Int
+  errorDetails Json?    // Lưu danh sách dòng lỗi để xuất báo cáo
+  createdAt    DateTime @default(now())
+
+  importedBy   User     @relation(fields: [importedById], references: [id])
+
+  @@map("import_logs")
+}
+
+// ==========================================
+// 6. PHÂN QUYỀN ĐỘNG HỆ THỐNG (DYNAMIC RBAC)
+// ==========================================
+
+model SystemPermission {
+  id           String     @id @default(uuid())
+  featureKey   String     @unique // VD: VIEW_USERS, VIEW_SCHOOLS, VIEW_CLASSES, VIEW_SCHEDULE, IMPORT_EXCEL, SYSTEM_SETTINGS
+  name         String     // Tên tính năng tiếng Việt
+  category     String?    // Nhóm tính năng
+  allowedRoles RoleCode[] // Danh sách các vai trò được cấp quyền truy cập
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@map("system_permissions")
+}
+
