@@ -165,6 +165,7 @@ export function SimpaceApp({
   const [editingSchool, setEditingSchool] = useState<any>(null);
   const [editingClass, setEditingClass] = useState<any>(null);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [viewingUser, setViewingUser] = useState<any>(null);
 
   // Modal Email Preview khi vừa tạo User
   const [createdAccountInfo, setCreatedAccountInfo] = useState<any>(null);
@@ -485,6 +486,7 @@ export function SimpaceApp({
                 onRefresh={refreshAll}
                 onOpenAddUser={() => setAddUserOpen(true)}
                 onEditUser={(u) => setEditingUser(u)}
+                onViewUser={(u) => setViewingUser(u)}
               />
             )}
             {view === "schools" && (
@@ -638,6 +640,17 @@ export function SimpaceApp({
             refreshAll();
             setNotice("Đã cập nhật thông tin người dùng!");
           }}
+        />
+      )}
+
+      {/* MODAL XEM CHI TIẾT NGƯỜI DÙNG (READ-ONLY) */}
+      {viewingUser && (
+        <ViewUserModal
+          user={viewingUser}
+          open={!!viewingUser}
+          onOpenChange={(op) => !op && setViewingUser(null)}
+          schools={schools}
+          classes={classes}
         />
       )}
 
@@ -1348,6 +1361,7 @@ function UsersPageView({
   onRefresh,
   onOpenAddUser,
   onEditUser,
+  onViewUser,
 }: {
   users: any[];
   currentUser?: any;
@@ -1356,6 +1370,7 @@ function UsersPageView({
   onRefresh: () => void;
   onOpenAddUser?: () => void;
   onEditUser: (u: any) => void;
+  onViewUser?: (u: any) => void;
 }) {
   const [tab, setTab] = useState("Tất cả");
   const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
@@ -1523,8 +1538,9 @@ function UsersPageView({
                   ? "bg-white text-rose-600 shadow-sm font-bold"
                   : "text-[#64748B] hover:text-[#0F172A]"
               }`}
+              title="Danh sách tài khoản đã tạm xóa, có thể khôi phục lại bất kỳ lúc nào"
             >
-              Đã xóa mềm
+              Thùng rác (Đã xóa)
             </button>
             <button
               type="button"
@@ -1656,12 +1672,21 @@ function UsersPageView({
                         <Status tone="success">Đang hoạt động</Status>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                          Đã xóa mềm
+                          Đã xóa (Thùng rác)
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-[#64748B] hover:text-[#EA580C]"
+                          onClick={() => onViewUser?.(u)}
+                          title="Xem chi tiết tài khoản (Chỉ xem)"
+                        >
+                          <Eye className="size-4" />
+                        </Button>
                         {u.isActive ? (
                           <>
                             {canEdit && (
@@ -1681,7 +1706,7 @@ function UsersPageView({
                                 size="icon"
                                 className="size-8 text-[#64748B] hover:text-[#EF4444]"
                                 onClick={() => handleDeleteSingle(u.id, u.profile?.fullName || u.username)}
-                                title="Xóa tài khoản (Chuyển sang ngưng hoạt động)"
+                                title="Xóa tài khoản (Chuyển vào thùng rác)"
                               >
                                 <Trash2 className="size-4" />
                               </Button>
@@ -1870,8 +1895,9 @@ function SchoolsPageView({
                   ? "bg-white text-rose-600 shadow-sm font-bold"
                   : "text-[#64748B] hover:text-[#0F172A]"
               }`}
+              title="Danh sách trường học đã tạm xóa, có thể khôi phục lại bất kỳ lúc nào"
             >
-              Đã xóa mềm
+              Thùng rác (Đã xóa)
             </button>
             <button
               type="button"
@@ -1960,12 +1986,21 @@ function SchoolsPageView({
                       <Status tone="success">Hoạt động</Status>
                     ) : (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                        Đã xóa mềm
+                        Đã xóa (Thùng rác)
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-[#64748B] hover:text-[#EA580C]"
+                        onClick={() => setSelectedSchoolDetail(s)}
+                        title="Xem chi tiết trường học (Chỉ xem)"
+                      >
+                        <Eye className="size-4" />
+                      </Button>
                       {s.isActive ? (
                         <>
                           <Button
@@ -1982,7 +2017,7 @@ function SchoolsPageView({
                             size="icon"
                             className="size-8 text-[#64748B] hover:text-[#EF4444]"
                             onClick={() => handleDeleteSingle(s.id, s.name, s.code)}
-                            title="Xóa trường học"
+                            title="Xóa trường học (Chuyển vào thùng rác)"
                           >
                             <Trash2 className="size-4" />
                           </Button>
@@ -2335,8 +2370,9 @@ function ClassesPageView({
                 ? "bg-white text-rose-600 shadow-sm"
                 : "text-[#64748B] hover:text-[#0F172A]"
             }`}
+            title="Danh sách lớp học đã tạm xóa, có thể khôi phục lại bất kỳ lúc nào"
           >
-            Đã xóa mềm
+            Thùng rác (Đã xóa)
           </button>
           <button
             type="button"
@@ -2458,23 +2494,24 @@ function ClassesPageView({
                       </Status>
                       {!c.isActive && (
                         <span className="inline-flex w-fit items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
-                          Đã xóa mềm
+                          Đã xóa (Thùng rác)
                         </span>
                       )}
                     </div>
                   </td>
                   <td className="px-4 py-3.5 text-right">
                     <div className="flex justify-end items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-[#64748B] hover:text-[#EA580C]"
+                        onClick={() => onOpenDetail(c)}
+                        title="Xem chi tiết lớp học (Chỉ xem)"
+                      >
+                        <Eye className="size-4" />
+                      </Button>
                       {c.isActive ? (
                         <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => onOpenDetail(c)}
-                            className="text-xs text-[#EA580C] hover:text-[#EA580C] font-semibold"
-                          >
-                            Chi tiết →
-                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -2489,7 +2526,7 @@ function ClassesPageView({
                             size="icon"
                             className="size-8 text-[#64748B] hover:text-[#EF4444]"
                             onClick={() => handleDeleteSingle(c)}
-                            title="Xóa mềm"
+                            title="Xóa lớp học (Chuyển vào thùng rác)"
                           >
                             <Trash2 className="size-4" />
                           </Button>
@@ -4521,6 +4558,408 @@ function AccountCreatedEmailDialog({
   );
 }
 
+/* =========================================================================
+   BỘ CHỌN THỜI KHÓA BIỂU & LỊCH HỌC TƯƠNG TÁC (SCHEDULE PICKER SECTION)
+   ========================================================================= */
+
+function SchedulePickerSection({
+  startDate,
+  setStartDate,
+  endDate,
+  setEndDate,
+  selectedDays,
+  setSelectedDays,
+  startTime,
+  setStartTime,
+  endTime,
+  setEndTime,
+  scheduleStr,
+  setScheduleStr,
+}: {
+  startDate: string;
+  setStartDate: (v: string) => void;
+  endDate: string;
+  setEndDate: (v: string) => void;
+  selectedDays: string[];
+  setSelectedDays: React.Dispatch<React.SetStateAction<string[]>>;
+  startTime: string;
+  setStartTime: (v: string) => void;
+  endTime: string;
+  setEndTime: (v: string) => void;
+  scheduleStr: string;
+  setScheduleStr: (v: string) => void;
+}) {
+  const daysOfWeek = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
+
+  const quickShifts = [
+    { label: "Ca 1 (17:30 - 19:30)", start: "17:30", end: "19:30" },
+    { label: "Ca 2 (18:00 - 20:00)", start: "18:00", end: "20:00" },
+    { label: "Ca 3 (19:30 - 21:30)", start: "19:30", end: "21:30" },
+    { label: "Ca Sáng (08:30 - 10:30)", start: "08:30", end: "10:30" },
+  ];
+
+  const toggleDay = (day: string) => {
+    setSelectedDays((prev) => {
+      const next = prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day];
+      if (next.length > 0) {
+        const timePart = startTime && endTime ? ` • ${startTime} - ${endTime}` : "";
+        setScheduleStr(`${next.join(", ")}${timePart}`);
+      } else {
+        setScheduleStr("");
+      }
+      return next;
+    });
+  };
+
+  const applyShift = (start: string, end: string) => {
+    setStartTime(start);
+    setEndTime(end);
+    if (selectedDays.length > 0) {
+      setScheduleStr(`${selectedDays.join(", ")} • ${start} - ${end}`);
+    } else {
+      setScheduleStr(`18:00 - 20:00`);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-orange-200/90 bg-[#FFF7ED]/50 p-4 space-y-3.5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CalendarDays className="size-4 text-[#EA580C]" />
+          <h3 className="text-sm font-bold text-[#0F172A]">Bộ chọn Lịch học &amp; Thời khóa biểu</h3>
+        </div>
+        <span className="text-[11px] font-semibold text-[#EA580C] bg-orange-100 px-2.5 py-0.5 rounded-full border border-orange-200">
+          Chọn tương tác
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="text-xs font-semibold text-[#475569] block mb-1">
+            Ngày khai giảng / bắt đầu
+          </label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="field text-sm bg-white"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-[#475569] block mb-1">
+            Ngày bế giảng / kết thúc
+          </label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="field text-sm bg-white"
+          />
+        </div>
+      </div>
+
+      {/* Pills chọn ngày trong tuần */}
+      <div>
+        <label className="text-xs font-semibold text-[#475569] block mb-1.5">
+          1. Bấm chọn các buổi học trong tuần:
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {daysOfWeek.map((day) => {
+            const active = selectedDays.includes(day);
+            return (
+              <button
+                key={day}
+                type="button"
+                onClick={() => toggleDay(day)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm ${
+                  active
+                    ? "bg-[#EA580C] text-white shadow-orange-200"
+                    : "bg-white border border-[#CBD5E1] text-[#64748B] hover:border-[#EA580C] hover:text-[#EA580C]"
+                }`}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Ca học mẫu nhanh */}
+      <div>
+        <label className="text-xs font-semibold text-[#475569] block mb-1.5">
+          2. Chọn nhanh ca học hoặc chỉnh giờ tùy ý:
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {quickShifts.map((shift) => {
+            const isMatch = startTime === shift.start && endTime === shift.end;
+            return (
+              <button
+                key={shift.label}
+                type="button"
+                onClick={() => applyShift(shift.start, shift.end)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
+                  isMatch
+                    ? "bg-[#0F172A] text-white"
+                    : "bg-white border border-[#CBD5E1] text-[#475569] hover:bg-slate-100"
+                }`}
+              >
+                {shift.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Time Picker */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-semibold text-[#475569] flex items-center gap-1 mb-1">
+            <Clock className="size-3.5 text-[#EA580C]" /> Giờ bắt đầu
+          </label>
+          <input
+            type="time"
+            value={startTime}
+            onChange={(e) => {
+              setStartTime(e.target.value);
+              if (selectedDays.length > 0) {
+                setScheduleStr(`${selectedDays.join(", ")} • ${e.target.value} - ${endTime}`);
+              }
+            }}
+            className="field text-sm bg-white"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-[#475569] flex items-center gap-1 mb-1">
+            <Clock className="size-3.5 text-[#EA580C]" /> Giờ kết thúc
+          </label>
+          <input
+            type="time"
+            value={endTime}
+            onChange={(e) => {
+              setEndTime(e.target.value);
+              if (selectedDays.length > 0) {
+                setScheduleStr(`${selectedDays.join(", ")} • ${startTime} - ${e.target.value}`);
+              }
+            }}
+            className="field text-sm bg-white"
+          />
+        </div>
+      </div>
+
+      {/* Chuỗi tóm tắt lịch học hoàn chỉnh */}
+      <div>
+        <label className="text-xs font-semibold text-[#475569] block mb-1">
+          Chuỗi tóm tắt lịch học (Tự động cập nhật khi bấm chọn trên):
+        </label>
+        <input
+          type="text"
+          value={scheduleStr}
+          onChange={(e) => setScheduleStr(e.target.value)}
+          placeholder="VD: Thứ 2, Thứ 4, Thứ 6 • 18:00 - 20:00"
+          className="field text-sm bg-white font-semibold text-[#0F172A] border-orange-300 focus:border-[#EA580C]"
+        />
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   MODAL XEM CHI TIẾT NGƯỜI DÙNG (READ-ONLY)
+   ========================================================================= */
+
+function ViewUserModal({
+  user,
+  open,
+  onOpenChange,
+  schools,
+  classes,
+}: {
+  user: any;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  schools?: any[];
+  classes?: any[];
+}) {
+  if (!user) return null;
+
+  const roleLabels: Record<string, string> = {
+    ADMIN: "Quản trị viên toàn hệ thống",
+    SCHOOL_MANAGER: "Quản nhiệm trường học",
+    TEACHER: "Giáo viên giảng dạy",
+    TEACHING_ASSISTANT: "Trợ giảng",
+    STUDENT: "Học viên",
+  };
+
+  const managedSchools = schools?.filter((s) => s.managerId === user.id) || [];
+  const assignedClasses = classes?.filter((c) =>
+    c.assignments?.some((a: any) => a.userId === user.id)
+  ) || [];
+  const enrolledClasses = classes?.filter((c) =>
+    c.enrollments?.some((e: any) => e.studentId === user.id)
+  ) || [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <span className="p-2 bg-orange-100 text-[#EA580C] rounded-xl">
+              <Eye className="size-5" />
+            </span>
+            <div>
+              <DialogTitle className="text-lg">Chi tiết thông tin người dùng</DialogTitle>
+              <DialogDescription>
+                Chế độ chỉ xem thông tin tài khoản • Không chỉnh sửa dữ liệu
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-2">
+          {/* Header Card với Avatar và Vai trò */}
+          <div className="rounded-2xl border border-orange-200 bg-[#FFF7ED] p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="grid size-12 place-items-center rounded-full bg-[#EA580C] text-white font-bold text-lg shadow-sm">
+                {user.profile?.fullName ? user.profile.fullName.trim()[0].toUpperCase() : user.username[0].toUpperCase()}
+              </span>
+              <div>
+                <b className="text-base text-[#0F172A] block leading-tight">
+                  {user.profile?.fullName || user.username}
+                </b>
+                <span className="text-xs text-[#EA580C] font-semibold mt-0.5 block">
+                  {roleLabels[user.role?.code] || user.role?.name || user.role?.code}
+                </span>
+                <span className="font-mono text-xs text-[#64748B]">Mã tài khoản: {user.username}</span>
+              </div>
+            </div>
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-bold ${
+                user.isActive
+                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                  : "bg-rose-100 text-rose-800 border border-rose-200"
+              }`}
+            >
+              {user.isActive ? "Đang hoạt động" : "Đã tạm dừng (Thùng rác)"}
+            </span>
+          </div>
+
+          {/* Chi tiết thông tin liên lạc & cá nhân */}
+          <div className="grid gap-3 sm:grid-cols-2 rounded-xl border border-[#E2E8F0] p-4 bg-[#F8FAFC] text-sm">
+            <div>
+              <span className="text-xs text-[#64748B] block">Email đăng ký:</span>
+              <b className="text-[#0F172A] font-mono">{user.email}</b>
+            </div>
+            <div>
+              <span className="text-xs text-[#64748B] block">Số điện thoại:</span>
+              <b className="text-[#0F172A]">{user.profile?.phoneNumber || "—"}</b>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-xs text-[#64748B] block">Địa chỉ cư trú:</span>
+              <b className="text-[#0F172A]">{user.profile?.address || "—"}</b>
+            </div>
+            <div>
+              <span className="text-xs text-[#64748B] block">Ngày sinh:</span>
+              <b className="text-[#0F172A]">
+                {user.profile?.dateOfBirth
+                  ? new Date(user.profile.dateOfBirth).toLocaleDateString("vi-VN")
+                  : "—"}
+              </b>
+            </div>
+            <div>
+              <span className="text-xs text-[#64748B] block">Giới tính:</span>
+              <b className="text-[#0F172A]">
+                {user.profile?.gender === "MALE"
+                  ? "Nam"
+                  : user.profile?.gender === "FEMALE"
+                  ? "Nữ"
+                  : "Khác"}
+              </b>
+            </div>
+          </div>
+
+          {/* Phạm vi phân công / Học tập */}
+          <div className="rounded-xl border border-[#E2E8F0] p-4 bg-white text-sm space-y-2">
+            <h4 className="font-bold text-xs uppercase tracking-wider text-[#64748B]">
+              Phạm vi phụ trách / Lớp theo học
+            </h4>
+            {user.role?.code === "SCHOOL_MANAGER" && (
+              <div>
+                <p className="text-xs text-[#64748B] mb-1.5">Các trường học đang quản lý:</p>
+                {managedSchools.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {managedSchools.map((s) => (
+                      <span
+                        key={s.id}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200"
+                      >
+                        {s.name} ({s.code})
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-[#94A3B8] italic">Chưa phụ trách trường nào</span>
+                )}
+              </div>
+            )}
+
+            {(user.role?.code === "TEACHER" || user.role?.code === "TEACHING_ASSISTANT") && (
+              <div>
+                <p className="text-xs text-[#64748B] mb-1.5">Các lớp học được phân công:</p>
+                {assignedClasses.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {assignedClasses.map((c) => (
+                      <span
+                        key={c.id}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200"
+                      >
+                        {c.name} ({c.code}) - {c.school?.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-[#94A3B8] italic">Chưa phân công lớp nào</span>
+                )}
+              </div>
+            )}
+
+            {user.role?.code === "STUDENT" && (
+              <div>
+                <p className="text-xs text-[#64748B] mb-1.5">Các lớp học đang ghi danh:</p>
+                {enrolledClasses.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {enrolledClasses.map((c) => (
+                      <span
+                        key={c.id}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      >
+                        {c.name} ({c.code}) - {c.school?.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-[#94A3B8] italic">Chưa ghi danh vào lớp nào</span>
+                )}
+              </div>
+            )}
+
+            {user.role?.code === "ADMIN" && (
+              <span className="text-xs text-[#475569] font-medium">
+                Toàn quyền giám sát tất cả trường học, lớp học và học viên trên hệ thống.
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-3 border-t border-[#E2E8F0]">
+          <Button onClick={() => onOpenChange(false)} className="bg-[#0F172A] text-white">
+            Đóng
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ClassDialog({
   open,
   onOpenChange,
@@ -4764,103 +5203,20 @@ function ClassDialog({
           </div>
 
           {/* KHỐI BỘ CHỌN LỊCH HỌC & THỜI KHÓA BIỂU (DATE TIME PICKER) */}
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 space-y-3.5">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="size-4 text-[#EA580C]" />
-              <h3 className="text-sm font-bold text-[#0F172A]">Thời khóa biểu &amp; Lịch học</h3>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold text-[#475569] block mb-1">
-                  Ngày khai giảng / bắt đầu
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="field text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-[#475569] block mb-1">
-                  Ngày bế giảng / kết thúc
-                </label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="field text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Pills chọn ngày trong tuần */}
-            <div>
-              <label className="text-xs font-semibold text-[#475569] block mb-1.5">
-                Các buổi học trong tuần:
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {daysOfWeek.map((day) => {
-                  const active = selectedDays.includes(day);
-                  return (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => toggleDay(day)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                        active
-                          ? "bg-[#EA580C] text-white shadow-sm"
-                          : "bg-white border border-[#CBD5E1] text-[#64748B] hover:border-[#EA580C]"
-                      }`}
-                    >
-                      {day}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Time Picker */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-[#475569] flex items-center gap-1 mb-1">
-                  <Clock className="size-3.5 text-[#EA580C]" /> Giờ bắt đầu
-                </label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="field text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-[#475569] flex items-center gap-1 mb-1">
-                  <Clock className="size-3.5 text-[#EA580C]" /> Giờ kết thúc
-                </label>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="field text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Chuỗi tóm tắt lịch học */}
-            <div>
-              <label className="text-xs font-semibold text-[#475569] block mb-1">
-                Chuỗi tóm tắt lịch học (Tự động cập nhật hoặc sửa trực tiếp)
-              </label>
-              <input
-                type="text"
-                value={customSchedule}
-                onChange={(e) => setCustomSchedule(e.target.value)}
-                placeholder="VD: Thứ 2, Thứ 4, Thứ 6 • 18:00 - 20:00"
-                className="field text-sm bg-white font-medium"
-              />
-            </div>
-          </div>
+          <SchedulePickerSection
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+            selectedDays={selectedDays}
+            setSelectedDays={setSelectedDays}
+            startTime={startTime}
+            setStartTime={setStartTime}
+            endTime={endTime}
+            setEndTime={setEndTime}
+            scheduleStr={customSchedule}
+            setScheduleStr={setCustomSchedule}
+          />
 
           {/* GÁN ĐA GIÁO VIÊN & ĐA TRỢ GIẢNG (+) */}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -5181,36 +5537,96 @@ function EditClassModal({
   onDone: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const currentTeacherId = classItem.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.userId;
-  const currentTaId = classItem.assignments?.find((a: any) => a.roleInClass === "TEACHING_ASSISTANT")?.userId;
+  const initialTeacherIds = classItem.assignments
+    ?.filter((a: any) => a.roleInClass === "TEACHER")
+    .map((a: any) => a.userId) || [];
+  const [teacherIds, setTeacherIds] = useState<string[]>(
+    initialTeacherIds.length > 0 ? initialTeacherIds : [""]
+  );
+
+  const initialTaIds = classItem.assignments
+    ?.filter((a: any) => a.roleInClass === "TEACHING_ASSISTANT")
+    .map((a: any) => a.userId) || [];
+  const [taIds, setTaIds] = useState<string[]>(
+    initialTaIds.length > 0 ? initialTaIds : [""]
+  );
+
+  // Date & Time Picker
+  const [startDate, setStartDate] = useState(
+    classItem.startDate ? new Date(classItem.startDate).toISOString().split("T")[0] : ""
+  );
+  const [endDate, setEndDate] = useState(
+    classItem.endDate ? new Date(classItem.endDate).toISOString().split("T")[0] : ""
+  );
+  const [scheduleStr, setScheduleStr] = useState(classItem.description || "");
+
+  const allDays = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
+  const initialDays = allDays.filter((d: string) => classItem.description?.includes(d));
+  const [selectedDays, setSelectedDays] = useState<string[]>(initialDays);
+  const [startTime, setStartTime] = useState("18:00");
+  const [endTime, setEndTime] = useState("20:00");
+
+  const handleAddTeacher = () => setTeacherIds((prev) => [...prev, ""]);
+  const handleRemoveTeacher = (idx: number) => setTeacherIds((prev) => prev.filter((_, i) => i !== idx));
+  const handleTeacherChange = (idx: number, val: string) => {
+    setTeacherIds((prev) => {
+      const copy = [...prev];
+      copy[idx] = val;
+      return copy;
+    });
+  };
+
+  const handleAddTa = () => setTaIds((prev) => [...prev, ""]);
+  const handleRemoveTa = (idx: number) => setTaIds((prev) => prev.filter((_, i) => i !== idx));
+  const handleTaChange = (idx: number, val: string) => {
+    setTaIds((prev) => {
+      const copy = [...prev];
+      copy[idx] = val;
+      return copy;
+    });
+  };
 
   const handleUpdate = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setErrorMsg("");
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      await updateClassAction(classItem.id, {
+      const res = await updateClassAction(classItem.id, {
         name: formData.get("name")?.toString(),
         program: formData.get("program")?.toString() as any,
         capacity: Number(formData.get("capacity")) || 30,
         status: formData.get("status")?.toString() as any,
-        teacherId: formData.get("teacherId")?.toString(),
-        taId: formData.get("taId")?.toString(),
-        schedule: formData.get("schedule")?.toString(),
-        startDate: formData.get("startDate")?.toString(),
-        endDate: formData.get("endDate")?.toString(),
+        teacherIds: teacherIds.filter(Boolean),
+        taIds: taIds.filter(Boolean),
+        schedule: scheduleStr.trim(),
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
       });
+      if (res && !res.success) {
+        setErrorMsg(res.error || "Không thể cập nhật lớp học!");
+        return;
+      }
       onDone();
     });
   };
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Chỉnh sửa lớp học</DialogTitle>
-          <DialogDescription>Mã lớp: {classItem.code} • Trường: {classItem.school?.name}</DialogDescription>
+          <DialogDescription>
+            Mã lớp: <b className="font-mono text-[#0F172A]">{classItem.code}</b> • Trường: <b className="text-[#0F172A]">{classItem.school?.name}</b>
+          </DialogDescription>
         </DialogHeader>
+
+        {errorMsg && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+            {errorMsg}
+          </div>
+        )}
 
         <form onSubmit={handleUpdate} className="space-y-4">
           <Field name="name" label="Tên lớp học" defaultValue={classItem.name} required />
@@ -5226,61 +5642,114 @@ function EditClassModal({
             <Field name="capacity" label="Sĩ số tối đa" type="number" defaultValue={classItem.capacity} />
           </div>
 
-          <Field
-            name="schedule"
-            label="Lịch học / Thời khóa biểu"
-            placeholder="VD: Thứ 2, 4, 6 • 18:30 - 20:30"
-            defaultValue={classItem.description || ""}
+          {/* KHỐI BỘ CHỌN LỊCH HỌC & THỜI KHÓA BIỂU (DATE TIME PICKER) */}
+          <SchedulePickerSection
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+            selectedDays={selectedDays}
+            setSelectedDays={setSelectedDays}
+            startTime={startTime}
+            setStartTime={setStartTime}
+            endTime={endTime}
+            setEndTime={setEndTime}
+            scheduleStr={scheduleStr}
+            setScheduleStr={setScheduleStr}
           />
 
+          {/* GÁN ĐA GIÁO VIÊN & ĐA TRỢ GIẢNG (+) */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              name="startDate"
-              label="Ngày bắt đầu"
-              type="date"
-              defaultValue={
-                classItem.startDate
-                  ? new Date(classItem.startDate).toISOString().split("T")[0]
-                  : ""
-              }
-            />
-            <Field
-              name="endDate"
-              label="Ngày kết thúc"
-              type="date"
-              defaultValue={
-                classItem.endDate
-                  ? new Date(classItem.endDate).toISOString().split("T")[0]
-                  : ""
-              }
-            />
+            {/* Danh sách giáo viên */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-semibold text-[#0F172A]">
+                  Giáo viên giảng dạy
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAddTeacher}
+                  className="h-6 text-xs text-[#EA580C] hover:bg-orange-50 font-semibold px-2"
+                >
+                  <Plus className="size-3 mr-1" /> Thêm GV (+)
+                </Button>
+              </div>
+              {teacherIds.map((tid, idx) => (
+                <div key={idx} className="flex gap-1.5 items-center">
+                  <select
+                    value={tid}
+                    onChange={(e) => handleTeacherChange(idx, e.target.value)}
+                    className="field text-sm flex-1"
+                  >
+                    <option value="">-- Chọn giáo viên --</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.profile?.fullName || t.username} ({t.username})
+                      </option>
+                    ))}
+                  </select>
+                  {teacherIds.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTeacher(idx)}
+                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                      title="Xóa giáo viên này"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Danh sách trợ giảng */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-semibold text-[#0F172A]">
+                  Trợ giảng (TA) phụ trách
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAddTa}
+                  className="h-6 text-xs text-[#EA580C] hover:bg-orange-50 font-semibold px-2"
+                >
+                  <Plus className="size-3 mr-1" /> Thêm TA (+)
+                </Button>
+              </div>
+              {taIds.map((tid, idx) => (
+                <div key={idx} className="flex gap-1.5 items-center">
+                  <select
+                    value={tid}
+                    onChange={(e) => handleTaChange(idx, e.target.value)}
+                    className="field text-sm flex-1"
+                  >
+                    <option value="">-- Chọn trợ giảng --</option>
+                    {tas.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.profile?.fullName || t.username} ({t.username})
+                      </option>
+                    ))}
+                  </select>
+                  {taIds.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTa(idx)}
+                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                      title="Xóa trợ giảng này"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
-          <label className="block text-sm font-semibold">
-            Giáo viên phụ trách
-            <select name="teacherId" className="field mt-2" defaultValue={currentTeacherId || ""}>
-              <option value="">-- Chưa phân công --</option>
-              {teachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.profile?.fullName || t.username}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-sm font-semibold">
-            Trợ giảng (TA)
-            <select name="taId" className="field mt-2" defaultValue={currentTaId || ""}>
-              <option value="">-- Chưa phân công --</option>
-              {tas.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.profile?.fullName || t.username}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex justify-end gap-2 pt-3">
+          <div className="flex justify-end gap-2 pt-3 border-t border-[#E2E8F0]">
             <Button type="button" variant="outline" onClick={onClose}>
               Hủy
             </Button>
