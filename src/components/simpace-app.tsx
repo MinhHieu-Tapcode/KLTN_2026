@@ -35,6 +35,9 @@ import {
   Loader2,
   Copy,
   Check,
+  RotateCcw,
+  Lock,
+  Clock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -68,6 +71,9 @@ import {
   deleteSchoolAction,
   deleteMultipleSchoolsAction,
   getSchoolsAction,
+  restoreSchoolAction,
+  getSchoolDetailAction,
+  getNextSchoolCodeAction,
 } from "@/actions/schools";
 import {
   createClassAction,
@@ -78,6 +84,8 @@ import {
   removeStaffFromClassAction,
   getClassesAction,
   getClassDetailAction,
+  restoreClassAction,
+  getNextClassCodeAction,
 } from "@/actions/classes";
 import {
   createUserAction,
@@ -88,6 +96,8 @@ import {
   getUsersAction,
   parseAndValidateExcelAction,
   commitImportUsersAction,
+  restoreUserAction,
+  getNextUserCodeAction,
 } from "@/actions/users";
 import {
   updateSystemPermissionAction,
@@ -183,9 +193,9 @@ export function SimpaceApp({
 
   const refreshAll = async () => {
     const [sc, cl, us, per] = await Promise.all([
-      getSchoolsAction(),
-      getClassesAction(),
-      getUsersAction(),
+      getSchoolsAction("", "ALL"),
+      getClassesAction("ALL", "", "ALL"),
+      getUsersAction("Tất cả", "", "ALL"),
       getSystemPermissionsAction(),
     ]);
     setSchools(sc);
@@ -291,14 +301,6 @@ export function SimpaceApp({
                 label="Lịch học & Giảng dạy"
                 active={view === "schedule"}
                 onClick={() => navigate("schedule")}
-              />
-            )}
-            {hasPerm("IMPORT_EXCEL") && (
-              <NavItem
-                icon={Upload}
-                label="Import / Export Excel"
-                active={view === "import"}
-                onClick={() => navigate("import")}
               />
             )}
             <NavItem
@@ -446,7 +448,7 @@ export function SimpaceApp({
                     <Plus className="size-4 mr-1.5" /> Thêm người dùng
                   </Button>
                 )}
-                {view === "schools" && (
+                {view === "schools" && currentUser?.role !== "SCHOOL_MANAGER" && (
                   <Button
                     onClick={() => setAddSchoolOpen(true)}
                     className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm"
@@ -477,7 +479,11 @@ export function SimpaceApp({
             {view === "users" && (
               <UsersPageView
                 users={users}
+                currentUser={currentUser}
+                schools={schools}
+                classes={classes}
                 onRefresh={refreshAll}
+                onOpenAddUser={() => setAddUserOpen(true)}
                 onEditUser={(u) => setEditingUser(u)}
               />
             )}
@@ -586,7 +592,6 @@ export function SimpaceApp({
       <SchoolSheet
         open={addSchoolOpen}
         onOpenChange={setAddSchoolOpen}
-        managers={managers}
         onDone={() => {
           setAddSchoolOpen(false);
           refreshAll();
@@ -625,6 +630,8 @@ export function SimpaceApp({
       {editingUser && (
         <EditUserModal
           user={editingUser}
+          schools={schools}
+          classes={classes}
           onClose={() => setEditingUser(null)}
           onDone={() => {
             setEditingUser(null);
@@ -666,6 +673,8 @@ export function SimpaceApp({
 
 function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
   const [showPassword, setShowPassword] = useState(false);
+  const [password, setPassword] = useState("simpace2026");
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
   const [activationData, setActivationData] = useState<any>(null);
@@ -680,6 +689,8 @@ function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
       const result = await loginAction(formData);
       if (!result.success) {
         setErrorMsg(result.error || "Đăng nhập thất bại!");
+        setPassword(""); // Xóa trắng mật khẩu khi đăng nhập lỗi (BUG_14)
+        passwordInputRef.current?.focus();
         return;
       }
 
@@ -742,11 +753,13 @@ function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
               Mật khẩu
               <div className="relative mt-2">
                 <input
+                  ref={passwordInputRef}
                   name="password"
                   required
                   className="field pr-11"
                   type={showPassword ? "text" : "password"}
-                  defaultValue="simpace2026"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                 />
                 <button
                   type="button"
@@ -1329,19 +1342,49 @@ function DashboardView({
 
 function UsersPageView({
   users,
+  currentUser,
+  schools,
+  classes,
   onRefresh,
+  onOpenAddUser,
   onEditUser,
 }: {
   users: any[];
+  currentUser?: any;
+  schools?: any[];
+  classes?: any[];
   onRefresh: () => void;
+  onOpenAddUser?: () => void;
   onEditUser: (u: any) => void;
 }) {
   const [tab, setTab] = useState("Tất cả");
+  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
+  const [localUsers, setLocalUsers] = useState(users);
 
-  const filtered = users.filter((u) => {
+  useEffect(() => {
+    setLocalUsers(users);
+  }, [users]);
+
+  // Nếu là Quản nhiệm: Không cho lọc và xem Admin hay Quản nhiệm khác (BUG_01)
+  const isSchoolManager = currentUser?.role === "SCHOOL_MANAGER";
+  const roleTabs = isSchoolManager
+    ? ["Tất cả", "Giáo viên", "Trợ giảng", "Học sinh"]
+    : ["Tất cả", "Quản trị viên", "Quản nhiệm", "Giáo viên", "Trợ giảng", "Học sinh"];
+
+  const filtered = localUsers.filter((u) => {
+    // 1. Lọc theo trạng thái xóa mềm (BUG_05)
+    if (statusFilter === "ACTIVE" && !u.isActive) return false;
+    if (statusFilter === "INACTIVE" && u.isActive) return false;
+
+    // 2. Lọc theo quyền của Quản nhiệm: Ẩn tuyệt đối Admin và QN khác
+    if (isSchoolManager && (u.role?.code === "ADMIN" || u.role?.code === "SCHOOL_MANAGER")) {
+      return false;
+    }
+
+    // 3. Lọc theo Tab vai trò
     const matchesTab =
       tab === "Tất cả" ||
       (tab === "Quản trị viên" && u.role?.code === "ADMIN") ||
@@ -1350,11 +1393,13 @@ function UsersPageView({
       (tab === "Trợ giảng" && u.role?.code === "TEACHING_ASSISTANT") ||
       (tab === "Học sinh" && u.role?.code === "STUDENT");
 
+    // 4. Tìm kiếm tự động .trim() (BUG_11)
+    const cleanSearch = search.trim().toLowerCase();
     const matchesSearch =
-      !search ||
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      (u.profile?.fullName || "").toLowerCase().includes(search.toLowerCase()) ||
-      u.username.toLowerCase().includes(search.toLowerCase());
+      !cleanSearch ||
+      u.email?.toLowerCase().includes(cleanSearch) ||
+      (u.profile?.fullName || "").toLowerCase().includes(cleanSearch) ||
+      u.username?.toLowerCase().includes(cleanSearch);
 
     return matchesTab && matchesSearch;
   });
@@ -1389,8 +1434,12 @@ function UsersPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa người dùng đã chọn",
-      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} người dùng đã chọn? Thao tác này sẽ chuyển trạng thái người dùng sang không hoạt động.`,
+      description: `Bạn có chắc chắn muốn ngưng hoạt động ${selectedIds.length} người dùng đã chọn? Thao tác này sẽ bảo vệ lịch sử học tập và chuyển trạng thái sang ngưng hoạt động.`,
       action: async () => {
+        // Optimistic UI (BUG_04)
+        setLocalUsers((prev) =>
+          prev.map((u) => (selectedIds.includes(u.id) ? { ...u, isActive: false } : u))
+        );
         await deleteMultipleUsersAction(selectedIds);
         setSelectedIds([]);
         onRefresh();
@@ -1402,18 +1451,32 @@ function UsersPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa người dùng",
-      description: `Bạn có chắc chắn muốn xóa người dùng ${name ? `"${name}"` : "này"}? Thao tác này sẽ chuyển trạng thái người dùng sang không hoạt động.`,
+      description: `Bạn có chắc chắn muốn xóa tài khoản ${name ? `"${name}"` : "này"}? Tài khoản sẽ chuyển sang trạng thái ngưng hoạt động và có thể khôi phục lại bất kỳ lúc nào.`,
       action: async () => {
+        // Optimistic UI (BUG_04)
+        setLocalUsers((prev) =>
+          prev.map((u) => (u.id === id ? { ...u, isActive: false } : u))
+        );
         await deleteUserAction(id);
         onRefresh();
       },
     });
   };
 
+  const handleRestoreSingle = async (id: string) => {
+    // Optimistic UI
+    setLocalUsers((prev) =>
+      prev.map((u) => (u.id === id ? { ...u, isActive: true } : u))
+    );
+    await restoreUserAction(id);
+    onRefresh();
+  };
+
   return (
     <section className="panel overflow-hidden">
-      <div className="mb-5 flex gap-6 overflow-x-auto border-b border-[#E2E8F0]">
-        {["Tất cả", "Quản trị viên", "Quản nhiệm", "Giáo viên", "Trợ giảng", "Học sinh"].map((t) => (
+      {/* Tab vai trò */}
+      <div className="mb-4 flex gap-6 overflow-x-auto border-b border-[#E2E8F0]">
+        {roleTabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1426,32 +1489,83 @@ function UsersPageView({
         ))}
       </div>
 
+      {/* Toolbar & Bộ lọc trạng thái xóa mềm (BUG_05) */}
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-          <input
-            className="field field-search border-[#CBD5E1]"
-            placeholder="Tìm kiếm người dùng..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-wrap items-center gap-2.5 flex-1 max-w-xl">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+            <input
+              className="field field-search border-[#CBD5E1]"
+              placeholder="Tìm kiếm theo họ tên, email, mã..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Lọc trạng thái (Soft-delete filter) */}
+          <div className="inline-flex rounded-xl bg-[#F1F5F9] p-1 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setStatusFilter("ACTIVE")}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === "ACTIVE"
+                  ? "bg-white text-[#EA580C] shadow-sm font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Đang hoạt động
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("INACTIVE")}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === "INACTIVE"
+                  ? "bg-white text-rose-600 shadow-sm font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Đã xóa mềm
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("ALL")}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === "ALL"
+                  ? "bg-white text-[#0F172A] shadow-sm font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Tất cả
+            </button>
+          </div>
         </div>
 
-        {selectedIds.length > 0 && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleBatchDelete}
-            disabled={isDeleting}
-            className="rounded-xl shadow-sm"
-          >
-            <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) mục đã chọn
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBatchDelete}
+              disabled={isDeleting}
+              className="rounded-xl shadow-sm"
+            >
+              <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) mục
+            </Button>
+          )}
+
+          {onOpenAddUser && (
+            <Button
+              onClick={onOpenAddUser}
+              className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm text-xs"
+            >
+              <Plus className="size-4 mr-1.5" /> Thêm người dùng
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-        <table className="w-full min-w-[780px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[800px] border-collapse text-left text-sm">
           <thead>
             <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
               <th className="px-4 py-3.5 w-10">
@@ -1463,69 +1577,132 @@ function UsersPageView({
                 />
               </th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Họ và tên</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Email / Mã</th>
+              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Email / Mã định danh</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Vai trò</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường / Lớp</th>
+              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường / Lớp phụ trách</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#F1F5F9] bg-white">
             {filtered.length > 0 ? (
-              filtered.map((u) => (
-                <tr key={u.id} className="hover:bg-[#F8FAFC] transition">
-                  <td className="px-4 py-3.5">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(u.id)}
-                      onChange={() => toggleSelect(u.id)}
-                      className="rounded border-[#CBD5E1]"
-                    />
-                  </td>
-                  <td className="px-4 py-3.5 font-bold text-[#0F172A]">
-                    <div className="flex items-center gap-2.5">
-                      <span className="grid size-8 place-items-center rounded-full bg-[#FFF1EB] text-[#EA580C] font-bold text-xs uppercase">
-                        {u.profile?.fullName ? u.profile.fullName.trim()[0] : u.username[0]}
-                      </span>
-                      <span>{u.profile?.fullName || u.username}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5 text-[#475569]">{u.email}</td>
-                  <td className="px-4 py-3.5">
-                    <Badge>{u.role?.name || u.role?.code}</Badge>
-                  </td>
-                  <td className="px-4 py-3.5 text-[#64748B] text-xs">
-                    {u.classEnrollments?.[0]?.class?.name || u.managedSchools?.[0]?.name || "—"}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <Status tone={u.isActive ? "success" : "neutral"}>
-                      {u.isActive ? "Hoạt động" : "Tạm khóa"}
-                    </Status>
-                  </td>
-                  <td className="px-4 py-3.5 text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#0F172A]"
-                        onClick={() => onEditUser(u)}
-                        title="Chỉnh sửa"
-                      >
-                        <Edit2 className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#EF4444]"
-                        onClick={() => handleDeleteSingle(u.id, u.profile?.fullName || u.username)}
-                        title="Xóa"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+              filtered.map((u) => {
+                // Kiểm tra quyền thao tác trên từng người dùng (BUG_01)
+                const isTargetAdmin = u.role?.code === "ADMIN";
+                const isSelf = currentUser && u.id === currentUser.userId;
+                const canEdit = !isSchoolManager || !isTargetAdmin;
+                const canDelete = (!isSchoolManager || !isTargetAdmin) && !isSelf;
+
+                // Chuỗi hiển thị phân công trường / lớp đa nhiệm
+                let assignmentText = "—";
+                if (u.role?.code === "SCHOOL_MANAGER" && u.managedSchools?.length > 0) {
+                  assignmentText = u.managedSchools.map((s: any) => s.name).join(", ");
+                } else if (
+                  (u.role?.code === "TEACHER" || u.role?.code === "TEACHING_ASSISTANT") &&
+                  u.classAssignments?.length > 0
+                ) {
+                  assignmentText = u.classAssignments
+                    .map((a: any) => a.class?.name || a.class?.code)
+                    .filter(Boolean)
+                    .join(", ");
+                } else if (u.classEnrollments?.length > 0) {
+                  assignmentText = u.classEnrollments
+                    .map((e: any) => e.class?.name || e.class?.code)
+                    .filter(Boolean)
+                    .join(", ");
+                }
+
+                return (
+                  <tr key={u.id} className="hover:bg-[#F8FAFC] transition">
+                    <td className="px-4 py-3.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(u.id)}
+                        onChange={() => toggleSelect(u.id)}
+                        className="rounded border-[#CBD5E1]"
+                      />
+                    </td>
+                    <td className="px-4 py-3.5 font-bold text-[#0F172A]">
+                      <div className="flex items-center gap-2.5">
+                        <span className="grid size-8 place-items-center rounded-full bg-[#FFF1EB] text-[#EA580C] font-bold text-xs uppercase">
+                          {u.profile?.fullName ? u.profile.fullName.trim()[0] : u.username[0]}
+                        </span>
+                        <div>
+                          <span>{u.profile?.fullName || u.username}</span>
+                          {u.profile?.phoneNumber && (
+                            <span className="block text-xs font-normal text-[#94A3B8]">
+                              {u.profile.phoneNumber}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 text-[#475569]">
+                      <div>
+                        <span>{u.email}</span>
+                        <code className="block text-[11px] font-mono text-[#94A3B8]">
+                          {u.username}
+                        </code>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Badge>{u.role?.name || u.role?.code}</Badge>
+                    </td>
+                    <td className="px-4 py-3.5 text-[#64748B] text-xs max-w-[200px] truncate" title={assignmentText}>
+                      {assignmentText}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {u.isActive ? (
+                        <Status tone="success">Đang hoạt động</Status>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                          Đã xóa mềm
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <div className="flex justify-end gap-1">
+                        {u.isActive ? (
+                          <>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-[#64748B] hover:text-[#0F172A]"
+                                onClick={() => onEditUser(u)}
+                                title="Chỉnh sửa"
+                              >
+                                <Edit2 className="size-4" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-[#64748B] hover:text-[#EF4444]"
+                                onClick={() => handleDeleteSingle(u.id, u.profile?.fullName || u.username)}
+                                title="Xóa tài khoản (Chuyển sang ngưng hoạt động)"
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs text-emerald-700 hover:bg-emerald-50 border-emerald-300"
+                            onClick={() => handleRestoreSingle(u.id)}
+                            title="Khôi phục tài khoản này"
+                          >
+                            <RotateCcw className="size-3.5 mr-1 text-emerald-600" /> Khôi phục
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
                 <td colSpan={7} className="text-center py-8 text-sm text-[#94A3B8] italic">
@@ -1570,15 +1747,28 @@ function SchoolsPageView({
   onEditSchool: (s: any) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
+  const [localSchools, setLocalSchools] = useState(schools);
+  const [selectedSchoolDetail, setSelectedSchoolDetail] = useState<any>(null);
 
-  const filtered = schools.filter(
-    (s) =>
-      !search ||
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.code.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    setLocalSchools(schools);
+  }, [schools]);
+
+  const filtered = localSchools.filter((s) => {
+    if (statusFilter === "ACTIVE" && !s.isActive) return false;
+    if (statusFilter === "INACTIVE" && s.isActive) return false;
+
+    const cleanSearch = search.trim().toLowerCase();
+    if (!cleanSearch) return true;
+    return (
+      s.name.toLowerCase().includes(cleanSearch) ||
+      s.code.toLowerCase().includes(cleanSearch) ||
+      (s.address || "").toLowerCase().includes(cleanSearch)
+    );
+  });
 
   const toggleSelectAll = () => {
     if (selectedIds.length === filtered.length) {
@@ -1610,8 +1800,11 @@ function SchoolsPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa các trường học đã chọn",
-      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} trường học đã chọn? Thao tác này sẽ chuyển trạng thái các trường học sang không hoạt động.`,
+      description: `Bạn có chắc chắn muốn ngưng hoạt động ${selectedIds.length} trường học đã chọn? Thao tác này sẽ chuyển trạng thái các trường học sang không hoạt động.`,
       action: async () => {
+        setLocalSchools((prev) =>
+          prev.map((s) => (selectedIds.includes(s.id) ? { ...s, isActive: false } : s))
+        );
         await deleteMultipleSchoolsAction(selectedIds);
         setSelectedIds([]);
         onRefresh();
@@ -1619,29 +1812,79 @@ function SchoolsPageView({
     });
   };
 
-  const handleDeleteSingle = (id: string, name?: string) => {
+  // BUG_15a: Hiển thị cả Tên trường VÀ Mã trường trong dialog xác nhận xóa
+  const handleDeleteSingle = (id: string, name: string, code: string) => {
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa trường học",
-      description: `Bạn có chắc chắn muốn xóa trường học ${name ? `"${name}"` : "này"}? Thao tác này sẽ chuyển trạng thái trường học sang không hoạt động.`,
+      description: `Bạn có chắc chắn muốn xóa trường "${name}" (Mã trường: ${code}) không? Hành động này sẽ chuyển trạng thái trường sang ngưng hoạt động. Lịch sử các lớp học và học sinh trực thuộc vẫn được bảo lưu.`,
       action: async () => {
+        setLocalSchools((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, isActive: false } : s))
+        );
         await deleteSchoolAction(id);
         onRefresh();
       },
     });
   };
 
+  const handleRestoreSingle = async (id: string) => {
+    setLocalSchools((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, isActive: true } : s))
+    );
+    await restoreSchoolAction(id);
+    onRefresh();
+  };
+
   return (
     <section className="panel">
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-          <input
-            className="field field-search border-[#CBD5E1]"
-            placeholder="Tìm kiếm trường học theo tên, mã..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-wrap items-center gap-2.5 flex-1 max-w-xl">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+            <input
+              className="field field-search border-[#CBD5E1]"
+              placeholder="Tìm kiếm trường học theo tên, mã..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="inline-flex rounded-xl bg-[#F1F5F9] p-1 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setStatusFilter("ACTIVE")}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === "ACTIVE"
+                  ? "bg-white text-[#EA580C] shadow-sm font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Đang hoạt động
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("INACTIVE")}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === "INACTIVE"
+                  ? "bg-white text-rose-600 shadow-sm font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Đã xóa mềm
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("ALL")}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                statusFilter === "ALL"
+                  ? "bg-white text-[#0F172A] shadow-sm font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Tất cả
+            </button>
+          </div>
         </div>
 
         {selectedIds.length > 0 && (
@@ -1681,8 +1924,12 @@ function SchoolsPageView({
           <tbody className="divide-y divide-[#F1F5F9] bg-white">
             {filtered.length > 0 ? (
               filtered.map((s) => (
-                <tr key={s.id} className="hover:bg-[#F8FAFC] transition">
-                  <td className="px-4 py-3.5">
+                <tr
+                  key={s.id}
+                  className="hover:bg-[#F8FAFC] transition cursor-pointer"
+                  onClick={() => setSelectedSchoolDetail(s)}
+                >
+                  <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(s.id)}
@@ -1690,7 +1937,14 @@ function SchoolsPageView({
                       className="rounded border-[#CBD5E1]"
                     />
                   </td>
-                  <td className="px-4 py-3.5 font-bold text-[#0F172A]">{s.name}</td>
+                  <td className="px-4 py-3.5 font-bold text-[#0F172A] hover:text-[#EA580C]">
+                    <div className="flex items-center gap-2">
+                      <span>{s.name}</span>
+                      <span title="Bấm xem chi tiết">
+                        <Eye className="size-3.5 text-[#94A3B8] opacity-60" />
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3.5 font-mono text-xs text-[#64748B]">{s.code}</td>
                   <td className="px-4 py-3.5 text-[#475569]">{s.type}</td>
                   <td className="px-4 py-3.5 text-[#0F172A] font-medium">
@@ -1698,30 +1952,52 @@ function SchoolsPageView({
                       <span className="text-[#94A3B8] italic">Chưa phân công</span>
                     )}
                   </td>
-                  <td className="px-4 py-3.5 font-semibold text-[#EA580C]">{s._count?.classes || 0} lớp</td>
-                  <td className="px-4 py-3.5">
-                    <Status tone="success">Hoạt động</Status>
+                  <td className="px-4 py-3.5 font-semibold text-[#EA580C]">
+                    {s._count?.classes || s.classes?.length || 0} lớp
                   </td>
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="px-4 py-3.5">
+                    {s.isActive ? (
+                      <Status tone="success">Hoạt động</Status>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        Đã xóa mềm
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#0F172A]"
-                        onClick={() => onEditSchool(s)}
-                        title="Chỉnh sửa"
-                      >
-                        <Edit2 className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#EF4444]"
-                        onClick={() => handleDeleteSingle(s.id, s.name)}
-                        title="Xóa"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      {s.isActive ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-[#64748B] hover:text-[#0F172A]"
+                            onClick={() => onEditSchool(s)}
+                            title="Chỉnh sửa"
+                          >
+                            <Edit2 className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-[#64748B] hover:text-[#EF4444]"
+                            onClick={() => handleDeleteSingle(s.id, s.name, s.code)}
+                            title="Xóa trường học"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs text-emerald-700 hover:bg-emerald-50 border-emerald-300"
+                          onClick={() => handleRestoreSingle(s.id)}
+                          title="Khôi phục trường học"
+                        >
+                          <RotateCcw className="size-3.5 mr-1 text-emerald-600" /> Khôi phục
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1736,6 +2012,14 @@ function SchoolsPageView({
           </tbody>
         </table>
       </div>
+
+      {/* DRAWER XEM CHI TIẾT TRƯỜNG HỌC (BUG_13) */}
+      <SchoolDetailDrawer
+        school={selectedSchoolDetail}
+        open={!!selectedSchoolDetail}
+        onOpenChange={(op) => !op && setSelectedSchoolDetail(null)}
+        onEditSchool={onEditSchool}
+      />
 
       <ConfirmDialog
         open={confirmModal.open}
@@ -1755,6 +2039,140 @@ function SchoolsPageView({
 }
 
 /* =========================================================================
+   DRAWER CHI TIẾT TRƯỜNG HỌC & DANH SÁCH LỚP TRỰC THUỘC (BUG_13)
+   ========================================================================= */
+
+function SchoolDetailDrawer({
+  school,
+  open,
+  onOpenChange,
+  onEditSchool,
+}: {
+  school: any;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onEditSchool?: (s: any) => void;
+}) {
+  if (!school) return null;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetHeader>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-orange-100 text-[#EA580C]">
+              {school.code}
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+              {school.type}
+            </span>
+          </div>
+          <SheetTitle className="text-xl font-bold text-[#0F172A] mt-1">
+            {school.name}
+          </SheetTitle>
+          <SheetDescription>
+            Chi tiết đối tác đào tạo và các lớp học trực thuộc tại trường.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="mt-6 space-y-5 text-sm">
+          {/* Thông tin liên hệ */}
+          <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-4 space-y-2">
+            <b className="text-xs uppercase text-slate-500 tracking-wider block">
+              Thông tin liên hệ trường học
+            </b>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-slate-400 block">Đại diện BGH / Giáo vụ:</span>
+                <span className="font-semibold text-slate-800">
+                  {school.contactName || "—"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">Số điện thoại:</span>
+                <span className="font-semibold text-slate-800">
+                  {school.contactPhone || "—"}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-slate-400 block">Địa chỉ:</span>
+                <span className="font-semibold text-slate-800">
+                  {school.address || "—"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quản nhiệm phụ trách */}
+          <div className="rounded-xl bg-[#FFF1EB] border border-orange-200 p-4 space-y-1">
+            <b className="text-xs uppercase text-[#EA580C] tracking-wider block">
+              Quản nhiệm phụ trách
+            </b>
+            <p className="font-bold text-slate-900 text-sm">
+              {school.manager?.profile?.fullName ||
+                school.manager?.username ||
+                "Chưa phân công quản nhiệm (Gán tại Quản lý người dùng)"}
+            </p>
+            {school.manager?.email && (
+              <p className="text-xs text-slate-600">
+                Email: {school.manager.email}
+              </p>
+            )}
+          </div>
+
+          {/* Danh sách lớp trực thuộc */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <b className="text-xs uppercase text-slate-500 tracking-wider">
+                Danh sách lớp học tại trường ({school.classes?.length || 0})
+              </b>
+            </div>
+            {school.classes && school.classes.length > 0 ? (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {school.classes.map((cls: any) => (
+                  <div
+                    key={cls.id}
+                    className="p-3 rounded-xl border border-slate-200 bg-white hover:border-[#EA580C] transition text-xs flex justify-between items-center"
+                  >
+                    <div>
+                      <b className="text-slate-900 font-bold block">{cls.name}</b>
+                      <span className="text-slate-500 font-mono text-[11px]">
+                        {cls.code} • {cls.program}
+                      </span>
+                    </div>
+                    <span className="px-2 py-1 rounded bg-slate-100 font-semibold text-slate-700">
+                      Sĩ số: {cls.capacity || 30}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">
+                Chưa có lớp học nào được mở tại trường này.
+              </p>
+            )}
+          </div>
+
+          {onEditSchool && (
+            <div className="pt-2">
+              <Button
+                onClick={() => {
+                  onOpenChange(false);
+                  onEditSchool(school);
+                }}
+                className="w-full bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl"
+              >
+                <Edit2 className="size-4 mr-1.5" /> Chỉnh sửa thông tin trường
+              </Button>
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/* =========================================================================
    5. CLASSES PAGE VIEW & DETAIL VIEW (ASSIGN / UNASSIGN STAFF)
    ========================================================================= */
 
@@ -1769,10 +2187,16 @@ function ClassesPageView({
   onOpenDetail: (c: any) => void;
   onEditClass: (c: any) => void;
 }) {
-  const [status, setStatus] = useState("ALL");
+  const [lifecycleStatus, setLifecycleStatus] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
+  const [localClasses, setLocalClasses] = useState(classes);
+
+  useEffect(() => {
+    setLocalClasses(classes);
+  }, [classes]);
 
   const classTabs = [
     ["ALL", "Tất cả"],
@@ -1781,14 +2205,23 @@ function ClassesPageView({
     ["FINISHED", "Lịch sử"],
   ] as const;
 
-  const filtered = classes.filter((c) => {
-    const matchesStatus = status === "ALL" || c.status === status;
+  const filtered = localClasses.filter((c) => {
+    // 1. Lọc theo trạng thái xóa mềm
+    if (statusFilter === "ACTIVE" && !c.isActive) return false;
+    if (statusFilter === "INACTIVE" && c.isActive) return false;
+
+    // 2. Lọc theo chu kỳ lớp học
+    const matchesLifecycle = lifecycleStatus === "ALL" || c.status === lifecycleStatus;
+
+    // 3. Tìm kiếm .trim() (BUG_10)
+    const cleanSearch = search.trim().toLowerCase();
     const matchesSearch =
-      !search ||
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.code.toLowerCase().includes(search.toLowerCase()) ||
-      (c.school?.name || "").toLowerCase().includes(search.toLowerCase());
-    return matchesStatus && matchesSearch;
+      !cleanSearch ||
+      c.name.toLowerCase().includes(cleanSearch) ||
+      c.code.toLowerCase().includes(cleanSearch) ||
+      (c.school?.name || "").toLowerCase().includes(cleanSearch);
+
+    return matchesLifecycle && matchesSearch;
   });
 
   const toggleSelectAll = () => {
@@ -1821,44 +2254,102 @@ function ClassesPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa các lớp học đã chọn",
-      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} lớp học đã chọn? Thao tác này sẽ chuyển trạng thái các lớp học sang không hoạt động.`,
+      description: `Bạn có chắc chắn muốn chuyển ${selectedIds.length} lớp học đã chọn sang danh sách Đã xóa mềm? Các lớp học này có thể khôi phục lại bất kỳ lúc nào.`,
       action: async () => {
-        await deleteMultipleClassesAction(selectedIds);
+        // Optimistic UI update
+        const toDeleteIds = [...selectedIds];
+        setLocalClasses((prev) =>
+          prev.map((c) => (toDeleteIds.includes(c.id) ? { ...c, isActive: false } : c))
+        );
         setSelectedIds([]);
+        await deleteMultipleClassesAction(toDeleteIds);
         onRefresh();
       },
     });
   };
 
-  const handleDeleteSingle = (id: string, name?: string) => {
+  const handleDeleteSingle = (cls: any) => {
+    // Hiển thị cả Tên lớp học VÀ Mã lớp học (BUG_15b)
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa lớp học",
-      description: `Bạn có chắc chắn muốn xóa lớp học ${name ? `"${name}"` : "này"}? Thao tác này sẽ chuyển trạng thái lớp học sang không hoạt động.`,
+      description: `Bạn có chắc chắn muốn xóa lớp học "${cls.name}" (Mã lớp: ${cls.code})? Lớp học sẽ được chuyển sang trạng thái Đã xóa mềm và có thể khôi phục lại.`,
       action: async () => {
-        await deleteClassAction(id);
+        // Optimistic UI update
+        setLocalClasses((prev) =>
+          prev.map((c) => (c.id === cls.id ? { ...c, isActive: false } : c))
+        );
+        await deleteClassAction(cls.id);
         onRefresh();
       },
     });
+  };
+
+  const handleRestore = async (cls: any) => {
+    setLocalClasses((prev) =>
+      prev.map((c) => (c.id === cls.id ? { ...c, isActive: true } : c))
+    );
+    await restoreClassAction(cls.id);
+    onRefresh();
   };
 
   return (
     <section className="panel">
-      {/* Pills Tabs - giống 100% Mockup */}
-      <div className="mb-5 flex gap-2 overflow-x-auto">
-        {classTabs.map(([key, label]) => (
+      {/* Hàng 1: Tabs Trạng thái xóa mềm (Đang hoạt động / Đã xóa mềm / Tất cả) + Tabs Tiến độ */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F5F9] pb-4">
+        {/* Pills Tabs Chu kỳ lớp học */}
+        <div className="flex gap-2 overflow-x-auto">
+          {classTabs.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setLifecycleStatus(key)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
+                lifecycleStatus === key
+                  ? "bg-[#EA580C] text-white shadow-sm"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Bộ lọc xóa mềm */}
+        <div className="flex items-center gap-1.5 bg-[#F1F5F9] p-1 rounded-xl">
           <button
-            key={key}
-            onClick={() => setStatus(key)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
-              status === key
-                ? "bg-[#EA580C] text-white shadow-sm"
-                : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+            type="button"
+            onClick={() => setStatusFilter("ACTIVE")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+              statusFilter === "ACTIVE"
+                ? "bg-white text-[#EA580C] shadow-sm"
+                : "text-[#64748B] hover:text-[#0F172A]"
             }`}
           >
-            {label}
+            Đang hoạt động
           </button>
-        ))}
+          <button
+            type="button"
+            onClick={() => setStatusFilter("INACTIVE")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+              statusFilter === "INACTIVE"
+                ? "bg-white text-rose-600 shadow-sm"
+                : "text-[#64748B] hover:text-[#0F172A]"
+            }`}
+          >
+            Đã xóa mềm
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("ALL")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+              statusFilter === "ALL"
+                ? "bg-white text-[#0F172A] shadow-sm"
+                : "text-[#64748B] hover:text-[#0F172A]"
+            }`}
+          >
+            Tất cả
+          </button>
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
@@ -1909,7 +2400,7 @@ function ClassesPageView({
           <tbody className="divide-y divide-[#F1F5F9] bg-white">
             {filtered.length > 0 ? (
               filtered.map((c) => (
-                <tr key={c.id} className="hover:bg-[#F8FAFC] transition">
+                <tr key={c.id} className={`hover:bg-[#F8FAFC] transition ${!c.isActive ? "bg-rose-50/20" : ""}`}>
                   <td className="px-4 py-3.5">
                     <input
                       type="checkbox"
@@ -1929,52 +2420,90 @@ function ClassesPageView({
                   </td>
                   <td className="px-4 py-3.5 text-[#475569]">{c.school?.name || "—"}</td>
                   <td className="px-4 py-3.5 text-xs text-[#64748B]">
-                    {c.assignments?.[0]?.staff?.profile?.fullName || "Chưa phân công"}
+                    {c.assignments && c.assignments.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {c.assignments.map((a: any) => (
+                          <span
+                            key={a.id}
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${
+                              a.roleInClass === "TEACHER"
+                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                : "bg-purple-50 text-purple-700 border border-purple-200"
+                            }`}
+                          >
+                            {a.roleInClass === "TEACHER" ? "GV: " : "TA: "}
+                            {a.staff?.profile?.fullName || a.staff?.username}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[#94A3B8] italic">Chưa phân công</span>
+                    )}
                   </td>
                   <td className="px-4 py-3.5 font-semibold text-[#0F172A]">
                     {c._count?.enrollments || 0}/{c.capacity}
                   </td>
                   <td className="px-4 py-3.5">
-                    <Status
-                      tone={
-                        c.status === "FINISHED" ? "neutral" : c.status === "UPCOMING" ? "warn" : "success"
-                      }
-                    >
-                      {c.status === "ACTIVE"
-                        ? "Hoạt động"
-                        : c.status === "UPCOMING"
-                        ? "Sắp mở"
-                        : "Đã kết thúc"}
-                    </Status>
+                    <div className="flex flex-col gap-1">
+                      <Status
+                        tone={
+                          c.status === "FINISHED" ? "neutral" : c.status === "UPCOMING" ? "warn" : "success"
+                        }
+                      >
+                        {c.status === "ACTIVE"
+                          ? "Hoạt động"
+                          : c.status === "UPCOMING"
+                          ? "Sắp mở"
+                          : "Đã kết thúc"}
+                      </Status>
+                      {!c.isActive && (
+                        <span className="inline-flex w-fit items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
+                          Đã xóa mềm
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3.5 text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onOpenDetail(c)}
-                        className="text-xs text-[#EA580C] hover:text-[#EA580C] font-semibold"
-                      >
-                        Chi tiết →
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#0F172A]"
-                        onClick={() => onEditClass(c)}
-                        title="Chỉnh sửa"
-                      >
-                        <Edit2 className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#EF4444]"
-                        onClick={() => handleDeleteSingle(c.id, c.name)}
-                        title="Xóa"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                    <div className="flex justify-end items-center gap-1">
+                      {c.isActive ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onOpenDetail(c)}
+                            className="text-xs text-[#EA580C] hover:text-[#EA580C] font-semibold"
+                          >
+                            Chi tiết →
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-[#64748B] hover:text-[#0F172A]"
+                            onClick={() => onEditClass(c)}
+                            title="Chỉnh sửa"
+                          >
+                            <Edit2 className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-[#64748B] hover:text-[#EF4444]"
+                            onClick={() => handleDeleteSingle(c)}
+                            title="Xóa mềm"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRestore(c)}
+                          className="text-xs text-emerald-600 border-emerald-300 hover:bg-emerald-50 font-semibold"
+                        >
+                          <RotateCcw className="size-3.5 mr-1" /> Khôi phục
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -2754,12 +3283,12 @@ function SettingsPageView({
     setProfileError("");
     const formData = new FormData(e.currentTarget);
     const fullName = formData.get("fullName")?.toString() || "";
-    const username = formData.get("username")?.toString() || "";
+    const address = formData.get("address")?.toString() || "";
 
     startTransition(async () => {
       const res = await updateProfileAction(currentUser.userId, {
         fullName,
-        username,
+        address,
         phoneNumber: formData.get("phoneNumber")?.toString(),
         dateOfBirth: formData.get("dateOfBirth")?.toString(),
         gender: formData.get("gender")?.toString() as any,
@@ -2773,7 +3302,7 @@ function SettingsPageView({
       setProfileMsg("Đã cập nhật thông tin hồ sơ thành công!");
       onProfileUpdated({
         fullName,
-        username,
+        address,
       });
     });
   };
@@ -3020,26 +3549,44 @@ function SettingsPageView({
                   placeholder="Nhập họ và tên thật"
                   required
                 />
+                <div>
+                  <label className="text-sm font-semibold text-[#0F172A] flex items-center gap-1.5 mb-2">
+                    <Lock className="size-3.5 text-[#94A3B8]" />
+                    Tên đăng nhập / Mã tài khoản (Cố định)
+                  </label>
+                  <input
+                    disabled
+                    readOnly
+                    defaultValue={currentUser.username}
+                    className="field bg-slate-100 text-[#64748B] cursor-not-allowed font-mono"
+                    title="Mã định danh tài khoản được cố định bởi hệ thống và không thể thay đổi."
+                  />
+                  <p className="text-[11px] text-[#94A3B8] mt-1">
+                    Mã định danh duy nhất do hệ thống quản lý (Không thể sửa)
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <Field
-                  name="username"
-                  label="Tên đăng nhập / Mã tài khoản *"
-                  defaultValue={currentUser.username}
-                  placeholder="Nhập tên đăng nhập"
-                  required
+                  name="email"
+                  label="Email đăng ký (Cố định, không thể thay đổi)"
+                  defaultValue={currentUser.email}
+                  disabled
+                />
+                <Field
+                  name="phoneNumber"
+                  label="Số điện thoại"
+                  placeholder="0987xxxxxx"
+                  defaultValue={currentUser.phoneNumber || currentUser.profile?.phoneNumber || ""}
                 />
               </div>
 
               <Field
-                name="email"
-                label="Email đăng ký (Cố định, không thể thay đổi)"
-                defaultValue={currentUser.email}
-                disabled
-              />
-
-              <Field
-                name="phoneNumber"
-                label="Số điện thoại"
-                placeholder="0987xxxxxx"
+                name="address"
+                label="Địa chỉ cư trú"
+                placeholder="VD: 123 Giải Phóng, Hai Bà Trưng, Hà Nội"
+                defaultValue={currentUser.address || currentUser.profile?.address || ""}
               />
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -3047,10 +3594,11 @@ function SettingsPageView({
                   name="dateOfBirth"
                   label="Ngày sinh"
                   type="date"
+                  defaultValue={currentUser.dateOfBirth || currentUser.profile?.dateOfBirth ? new Date(currentUser.dateOfBirth || currentUser.profile?.dateOfBirth).toISOString().split("T")[0] : ""}
                 />
                 <label className="block text-sm font-semibold text-[#0F172A]">
                   Giới tính
-                  <select name="gender" className="field mt-2">
+                  <select name="gender" className="field mt-2" defaultValue={currentUser.gender || currentUser.profile?.gender || "MALE"}>
                     <option value="MALE">Nam</option>
                     <option value="FEMALE">Nữ</option>
                     <option value="OTHER">Khác</option>
@@ -3182,28 +3730,165 @@ function UserDialog({
   onAddClassShortcut: () => void;
   onCreatedSuccess: (acc: any) => void;
 }) {
+  const [modalMode, setModalMode] = useState<"manual" | "excel">("manual");
   const [selectedRole, setSelectedRole] = useState<RoleCode>("STUDENT");
-  const [selectedSchoolId, setSelectedSchoolId] = useState("");
+  const [previewCode, setPreviewCode] = useState<string>("HV1001");
+  const [emailValue, setEmailValue] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
 
-  const availableClasses = classes.filter(
-    (c) => !selectedSchoolId || c.schoolId === selectedSchoolId
-  );
+  // Multi-assignment dynamic lists với dấu (+)
+  const [managerSchools, setManagerSchools] = useState<string[]>([""]);
+  const [staffClasses, setStaffClasses] = useState<string[]>([""]);
+  const [studentClasses, setStudentClasses] = useState<string[]>([""]);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  // Cập nhật preview mã tài khoản khi đổi vai trò (BUG_08)
+  useEffect(() => {
+    let active = true;
+    getNextUserCodeAction(selectedRole).then((res) => {
+      if (active && res.success && res.code) {
+        setPreviewCode(res.code);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [selectedRole]);
+
+  // Kiểm tra email theo chuẩn RFC 5322 (BUG_17)
+  const validateEmail = (val: string) => {
+    setEmailValue(val);
+    if (!val.trim()) {
+      setEmailError("");
+      return;
+    }
+    const clean = val.trim().toLowerCase();
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(clean)) {
+      setEmailError("Email sai định dạng (phải có tên miền hợp lệ như .com, .vn, .edu.vn)");
+    } else {
+      setEmailError("");
+    }
+  };
+
+  // State cho Excel Import tích hợp
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [analyzingExcel, setAnalyzingExcel] = useState(false);
+  const [committingExcel, setCommittingExcel] = useState(false);
+  const [excelReport, setExcelReport] = useState<any>(null);
+  const [excelError, setExcelError] = useState("");
+
+  const handleExcelChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    setExcelFile(selected);
+    setExcelError("");
+    setExcelReport(null);
+    setAnalyzingExcel(true);
+
+    try {
+      const arrayBuffer = await selected.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString("base64");
+      const res = await parseAndValidateExcelAction(base64);
+      if (!res.success) {
+        setExcelError(res.error || "Lỗi xử lý file Excel!");
+      } else {
+        setExcelReport(res);
+      }
+    } catch (err: any) {
+      setExcelError("Không thể đọc file: " + err.message);
+    } finally {
+      setAnalyzingExcel(false);
+    }
+  };
+
+  const handleCommitExcel = async () => {
+    if (!excelReport?.validRows || excelReport.validRows.length === 0) return;
+    setCommittingExcel(true);
+    try {
+      const res = await commitImportUsersAction(
+        excelReport.validRows,
+        excelFile?.name || "import.xlsx"
+      );
+      if (!res.success) {
+        setExcelError(res.error || "Lỗi khi lưu dữ liệu!");
+      } else {
+        onCreatedSuccess({
+          fullName: `Đã nhập thành công ${excelReport.validCount} học viên`,
+          username: "HV...",
+          email: "Đã tạo tài khoản từ Excel",
+          role: "Học sinh",
+          tempPassword: "Simpace@2026",
+        });
+      }
+    } catch (err: any) {
+      setExcelError("Lỗi khi lưu học viên: " + err.message);
+    } finally {
+      setCommittingExcel(false);
+    }
+  };
+
+  const handleDownloadSample = () => {
+    const sampleData = [
+      {
+        STT: 1,
+        "Họ và tên": "Nguyễn Văn An",
+        Email: "an.nguyen@gmail.com",
+        "Mã lớp IELTS": classes[0]?.code || "IELTS_TD_01",
+        "Số điện thoại": "0987654321",
+        "Ngày sinh": "15/08/2008",
+        "Giới tính": "Nam",
+      },
+      {
+        STT: 2,
+        "Họ và tên": "Trần Thị Mai",
+        Email: "mai.tran@gmail.com",
+        "Mã lớp IELTS": classes[0]?.code || "IELTS_TD_01",
+        "Số điện thoại": "0912345678",
+        "Ngày sinh": "20/11/2008",
+        "Giới tính": "Nữ",
+      },
+    ];
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Danh_Sach_Hoc_Vien");
+    XLSX.writeFile(wb, "SIMPACE_Mau_Import_Hoc_Vien.xlsx");
+  };
+
+  const handleManualSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
+
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(emailValue.trim().toLowerCase())) {
+      setErrorMsg("Email không đúng định dạng chuẩn có tên miền (VD: name@simpace.edu.vn)!");
+      return;
+    }
+
     const form = e.currentTarget;
     const formData = new FormData(form);
+
+    const schoolIds = managerSchools.filter(Boolean);
+    const classIds =
+      selectedRole === "STUDENT"
+        ? studentClasses.filter(Boolean)
+        : staffClasses.filter(Boolean);
 
     startTransition(async () => {
       const res = await createUserAction({
         fullName: formData.get("fullName")?.toString() || "",
-        email: formData.get("email")?.toString() || "",
+        email: emailValue.trim().toLowerCase(),
         roleCode: selectedRole,
         phoneNumber: formData.get("phoneNumber")?.toString(),
-        classId: formData.get("classId")?.toString(),
+        address: formData.get("address")?.toString(),
+        schoolIds: selectedRole === "SCHOOL_MANAGER" ? schoolIds : undefined,
+        classIds:
+          selectedRole === "TEACHER" ||
+          selectedRole === "TEACHING_ASSISTANT" ||
+          selectedRole === "STUDENT"
+            ? classIds
+            : undefined,
       });
 
       if (!res.success || !res.user) {
@@ -3223,112 +3908,529 @@ function UserDialog({
     });
   };
 
+  const roleOptions: { code: RoleCode; label: string; desc: string; prefix: string }[] = [
+    { code: "STUDENT", label: "Học sinh", desc: "Theo học các lớp đối tác", prefix: "HV" },
+    { code: "TEACHER", label: "Giáo viên", desc: "Giảng dạy chuyên môn", prefix: "GV" },
+    { code: "TEACHING_ASSISTANT", label: "Trợ giảng (TA)", desc: "Hỗ trợ học tập & lớp", prefix: "TG" },
+    { code: "SCHOOL_MANAGER", label: "Quản nhiệm", desc: "Quản lý trường học đối tác", prefix: "QN" },
+    { code: "ADMIN", label: "Quản trị viên", desc: "Toàn quyền hệ thống", prefix: "AD" },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Thêm người dùng mới</DialogTitle>
+          <DialogTitle className="text-xl font-bold text-[#0F172A]">Thêm người dùng mới</DialogTitle>
           <DialogDescription>
-            Tài khoản và email thông tin kích hoạt sẽ được khởi tạo trong hệ thống.
+            Tạo tài khoản đơn lẻ theo vai trò hoặc tải danh sách học viên hàng loạt từ Excel.
           </DialogDescription>
         </DialogHeader>
 
-        {errorMsg && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-            {errorMsg}
-          </div>
-        )}
+        {/* Chuyển đổi giữa 2 chế độ: Thủ công & Excel */}
+        <div className="flex border-b border-[#E2E8F0] gap-4 text-sm font-semibold">
+          <button
+            type="button"
+            onClick={() => setModalMode("manual")}
+            className={`pb-2.5 transition border-b-2 ${
+              modalMode === "manual"
+                ? "border-[#EA580C] text-[#EA580C]"
+                : "border-transparent text-[#64748B] hover:text-[#0F172A]"
+            }`}
+          >
+            Thêm thủ công (Từng người)
+          </button>
+          <button
+            type="button"
+            onClick={() => setModalMode("excel")}
+            className={`pb-2.5 transition border-b-2 flex items-center gap-1.5 ${
+              modalMode === "excel"
+                ? "border-[#EA580C] text-[#EA580C]"
+                : "border-transparent text-[#64748B] hover:text-[#0F172A]"
+            }`}
+          >
+            <FileSpreadsheet className="size-4" /> Nhập hàng loạt từ Excel
+          </button>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="fullName" label="Họ và tên *" placeholder="Nhập họ và tên đầy đủ" required />
-            <Field name="email" type="email" label="Email *" placeholder="email@example.com" required />
+        {/* ========================================================
+            CHẾ ĐỘ 1: THÊM THỦ CÔNG (ROLE-FIRST DYNAMIC FORM)
+            ======================================================== */}
+        {modalMode === "manual" ? (
+          <form onSubmit={handleManualSubmit} className="space-y-4 pt-2">
+            {errorMsg && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                {errorMsg}
+              </div>
+            )}
 
-            <label className="block text-sm font-semibold">
-              Vai trò *
-              <select
-                name="roleCode"
-                className="field mt-2"
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value as RoleCode)}
-              >
-                <option value="STUDENT">Học sinh</option>
-                <option value="TEACHER">Giáo viên</option>
-                <option value="TEACHING_ASSISTANT">Trợ giảng (TA)</option>
-                <option value="SCHOOL_MANAGER">Quản nhiệm</option>
-                <option value="ADMIN">Quản trị viên</option>
-              </select>
-            </label>
-
-            <Field name="phoneNumber" label="Số điện thoại" placeholder="0987xxxxxx" />
-
-            {/* DYNAMIC FIELD THEO ROLE */}
-            {selectedRole === "STUDENT" && (
-              <>
-                <div>
-                  <label className="text-sm font-semibold">Trường học</label>
-                  <select
-                    className="field mt-2"
-                    value={selectedSchoolId}
-                    onChange={(e) => setSelectedSchoolId(e.target.value)}
+            {/* BƯỚC 1: CHỌN VAI TRÒ TRƯỚC TIÊN (ROLE-FIRST) */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                  1. Chọn Vai trò người dùng *
+                </label>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 bg-orange-50 text-[#EA580C] rounded-lg border border-orange-200">
+                  Mã dự kiến: <b className="font-mono">{previewCode}</b>
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {roleOptions.map((r) => (
+                  <button
+                    key={r.code}
+                    type="button"
+                    onClick={() => setSelectedRole(r.code)}
+                    className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
+                      selectedRole === r.code
+                        ? "border-[#EA580C] bg-[#FFF1EB] text-[#EA580C] shadow-sm ring-1 ring-[#EA580C]"
+                        : "border-[#E2E8F0] bg-white text-[#475569] hover:border-[#CBD5E1]"
+                    }`}
                   >
-                    <option value="">-- Tất cả các trường --</option>
-                    {schools.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <span className="font-bold text-xs">{r.label}</span>
+                    <span className="text-[10px] text-[#64748B] mt-0.5 line-clamp-1">{r.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
+            {/* BƯỚC 2: THÔNG TIN CÁ NHÂN CƠ BẢN */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#475569] mb-2">
+                2. Thông tin cá nhân cơ bản
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  name="fullName"
+                  label="Họ và tên *"
+                  placeholder="Nhập họ và tên đầy đủ"
+                  required
+                />
                 <div>
-                  <label className="text-sm font-semibold">Ghi danh vào Lớp học</label>
-                  <div className="mt-2 flex gap-2">
-                    <select name="classId" className="field">
-                      <option value="">-- Chọn lớp học --</option>
-                      {availableClasses.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.code})
-                        </option>
-                      ))}
-                    </select>
+                  <label className="text-sm font-semibold">
+                    Địa chỉ Email *
+                    <input
+                      name="email"
+                      type="email"
+                      className="field mt-2"
+                      placeholder="name@simpace.edu.vn"
+                      value={emailValue}
+                      onChange={(e) => validateEmail(e.target.value)}
+                      required
+                    />
+                  </label>
+                  {emailError && (
+                    <span className="text-xs text-rose-500 mt-1 block font-medium">
+                      {emailError}
+                    </span>
+                  )}
+                </div>
+                <Field
+                  name="phoneNumber"
+                  label="Số điện thoại"
+                  placeholder="0987xxxxxx"
+                />
+                <Field
+                  name="address"
+                  label="Địa chỉ thường trú"
+                  placeholder="Số nhà, đường, quận/huyện..."
+                />
+              </div>
+            </div>
+
+            {/* BƯỚC 3: CÁC TRƯỜNG ĐẶC THÙ & GÁN ĐA NHIỆM (+) THEO VAI TRÒ */}
+            <div className="pt-2 border-t border-[#E2E8F0]">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#475569] mb-2">
+                3. Phân công & Nhiệm vụ theo vị trí
+              </label>
+
+              {/* A. QUẢN NHIỆM: GÁN NHIỀU TRƯỜNG PHỤ TRÁCH DẤU (+) */}
+              {selectedRole === "SCHOOL_MANAGER" && (
+                <div className="space-y-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-sm font-bold text-[#0F172A]">
+                        Trường học phụ trách (Quản lý đa trường)
+                      </h4>
+                      <p className="text-xs text-[#64748B]">
+                        Quản nhiệm có thể được giao quản lý nhiều trường học đối tác cùng lúc.
+                      </p>
+                    </div>
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={onAddClassShortcut}
-                      className="shrink-0"
+                      size="sm"
+                      onClick={() => setManagerSchools((prev) => [...prev, ""])}
+                      className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
                     >
-                      <CirclePlus className="size-4" />
+                      <Plus className="size-3.5 mr-1" /> Thêm trường
                     </Button>
                   </div>
+
+                  <div className="space-y-2 mt-2">
+                    {managerSchools.map((schId, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <select
+                          className="field text-sm"
+                          value={schId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setManagerSchools((prev) => {
+                              const next = [...prev];
+                              next[idx] = val;
+                              return next;
+                            });
+                          }}
+                        >
+                          <option value="">-- Chọn trường học phụ trách #{idx + 1} --</option>
+                          {schools.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.code})
+                            </option>
+                          ))}
+                        </select>
+                        {managerSchools.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              setManagerSchools((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="size-9 text-slate-400 hover:text-rose-500 shrink-0"
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </>
+              )}
+
+              {/* B. GIÁO VIÊN: GÁN NHIỀU LỚP GIẢNG DẠY DẤU (+) */}
+              {selectedRole === "TEACHER" && (
+                <div className="space-y-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-sm font-bold text-[#0F172A]">
+                        Lớp học phụ trách giảng dạy
+                      </h4>
+                      <p className="text-xs text-[#64748B]">
+                        Giáo viên có thể đảm nhiệm giảng dạy nhiều lớp cùng lúc.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStaffClasses((prev) => [...prev, ""])}
+                      className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
+                    >
+                      <Plus className="size-3.5 mr-1" /> Thêm lớp
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 mt-2">
+                    {staffClasses.map((cId, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <select
+                          className="field text-sm"
+                          value={cId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setStaffClasses((prev) => {
+                              const next = [...prev];
+                              next[idx] = val;
+                              return next;
+                            });
+                          }}
+                        >
+                          <option value="">-- Chọn lớp học #{idx + 1} --</option>
+                          {classes.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({c.code}) - {c.school?.name}
+                            </option>
+                          ))}
+                        </select>
+                        {staffClasses.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              setStaffClasses((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="size-9 text-slate-400 hover:text-rose-500 shrink-0"
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* C. TRỢ GIẢNG: GÁN NHIỀU LỚP TRỢ GIẢNG DẤU (+) */}
+              {selectedRole === "TEACHING_ASSISTANT" && (
+                <div className="space-y-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-sm font-bold text-[#0F172A]">
+                        Lớp học phụ trách trợ giảng
+                      </h4>
+                      <p className="text-xs text-[#64748B]">
+                        Trợ giảng có thể phụ trách hỗ trợ nhiều lớp học.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStaffClasses((prev) => [...prev, ""])}
+                      className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
+                    >
+                      <Plus className="size-3.5 mr-1" /> Thêm lớp
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 mt-2">
+                    {staffClasses.map((cId, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <select
+                          className="field text-sm"
+                          value={cId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setStaffClasses((prev) => {
+                              const next = [...prev];
+                              next[idx] = val;
+                              return next;
+                            });
+                          }}
+                        >
+                          <option value="">-- Chọn lớp trợ giảng #{idx + 1} --</option>
+                          {classes.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({c.code}) - {c.school?.name}
+                            </option>
+                          ))}
+                        </select>
+                        {staffClasses.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              setStaffClasses((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="size-9 text-slate-400 hover:text-rose-500 shrink-0"
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* D. HỌC SINH: GHI DANH VÀO LỚP HỌC DẤU (+) */}
+              {selectedRole === "STUDENT" && (
+                <div className="space-y-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3.5">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-sm font-bold text-[#0F172A]">Ghi danh vào lớp học</h4>
+                      <p className="text-xs text-[#64748B]">
+                        Chọn một hoặc nhiều lớp học mà học viên này theo học.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setStudentClasses((prev) => [...prev, ""])}
+                        className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
+                      >
+                        <Plus className="size-3.5 mr-1" /> Thêm lớp
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onAddClassShortcut}
+                        title="Tạo nhanh lớp mới"
+                        className="text-xs h-7"
+                      >
+                        <CirclePlus className="size-3.5 mr-1 text-[#EA580C]" /> Tạo lớp mới
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mt-2">
+                    {studentClasses.map((cId, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <select
+                          className="field text-sm"
+                          value={cId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setStudentClasses((prev) => {
+                              const next = [...prev];
+                              next[idx] = val;
+                              return next;
+                            });
+                          }}
+                        >
+                          <option value="">-- Chọn lớp học #{idx + 1} --</option>
+                          {classes.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({c.code}) - {c.school?.name}
+                            </option>
+                          ))}
+                        </select>
+                        {studentClasses.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              setStudentClasses((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="size-9 text-slate-400 hover:text-rose-500 shrink-0"
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* E. QUẢN TRỊ VIÊN */}
+              {selectedRole === "ADMIN" && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                  <b>Lưu ý:</b> Tài khoản Quản trị viên có toàn quyền kiểm soát toàn bộ trường học,
+                  lớp học, phân quyền và cấu hình hệ thống mà không bị giới hạn trường lớp.
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-[#E2E8F0]">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Hủy
+              </Button>
+              <Button
+                type="submit"
+                disabled={isPending || !!emailError}
+                className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white"
+              >
+                {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null} Tạo tài khoản
+              </Button>
+            </div>
+          </form>
+        ) : (
+          /* ========================================================
+             CHẾ ĐỘ 2: NHẬP HÀNG LOẠT TỪ EXCEL (TÍCH HỢP)
+             ======================================================== */
+          <div className="space-y-4 pt-2">
+            <div className="flex justify-between items-center bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <div>
+                <h4 className="text-sm font-bold text-[#0F172A]">File mẫu Excel chuẩn SIMPACE</h4>
+                <p className="text-xs text-[#64748B]">
+                  Bao gồm các cột: STT, Họ và tên, Email, Mã lớp IELTS, SĐT, Ngày sinh, Giới tính.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadSample}
+                className="text-xs border-[#CBD5E1] text-[#0F172A] hover:border-[#EA580C]"
+              >
+                <Download className="size-3.5 mr-1 text-[#EA580C]" /> Tải file mẫu (.xlsx)
+              </Button>
+            </div>
+
+            {/* Dropzone */}
+            <div className="border-2 border-dashed border-[#CBD5E1] hover:border-[#EA580C] rounded-2xl p-6 text-center transition bg-[#F8FAFC]">
+              <FileSpreadsheet className="size-10 mx-auto text-[#EA580C] mb-2" />
+              <p className="text-sm font-semibold text-[#0F172A]">
+                {excelFile ? excelFile.name : "Kéo thả file Excel học viên vào đây hoặc duyệt file"}
+              </p>
+              <p className="text-xs text-[#94A3B8] mt-1">Hỗ trợ định dạng .xlsx, .xls</p>
+              <input
+                type="file"
+                accept=".xlsx, .xls"
+                onChange={handleExcelChange}
+                className="mt-3 block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#FFF1EB] file:text-[#EA580C] hover:file:bg-[#FFE5D6] cursor-pointer"
+              />
+            </div>
+
+            {analyzingExcel && (
+              <div className="flex items-center justify-center gap-2 py-4 text-sm text-[#EA580C] font-medium">
+                <Loader2 className="size-5 animate-spin" /> Đang phân tích và kiểm tra tính hợp lệ...
+              </div>
             )}
 
-            {(selectedRole === "TEACHER" || selectedRole === "TEACHING_ASSISTANT") && (
-              <div className="sm:col-span-2">
-                <label className="text-sm font-semibold">Phân công lớp đầu tiên (Tùy chọn)</label>
-                <select name="classId" className="field mt-2">
-                  <option value="">-- Chưa phân công lớp lúc này --</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.code}) - {c.school?.name}
-                    </option>
-                  ))}
-                </select>
+            {excelError && (
+              <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-medium border border-red-200">
+                {excelError}
+              </div>
+            )}
+
+            {/* Kết quả phân tích */}
+            {excelReport && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200">
+                    <span className="text-xs text-slate-500 block">Tổng số dòng</span>
+                    <b className="text-lg text-slate-800">{excelReport.totalRows}</b>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <span className="text-xs text-emerald-600 block">Hợp lệ để nhập</span>
+                    <b className="text-lg text-emerald-700">{excelReport.validCount}</b>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
+                    <span className="text-xs text-rose-500 block">Bị lỗi từ chối</span>
+                    <b className="text-lg text-rose-600">{excelReport.errorCount}</b>
+                  </div>
+                </div>
+
+                {excelReport.errorRows?.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 space-y-1">
+                    <b className="block font-bold">Danh sách dòng không hợp lệ:</b>
+                    {excelReport.errorRows.map((err: any, idx: number) => (
+                      <div key={idx}>
+                        • Dòng {err.stt}: {err.fullName} ({err.email}) — <i>{err.reason}</i>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    Hủy
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={committingExcel || excelReport.validCount === 0}
+                    onClick={handleCommitExcel}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    {committingExcel ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <Check className="mr-1.5 size-4" />
+                    )}
+                    Xác nhận nhập {excelReport.validCount} học viên
+                  </Button>
+                </div>
               </div>
             )}
           </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-[#E2E8F0]">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Hủy
-            </Button>
-            <Button type="submit" disabled={isPending} className="bg-[#EA580C] text-white">
-              {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null} Tạo tài khoản
-            </Button>
-          </div>
-        </form>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -3438,26 +4540,99 @@ function ClassDialog({
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
+  const [selectedSchoolId, setSelectedSchoolId] = useState("");
+  const [selectedProgram, setSelectedProgram] = useState("IELTS");
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [capacity, setCapacity] = useState(30);
+
+  // Gán đa nhiệm GV và TA (+)
+  const [teacherIds, setTeacherIds] = useState<string[]>([""]);
+  const [taIds, setTaIds] = useState<string[]>([""]);
+
+  // Date & Time Picker
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [startTime, setStartTime] = useState("18:00");
+  const [endTime, setEndTime] = useState("20:00");
+  const [customSchedule, setCustomSchedule] = useState("");
+
+  const daysOfWeek = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
+
+  // Khi chọn thứ hoặc giờ -> tự cập nhật chuỗi thời khóa biểu
+  useEffect(() => {
+    if (selectedDays.length > 0) {
+      const dayStr = selectedDays.join(", ");
+      const timeStr = startTime && endTime ? ` • ${startTime} - ${endTime}` : "";
+      setCustomSchedule(`${dayStr}${timeStr}`);
+    }
+  }, [selectedDays, startTime, endTime]);
+
+  // Tự sinh mã lớp học khi chọn Trường hoặc Chương trình đào tạo (BUG_07)
+  useEffect(() => {
+    if (selectedSchoolId) {
+      getNextClassCodeAction(selectedSchoolId, selectedProgram).then((res) => {
+        if (res && res.success && res.code) {
+          setCode(res.code);
+        }
+      });
+    } else {
+      setCode("");
+    }
+  }, [selectedSchoolId, selectedProgram]);
+
+  const toggleDay = (day: string) => {
+    setSelectedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  };
+
+  const handleAddTeacher = () => setTeacherIds((prev) => [...prev, ""]);
+  const handleRemoveTeacher = (idx: number) => setTeacherIds((prev) => prev.filter((_, i) => i !== idx));
+  const handleTeacherChange = (idx: number, val: string) => {
+    setTeacherIds((prev) => {
+      const copy = [...prev];
+      copy[idx] = val;
+      return copy;
+    });
+  };
+
+  const handleAddTa = () => setTaIds((prev) => [...prev, ""]);
+  const handleRemoveTa = (idx: number) => setTaIds((prev) => prev.filter((_, i) => i !== idx));
+  const handleTaChange = (idx: number, val: string) => {
+    setTaIds((prev) => {
+      const copy = [...prev];
+      copy[idx] = val;
+      return copy;
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
-    const form = e.currentTarget;
-    const formData = new FormData(form);
+
+    if (!selectedSchoolId) {
+      setErrorMsg("Vui lòng chọn trường học đối tác!");
+      return;
+    }
+    if (!name.trim()) {
+      setErrorMsg("Vui lòng nhập tên lớp học!");
+      return;
+    }
 
     startTransition(async () => {
       const res = await createClassAction({
-        code: formData.get("code")?.toString() || "",
-        name: formData.get("name")?.toString() || "",
-        schoolId: formData.get("schoolId")?.toString() || "",
-        program: (formData.get("program")?.toString() as any) || "IELTS",
-        level: formData.get("level")?.toString(),
-        capacity: Number(formData.get("capacity")) || 30,
-        teacherId: formData.get("teacherId")?.toString(),
-        taId: formData.get("taId")?.toString(),
-        schedule: formData.get("schedule")?.toString(),
-        startDate: formData.get("startDate")?.toString(),
-        endDate: formData.get("endDate")?.toString(),
+        code: code.trim(),
+        name: name.trim(),
+        schoolId: selectedSchoolId,
+        program: selectedProgram as any,
+        capacity: Number(capacity) || 30,
+        teacherIds: teacherIds.filter(Boolean),
+        taIds: taIds.filter(Boolean),
+        schedule: customSchedule.trim(),
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
       });
 
       if (!res.success) {
@@ -3465,18 +4640,17 @@ function ClassDialog({
         return;
       }
 
-      form.reset();
       onDone();
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Tạo lớp học mới</DialogTitle>
           <DialogDescription>
-            Lớp học sẽ trực thuộc trường học đối tác và có thể phân công giáo viên/trợ giảng.
+            Lớp học sẽ trực thuộc trường học đối tác, hỗ trợ tự sinh mã lớp, bộ chọn lịch học thông minh và gán đa giáo viên / trợ giảng.
           </DialogDescription>
         </DialogHeader>
 
@@ -3488,14 +4662,19 @@ function ClassDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="code" label="Mã lớp IELTS *" placeholder="VD: IELTS_TD_01" required />
-            <Field name="name" label="Tên lớp học *" placeholder="VD: IELTS Bứt Phá - 10A1" required />
-
+            {/* Trường học & Thêm nhanh trường */}
             <div className="sm:col-span-2">
-              <label className="text-sm font-semibold">Trường học đối tác *</label>
-              <div className="mt-2 flex gap-2">
-                <select name="schoolId" required className="field">
-                  <option value="">-- Chọn trường học --</option>
+              <label className="text-sm font-semibold text-[#0F172A] block mb-1.5">
+                Trường học đối tác *
+              </label>
+              <div className="flex gap-2">
+                <select
+                  required
+                  value={selectedSchoolId}
+                  onChange={(e) => setSelectedSchoolId(e.target.value)}
+                  className="field flex-1"
+                >
+                  <option value="">-- Chọn trường học đối tác --</option>
                   {schools.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({s.code})
@@ -3515,51 +4694,263 @@ function ClassDialog({
               </div>
             </div>
 
-            <div className="sm:col-span-2">
-              <Field
-                name="schedule"
-                label="Lịch học / Thời khóa biểu"
-                placeholder="VD: Thứ 2, 4, 6 • 18:30 - 20:30"
-              />
-            </div>
-
-            <Field name="startDate" label="Ngày bắt đầu" type="date" />
-            <Field name="endDate" label="Ngày kết thúc" type="date" />
-
-            <label className="block text-sm font-semibold">
-              Giáo viên phụ trách
-              <select name="teacherId" className="field mt-2">
-                <option value="">-- Chọn giáo viên (Gán sau) --</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.profile?.fullName || t.username}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block text-sm font-semibold">
-              Trợ giảng (TA) phụ trách
-              <select name="taId" className="field mt-2">
-                <option value="">-- Chọn trợ giảng (Gán sau) --</option>
-                {tas.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.profile?.fullName || t.username}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block text-sm font-semibold">
-              Chương trình đào tạo
-              <select name="program" className="field mt-2" defaultValue="IELTS">
+            {/* Chương trình đào tạo */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0F172A] mb-1.5">
+                Chương trình đào tạo
+              </label>
+              <select
+                value={selectedProgram}
+                onChange={(e) => setSelectedProgram(e.target.value)}
+                className="field"
+              >
                 <option value="IELTS">IELTS</option>
                 <option value="SAT">SAT</option>
                 <option value="CAMBRIDGE">Cambridge</option>
+                <option value="OTHER">Chương trình khác</option>
               </select>
-            </label>
+            </div>
 
-            <Field name="capacity" label="Sĩ số tối đa" type="number" defaultValue="30" />
+            {/* Sĩ số tối đa */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0F172A] mb-1.5">
+                Sĩ số tối đa
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={capacity}
+                onChange={(e) => setCapacity(Number(e.target.value))}
+                className="field"
+              />
+            </div>
+
+            {/* Mã lớp học (Tự sinh hoặc sửa) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-semibold text-[#0F172A]">Mã lớp học *</label>
+                <span className="text-[11px] text-[#EA580C] font-semibold bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
+                  Tự động sinh mã
+                </span>
+              </div>
+              <input
+                type="text"
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="VD: IELTS_TD_01"
+                className="field font-mono font-bold uppercase"
+              />
+              <p className="text-[11px] text-[#64748B] mt-1">
+                Quy chuẩn: [Chương trình]_[MãTrường]_[STT]
+              </p>
+            </div>
+
+            {/* Tên lớp học */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0F172A] mb-1.5">
+                Tên lớp học *
+              </label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="VD: IELTS Bứt Phá - 10A1"
+                className="field"
+              />
+            </div>
+          </div>
+
+          {/* KHỐI BỘ CHỌN LỊCH HỌC & THỜI KHÓA BIỂU (DATE TIME PICKER) */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 space-y-3.5">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="size-4 text-[#EA580C]" />
+              <h3 className="text-sm font-bold text-[#0F172A]">Thời khóa biểu &amp; Lịch học</h3>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold text-[#475569] block mb-1">
+                  Ngày khai giảng / bắt đầu
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="field text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#475569] block mb-1">
+                  Ngày bế giảng / kết thúc
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="field text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Pills chọn ngày trong tuần */}
+            <div>
+              <label className="text-xs font-semibold text-[#475569] block mb-1.5">
+                Các buổi học trong tuần:
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {daysOfWeek.map((day) => {
+                  const active = selectedDays.includes(day);
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => toggleDay(day)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        active
+                          ? "bg-[#EA580C] text-white shadow-sm"
+                          : "bg-white border border-[#CBD5E1] text-[#64748B] hover:border-[#EA580C]"
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Time Picker */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-[#475569] flex items-center gap-1 mb-1">
+                  <Clock className="size-3.5 text-[#EA580C]" /> Giờ bắt đầu
+                </label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="field text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#475569] flex items-center gap-1 mb-1">
+                  <Clock className="size-3.5 text-[#EA580C]" /> Giờ kết thúc
+                </label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="field text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Chuỗi tóm tắt lịch học */}
+            <div>
+              <label className="text-xs font-semibold text-[#475569] block mb-1">
+                Chuỗi tóm tắt lịch học (Tự động cập nhật hoặc sửa trực tiếp)
+              </label>
+              <input
+                type="text"
+                value={customSchedule}
+                onChange={(e) => setCustomSchedule(e.target.value)}
+                placeholder="VD: Thứ 2, Thứ 4, Thứ 6 • 18:00 - 20:00"
+                className="field text-sm bg-white font-medium"
+              />
+            </div>
+          </div>
+
+          {/* GÁN ĐA GIÁO VIÊN & ĐA TRỢ GIẢNG (+) */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Danh sách giáo viên */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-semibold text-[#0F172A]">
+                  Giáo viên giảng dạy
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAddTeacher}
+                  className="h-6 text-xs text-[#EA580C] hover:bg-orange-50 font-semibold px-2"
+                >
+                  <Plus className="size-3 mr-1" /> Thêm GV (+)
+                </Button>
+              </div>
+              {teacherIds.map((tid, idx) => (
+                <div key={idx} className="flex gap-1.5 items-center">
+                  <select
+                    value={tid}
+                    onChange={(e) => handleTeacherChange(idx, e.target.value)}
+                    className="field text-sm flex-1"
+                  >
+                    <option value="">-- Chọn giáo viên --</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.profile?.fullName || t.username} ({t.username})
+                      </option>
+                    ))}
+                  </select>
+                  {teacherIds.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTeacher(idx)}
+                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                      title="Xóa giáo viên này"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Danh sách trợ giảng */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-semibold text-[#0F172A]">
+                  Trợ giảng (TA) phụ trách
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAddTa}
+                  className="h-6 text-xs text-[#EA580C] hover:bg-orange-50 font-semibold px-2"
+                >
+                  <Plus className="size-3 mr-1" /> Thêm TA (+)
+                </Button>
+              </div>
+              {taIds.map((tid, idx) => (
+                <div key={idx} className="flex gap-1.5 items-center">
+                  <select
+                    value={tid}
+                    onChange={(e) => handleTaChange(idx, e.target.value)}
+                    className="field text-sm flex-1"
+                  >
+                    <option value="">-- Chọn trợ giảng --</option>
+                    {tas.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.profile?.fullName || t.username} ({t.username})
+                      </option>
+                    ))}
+                  </select>
+                  {taIds.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTa(idx)}
+                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                      title="Xóa trợ giảng này"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-[#E2E8F0]">
@@ -3579,16 +4970,26 @@ function ClassDialog({
 function SchoolSheet({
   open,
   onOpenChange,
-  managers,
   onDone,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  managers: any[];
   onDone: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
+  const [schoolName, setSchoolName] = useState("");
+  const [codePreview, setCodePreview] = useState("SCH_SIM");
+
+  useEffect(() => {
+    if (schoolName.trim()) {
+      getNextSchoolCodeAction(schoolName.trim()).then((res) => {
+        if (res.success && res.code) setCodePreview(res.code);
+      });
+    } else {
+      setCodePreview("SCH_SIM");
+    }
+  }, [schoolName]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -3598,10 +4999,8 @@ function SchoolSheet({
 
     startTransition(async () => {
       const res = await createSchoolAction({
-        code: formData.get("code")?.toString() || "",
-        name: formData.get("name")?.toString() || "",
+        name: schoolName.trim(),
         type: (formData.get("type")?.toString() as any) || "THPT",
-        managerId: formData.get("managerId")?.toString(),
         contactPhone: formData.get("contactPhone")?.toString(),
         address: formData.get("address")?.toString(),
         contactName: formData.get("contactName")?.toString(),
@@ -3613,6 +5012,7 @@ function SchoolSheet({
       }
 
       form.reset();
+      setSchoolName("");
       onDone();
     });
   };
@@ -3623,7 +5023,7 @@ function SchoolSheet({
         <SheetHeader>
           <SheetTitle>Thêm trường học mới</SheetTitle>
           <SheetDescription>
-            Tạo nhanh trường học đối tác và gán Quản nhiệm phụ trách.
+            Tạo trường học đối tác mới (Quản nhiệm sẽ được gán tại Quản lý người dùng).
           </SheetDescription>
         </SheetHeader>
 
@@ -3634,8 +5034,36 @@ function SchoolSheet({
         )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <Field name="name" label="Tên trường học *" placeholder="VD: THPT Trương Định" required />
-          <Field name="code" label="Mã trường *" placeholder="VD: THPT_TD" required />
+          <div>
+            <label className="text-sm font-semibold text-[#0F172A] block">
+              Tên trường học *
+              <input
+                name="name"
+                required
+                className="field mt-2"
+                placeholder="VD: THPT Trương Định"
+                value={schoolName}
+                onChange={(e) => setSchoolName(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold text-[#0F172A] block">
+              Mã trường học (Tự động sinh)
+              <input
+                name="code"
+                readOnly
+                disabled
+                className="field mt-2 bg-slate-100 text-slate-500 font-mono cursor-not-allowed"
+                value={codePreview}
+                title="Mã trường học được hệ thống tự động sinh theo quy tắc viết tắt"
+              />
+            </label>
+            <p className="text-[11px] text-[#64748B] mt-1">
+              * Hệ thống tự động sinh mã viết tắt chuẩn hóa khi lưu.
+            </p>
+          </div>
 
           <label className="block text-sm font-semibold">
             Khối / Cấp học
@@ -3647,20 +5075,8 @@ function SchoolSheet({
             </select>
           </label>
 
-          <label className="block text-sm font-semibold">
-            Quản nhiệm phụ trách (Mỗi trường 1 quản nhiệm)
-            <select name="managerId" className="field mt-2">
-              <option value="">-- Chọn Quản nhiệm (Gán sau) --</option>
-              {managers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.profile?.fullName || m.username} ({m.email})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <Field name="contactPhone" label="Số điện thoại liên hệ" placeholder="0987xxxxxx" />
-          <Field name="contactName" label="Đại diện liên hệ trường" placeholder="Thầy/Cô..." />
+          <Field name="contactPhone" label="Số điện thoại liên hệ BGH" placeholder="0987xxxxxx" />
+          <Field name="contactName" label="Đại diện liên hệ BGH" placeholder="Thầy/Cô..." />
           <Field name="address" label="Địa chỉ trường học" placeholder="Địa chỉ chi tiết..." />
 
           <div className="flex justify-end gap-2 pt-6">
@@ -3880,28 +5296,59 @@ function EditClassModal({
 
 function EditUserModal({
   user,
+  schools = [],
+  classes = [],
   onClose,
   onDone,
 }: {
   user: any;
+  schools?: any[];
+  classes?: any[];
   onClose: () => void;
   onDone: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<RoleCode>(user.role?.code || "STUDENT");
+
+  // Khởi tạo danh sách gán trường / lớp ban đầu của user
+  const initialSchools =
+    user.managedSchools?.map((s: any) => s.id) || (user.managedSchools?.length ? [] : [""]);
+  const initialClasses =
+    user.role?.code === "STUDENT"
+      ? user.classEnrollments?.map((e: any) => e.classId) || [""]
+      : user.classAssignments?.map((a: any) => a.classId) || [""];
+
+  const [managerSchools, setManagerSchools] = useState<string[]>(
+    initialSchools.length > 0 ? initialSchools : [""]
+  );
+  const [assignedClasses, setAssignedClasses] = useState<string[]>(
+    initialClasses.length > 0 ? initialClasses : [""]
+  );
 
   const handleUpdate = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
     const formData = new FormData(e.currentTarget);
+
+    const schoolIds = managerSchools.filter(Boolean);
+    const classIds = assignedClasses.filter(Boolean);
+
     startTransition(async () => {
       const res = await updateUserAction(user.id, {
         fullName: formData.get("fullName")?.toString()?.trim(),
         email: formData.get("email")?.toString()?.trim(),
-        username: formData.get("username")?.toString()?.trim(),
         phoneNumber: formData.get("phoneNumber")?.toString()?.trim(),
-        roleCode: formData.get("roleCode")?.toString() as any,
+        address: formData.get("address")?.toString()?.trim(),
+        roleCode: selectedRole,
+        schoolIds: selectedRole === "SCHOOL_MANAGER" ? schoolIds : undefined,
+        classIds:
+          selectedRole === "TEACHER" ||
+          selectedRole === "TEACHING_ASSISTANT" ||
+          selectedRole === "STUDENT"
+            ? classIds
+            : undefined,
         newPassword: formData.get("newPassword")?.toString()?.trim() || undefined,
       });
 
@@ -3916,11 +5363,11 @@ function EditUserModal({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Chỉnh sửa thông tin người dùng</DialogTitle>
           <DialogDescription>
-            Cập nhật họ tên, tài khoản, email hoặc đặt lại mật khẩu người dùng.
+            Cập nhật hồ sơ, vai trò, phân công trường/lớp hoặc đặt lại mật khẩu.
           </DialogDescription>
         </DialogHeader>
 
@@ -3948,12 +5395,20 @@ function EditUserModal({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field
-              name="username"
-              label="Tên đăng nhập / Mã tài khoản *"
-              defaultValue={user.username}
-              required
-            />
+            {/* BUG_12: Username là READ-ONLY / DISABLED tuyệt đối */}
+            <div>
+              <label className="text-sm font-semibold text-[#0F172A] block">
+                Mã tài khoản (Cố định)
+                <input
+                  name="username"
+                  defaultValue={user.username}
+                  disabled
+                  readOnly
+                  className="field mt-2 bg-slate-100 text-slate-500 cursor-not-allowed font-mono"
+                  title="Mã tài khoản định danh không thể chỉnh sửa"
+                />
+              </label>
+            </div>
             <Field
               name="phoneNumber"
               label="Số điện thoại"
@@ -3962,9 +5417,22 @@ function EditUserModal({
             />
           </div>
 
+          {/* Bổ sung ô Địa chỉ (BUG_16) */}
+          <Field
+            name="address"
+            label="Địa chỉ thường trú"
+            defaultValue={user.profile?.address || ""}
+            placeholder="Số nhà, đường, quận/huyện..."
+          />
+
           <label className="block text-sm font-semibold">
             Vai trò
-            <select name="roleCode" className="field mt-2" defaultValue={user.role?.code}>
+            <select
+              name="roleCode"
+              className="field mt-2"
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value as RoleCode)}
+            >
               <option value="STUDENT">Học sinh</option>
               <option value="TEACHER">Giáo viên</option>
               <option value="TEACHING_ASSISTANT">Trợ giảng</option>
@@ -3972,6 +5440,120 @@ function EditUserModal({
               <option value="ADMIN">Quản trị viên</option>
             </select>
           </label>
+
+          {/* PHÂN CÔNG ĐA NHIỆM (+) CHO QUẢN NHIỆM */}
+          {selectedRole === "SCHOOL_MANAGER" && (
+            <div className="space-y-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3 text-xs">
+              <div className="flex justify-between items-center">
+                <b className="text-slate-800">Trường học phụ trách (Quản lý đa trường):</b>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setManagerSchools((prev) => [...prev, ""])}
+                  className="h-6 text-[11px] border-[#EA580C] text-[#EA580C]"
+                >
+                  <Plus className="size-3 mr-1" /> Thêm trường
+                </Button>
+              </div>
+              {managerSchools.map((schId, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <select
+                    className="field text-xs"
+                    value={schId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setManagerSchools((prev) => {
+                        const next = [...prev];
+                        next[idx] = val;
+                        return next;
+                      });
+                    }}
+                  >
+                    <option value="">-- Chọn trường học phụ trách --</option>
+                    {schools.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.code})
+                      </option>
+                    ))}
+                  </select>
+                  {managerSchools.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        setManagerSchools((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                      className="size-7 text-slate-400 hover:text-rose-500 shrink-0"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* PHÂN CÔNG ĐA NHIỆM (+) CHO GV, TA HOẶC HỌC SINH */}
+          {(selectedRole === "TEACHER" ||
+            selectedRole === "TEACHING_ASSISTANT" ||
+            selectedRole === "STUDENT") && (
+            <div className="space-y-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3 text-xs">
+              <div className="flex justify-between items-center">
+                <b className="text-slate-800">
+                  {selectedRole === "STUDENT"
+                    ? "Lớp học theo học (Ghi danh đa lớp):"
+                    : "Lớp học phụ trách (Đảm nhiệm đa lớp):"}
+                </b>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAssignedClasses((prev) => [...prev, ""])}
+                  className="h-6 text-[11px] border-[#EA580C] text-[#EA580C]"
+                >
+                  <Plus className="size-3 mr-1" /> Thêm lớp
+                </Button>
+              </div>
+              {assignedClasses.map((cId, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <select
+                    className="field text-xs"
+                    value={cId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAssignedClasses((prev) => {
+                        const next = [...prev];
+                        next[idx] = val;
+                        return next;
+                      });
+                    }}
+                  >
+                    <option value="">-- Chọn lớp học --</option>
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.code}) - {c.school?.name}
+                      </option>
+                    ))}
+                  </select>
+                  {assignedClasses.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        setAssignedClasses((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                      className="size-7 text-slate-400 hover:text-rose-500 shrink-0"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3.5 space-y-2">
             <label className="block text-sm font-semibold text-[#0F172A]">

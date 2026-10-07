@@ -1,20 +1,126 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-export async function getSchoolsAction() {
+function safeRevalidate(path: string) {
+  try {
+    revalidatePath(path);
+  } catch {}
+}
+
+// Hàm sinh mã trường học tự động (BUG_06) - VD: THPT Trương Định -> SCH_TD
+export async function generateSchoolCode(schoolName: string): Promise<string> {
+  const cleanName = schoolName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .toUpperCase();
+
+  const words = cleanName
+    .split(/[\s,.-]+/)
+    .filter((w) => w && !["THPT", "THCS", "TRUONG", "DAI", "HOC", "TRUNG", "TAM"].includes(w));
+
+  let acronym = words.map((w) => w[0]).join("");
+  if (!acronym || acronym.length < 2) acronym = "SIM";
+
+  let candidate = `SCH_${acronym}`;
+  let existing = await prisma.school.findUnique({ where: { code: candidate } });
+  let idx = 1;
+
+  while (existing) {
+    candidate = `SCH_${acronym}_${idx.toString().padStart(2, "0")}`;
+    existing = await prisma.school.findUnique({ where: { code: candidate } });
+    idx++;
+  }
+
+  return candidate;
+}
+
+// Lấy mã trường học tiếp theo dự kiến cho Client Form
+export async function getNextSchoolCodeAction(name: string) {
+  if (!name || !name.trim()) return { success: true, code: "SCH_SIM" };
+  const code = await generateSchoolCode(name.trim());
+  return { success: true, code };
+}
+
+// Lấy danh sách trường học có phân quyền phạm vi Quản nhiệm & Lọc xóa mềm (BUG_02, BUG_09)
+export async function getSchoolsAction(
+  searchKeyword: string = "",
+  statusFilter: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
+) {
+  const session = await getSession();
+  const whereClause: any = {};
+
+  if (statusFilter === "ACTIVE") {
+    whereClause.isActive = true;
+  } else if (statusFilter === "INACTIVE") {
+    whereClause.isActive = false;
+  }
+
+  // Quản nhiệm CHỈ ĐƯỢC XEM trường mình phụ trách (BUG_02)
+  if (session?.role === "SCHOOL_MANAGER") {
+    whereClause.managerId = session.userId;
+  }
+
+  // Tìm kiếm tự động .trim() (BUG_09)
+  if (searchKeyword && searchKeyword.trim()) {
+    const clean = searchKeyword.trim();
+    whereClause.OR = [
+      { name: { contains: clean, mode: "insensitive" } },
+      { code: { contains: clean, mode: "insensitive" } },
+      { address: { contains: clean, mode: "insensitive" } },
+      { contactName: { contains: clean, mode: "insensitive" } },
+    ];
+  }
+
   return prisma.school.findMany({
-    where: { isActive: true },
+    where: whereClause,
     include: {
       manager: {
         include: { profile: true },
+      },
+      classes: {
+        where: { isActive: true },
+        include: {
+          assignments: {
+            include: { staff: { include: { profile: true } } },
+          },
+          _count: {
+            select: { enrollments: true },
+          },
+        },
       },
       _count: {
         select: { classes: { where: { isActive: true } } },
       },
     },
     orderBy: { createdAt: "desc" },
+  });
+}
+
+// Lấy chi tiết trường học và danh sách lớp trực thuộc (BUG_13)
+export async function getSchoolDetailAction(schoolId: string) {
+  return prisma.school.findUnique({
+    where: { id: schoolId },
+    include: {
+      manager: {
+        include: { profile: true },
+      },
+      classes: {
+        where: { isActive: true },
+        include: {
+          assignments: {
+            include: { staff: { include: { profile: true } } },
+          },
+          _count: {
+            select: { enrollments: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      },
+    },
   });
 }
 
@@ -29,8 +135,9 @@ export async function getSchoolManagersAction() {
   });
 }
 
+// Tạo trường học mới - Tự động sinh mã nếu không nhập, bỏ gán Quản nhiệm bắt buộc (BUG_06)
 export async function createSchoolAction(data: {
-  code: string;
+  code?: string;
   name: string;
   type?: "THCS" | "THPT" | "UNIVERSITY" | "OTHER";
   managerId?: string;
@@ -39,30 +146,42 @@ export async function createSchoolAction(data: {
   contactPhone?: string;
 }) {
   try {
+    const cleanName = data.name.trim();
+    if (!cleanName) {
+      return { success: false, error: "Tên trường học là bắt buộc!" };
+    }
+
+    // Tự sinh mã nếu không cung cấp
+    let code = data.code?.trim().toUpperCase();
+    if (!code) {
+      code = await generateSchoolCode(cleanName);
+    }
+
     const existing = await prisma.school.findUnique({
-      where: { code: data.code.trim().toUpperCase() },
+      where: { code },
     });
 
     if (existing) {
-      return { success: false, error: `Mã trường '${data.code}' đã tồn tại!` };
+      return { success: false, error: `Mã trường '${code}' đã tồn tại!` };
     }
 
     const school = await prisma.school.create({
       data: {
-        code: data.code.trim().toUpperCase(),
-        name: data.name.trim(),
+        code,
+        name: cleanName,
         type: data.type || "THPT",
         managerId: data.managerId || null,
-        address: data.address || null,
-        contactName: data.contactName || null,
-        contactPhone: data.contactPhone || null,
+        address: data.address?.trim() || null,
+        contactName: data.contactName?.trim() || null,
+        contactPhone: data.contactPhone?.trim() || null,
+        isActive: true,
       },
       include: {
         manager: { include: { profile: true } },
       },
     });
 
-    revalidatePath("/schools");
+    safeRevalidate("/schools");
     return { success: true, school };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể tạo trường học!" };
@@ -86,20 +205,21 @@ export async function updateSchoolAction(
       data: {
         name: data.name?.trim(),
         type: data.type,
-        managerId: data.managerId || null,
-        address: data.address,
-        contactName: data.contactName,
-        contactPhone: data.contactPhone,
+        managerId: data.managerId !== undefined ? data.managerId || null : undefined,
+        address: data.address?.trim() || null,
+        contactName: data.contactName?.trim() || null,
+        contactPhone: data.contactPhone?.trim() || null,
       },
     });
 
-    revalidatePath("/schools");
+    safeRevalidate("/schools");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể cập nhật trường học!" };
   }
 }
 
+// Xóa mềm trường học (isActive: false)
 export async function deleteSchoolAction(id: string) {
   try {
     await prisma.school.update({
@@ -107,10 +227,25 @@ export async function deleteSchoolAction(id: string) {
       data: { isActive: false },
     });
 
-    revalidatePath("/schools");
+    safeRevalidate("/schools");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa trường học!" };
+  }
+}
+
+// Khôi phục trường học đã xóa mềm
+export async function restoreSchoolAction(id: string) {
+  try {
+    await prisma.school.update({
+      where: { id },
+      data: { isActive: true },
+    });
+
+    safeRevalidate("/schools");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể khôi phục trường học!" };
   }
 }
 
@@ -122,7 +257,7 @@ export async function deleteMultipleSchoolsAction(ids: string[]) {
       data: { isActive: false },
     });
 
-    revalidatePath("/schools");
+    safeRevalidate("/schools");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa các trường đã chọn!" };

@@ -1,13 +1,83 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
 
-export async function getClassesAction(statusFilter: string = "ALL") {
-  const whereClause: any = { isActive: true };
+function safeRevalidate(path: string) {
+  try {
+    revalidatePath(path);
+  } catch {}
+}
+
+// Sinh mã lớp học tự động (BUG_07) theo cấu trúc: [Chương trình]_[Mã trường]_[STT 2 số] (VD: IELTS_TD_01)
+export async function generateClassCode(
+  schoolId: string,
+  program: string = "IELTS"
+): Promise<string> {
+  const school = await prisma.school.findUnique({ where: { id: schoolId } });
+  const schoolAcronym = school?.code.replace(/^SCH_/, "") || "SIM";
+  const cleanProgram = (program || "IELTS").toUpperCase();
+
+  const count = await prisma.class.count({
+    where: { schoolId, program: cleanProgram as any },
+  });
+
+  let nextNum = count + 1;
+  let candidate = `${cleanProgram}_${schoolAcronym}_${nextNum.toString().padStart(2, "0")}`;
+
+  while (await prisma.class.findUnique({ where: { code: candidate } })) {
+    nextNum++;
+    candidate = `${cleanProgram}_${schoolAcronym}_${nextNum.toString().padStart(2, "0")}`;
+  }
+
+  return candidate;
+}
+
+// Lấy mã lớp học tiếp theo cho Client xem trước (Preview)
+export async function getNextClassCodeAction(schoolId: string, program: string) {
+  if (!schoolId) return { success: false, code: "" };
+  const code = await generateClassCode(schoolId, program);
+  return { success: true, code };
+}
+
+// Lấy danh sách lớp học có phân quyền phạm vi Quản nhiệm & Lọc xóa mềm (BUG_03, BUG_10)
+export async function getClassesAction(
+  statusFilter: string = "ALL",
+  searchKeyword: string = "",
+  activeState: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
+) {
+  const session = await getSession();
+  const whereClause: any = {};
+
+  if (activeState === "ACTIVE") {
+    whereClause.isActive = true;
+  } else if (activeState === "INACTIVE") {
+    whereClause.isActive = false;
+  }
+
+  // Quản nhiệm CHỈ ĐƯỢC XEM lớp thuộc trường mình phụ trách (BUG_03)
+  if (session?.role === "SCHOOL_MANAGER") {
+    whereClause.school = { managerId: session.userId };
+  } else if (session?.role === "TEACHER" || session?.role === "TEACHING_ASSISTANT") {
+    whereClause.assignments = { some: { userId: session.userId } };
+  } else if (session?.role === "STUDENT") {
+    whereClause.enrollments = { some: { studentId: session.userId } };
+  }
+
   if (statusFilter !== "ALL") {
     whereClause.status = statusFilter as ClassStatus;
+  }
+
+  // Tìm kiếm tự động .trim() (BUG_10)
+  if (searchKeyword && searchKeyword.trim()) {
+    const clean = searchKeyword.trim();
+    whereClause.OR = [
+      { name: { contains: clean, mode: "insensitive" } },
+      { code: { contains: clean, mode: "insensitive" } },
+      { school: { name: { contains: clean, mode: "insensitive" } } },
+    ];
   }
 
   return prisma.class.findMany({
@@ -47,8 +117,9 @@ export async function getClassDetailAction(id: string) {
   });
 }
 
+// Tạo lớp học mới - Tự động sinh mã nếu không nhập, hỗ trợ gán đa giáo viên / trợ giảng
 export async function createClassAction(data: {
-  code: string;
+  code?: string;
   name: string;
   schoolId: string;
   program?: "IELTS" | "SAT" | "CAMBRIDGE" | "OTHER";
@@ -56,23 +127,36 @@ export async function createClassAction(data: {
   capacity?: number;
   teacherId?: string;
   taId?: string;
+  teacherIds?: string[];
+  taIds?: string[];
   startDate?: string;
   endDate?: string;
   schedule?: string;
 }) {
   try {
+    const cleanName = data.name.trim();
+    if (!cleanName || !data.schoolId) {
+      return { success: false, error: "Vui lòng nhập tên lớp và chọn trường học!" };
+    }
+
+    // Tự sinh mã lớp học nếu chưa có (BUG_07)
+    let code = data.code?.trim().toUpperCase();
+    if (!code) {
+      code = await generateClassCode(data.schoolId, data.program || "IELTS");
+    }
+
     const existing = await prisma.class.findUnique({
-      where: { code: data.code.trim().toUpperCase() },
+      where: { code },
     });
 
     if (existing) {
-      return { success: false, error: `Mã lớp '${data.code}' đã tồn tại!` };
+      return { success: false, error: `Mã lớp '${code}' đã tồn tại!` };
     }
 
     const newClass = await prisma.class.create({
       data: {
-        code: data.code.trim().toUpperCase(),
-        name: data.name.trim(),
+        code,
+        name: cleanName,
         schoolId: data.schoolId,
         program: data.program || "IELTS",
         level: data.level || null,
@@ -81,30 +165,37 @@ export async function createClassAction(data: {
         endDate: data.endDate ? new Date(data.endDate) : null,
         description: data.schedule || null,
         status: "ACTIVE",
+        isActive: true,
       },
     });
 
-    if (data.teacherId) {
+    // Phân công giáo viên
+    const teachersToAssign = data.teacherIds || (data.teacherId ? [data.teacherId] : []);
+    for (const tid of teachersToAssign) {
+      if (!tid) continue;
       await prisma.classAssignment.create({
         data: {
           classId: newClass.id,
-          userId: data.teacherId,
+          userId: tid,
           roleInClass: "TEACHER",
         },
       });
     }
 
-    if (data.taId) {
+    // Phân công trợ giảng
+    const tasToAssign = data.taIds || (data.taId ? [data.taId] : []);
+    for (const taId of tasToAssign) {
+      if (!taId) continue;
       await prisma.classAssignment.create({
         data: {
           classId: newClass.id,
-          userId: data.taId,
+          userId: taId,
           roleInClass: "TEACHING_ASSISTANT",
         },
       });
     }
 
-    revalidatePath("/classes");
+    safeRevalidate("/classes");
     return { success: true, class: newClass };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể tạo lớp học!" };
@@ -121,6 +212,8 @@ export async function updateClassAction(
     status?: ClassStatus;
     teacherId?: string;
     taId?: string;
+    teacherIds?: string[];
+    taIds?: string[];
     startDate?: string;
     endDate?: string;
     schedule?: string;
@@ -150,33 +243,42 @@ export async function updateClassAction(
       data: updateData,
     });
 
-    // Cập nhật phân công giáo viên nếu có chọn
-    if (data.teacherId) {
+    // Cập nhật phân công giáo viên
+    if (data.teacherIds !== undefined || data.teacherId !== undefined) {
       await prisma.classAssignment.deleteMany({
         where: { classId: id, roleInClass: "TEACHER" },
       });
-      await prisma.classAssignment.create({
-        data: { classId: id, userId: data.teacherId, roleInClass: "TEACHER" },
-      });
+      const tList = data.teacherIds || (data.teacherId ? [data.teacherId] : []);
+      for (const tid of tList) {
+        if (!tid) continue;
+        await prisma.classAssignment.create({
+          data: { classId: id, userId: tid, roleInClass: "TEACHER" },
+        });
+      }
     }
 
-    // Cập nhật phân công trợ giảng nếu có chọn
-    if (data.taId) {
+    // Cập nhật phân công trợ giảng
+    if (data.taIds !== undefined || data.taId !== undefined) {
       await prisma.classAssignment.deleteMany({
         where: { classId: id, roleInClass: "TEACHING_ASSISTANT" },
       });
-      await prisma.classAssignment.create({
-        data: { classId: id, userId: data.taId, roleInClass: "TEACHING_ASSISTANT" },
-      });
+      const taList = data.taIds || (data.taId ? [data.taId] : []);
+      for (const taId of taList) {
+        if (!taId) continue;
+        await prisma.classAssignment.create({
+          data: { classId: id, userId: taId, roleInClass: "TEACHING_ASSISTANT" },
+        });
+      }
     }
 
-    revalidatePath("/classes");
+    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể cập nhật lớp học!" };
   }
 }
 
+// Xóa mềm lớp học (isActive: false)
 export async function deleteClassAction(id: string) {
   try {
     await prisma.class.update({
@@ -184,10 +286,25 @@ export async function deleteClassAction(id: string) {
       data: { isActive: false },
     });
 
-    revalidatePath("/classes");
+    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa lớp học!" };
+  }
+}
+
+// Khôi phục lớp học đã xóa mềm
+export async function restoreClassAction(id: string) {
+  try {
+    await prisma.class.update({
+      where: { id },
+      data: { isActive: true },
+    });
+
+    safeRevalidate("/classes");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể khôi phục lớp học!" };
   }
 }
 
@@ -198,50 +315,45 @@ export async function deleteMultipleClassesAction(ids: string[]) {
       data: { isActive: false },
     });
 
-    revalidatePath("/classes");
+    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa các lớp đã chọn!" };
   }
 }
 
-// Phân công hoặc Thay thế Giáo viên / Trợ giảng cho lớp
 export async function assignStaffToClassAction(
   classId: string,
   userId: string,
   roleInClass: StaffClassRole
 ) {
   try {
-    // Xóa phân công cũ của vai trò này (nếu có) để thay thế
-    await prisma.classAssignment.deleteMany({
-      where: { classId, roleInClass },
-    });
-
-    await prisma.classAssignment.create({
-      data: {
-        classId,
-        userId,
-        roleInClass,
+    await prisma.classAssignment.upsert({
+      where: {
+        classId_userId: { classId, userId },
       },
+      create: { classId, userId, roleInClass },
+      update: { roleInClass },
     });
 
-    revalidatePath("/classes");
+    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || "Không thể phân công nhân sự!" };
+    return { success: false, error: error.message || "Không thể gán nhân sự vào lớp!" };
   }
 }
 
-// Hủy phân công Giáo viên / Trợ giảng khỏi lớp
 export async function removeStaffFromClassAction(classId: string, userId: string) {
   try {
-    await prisma.classAssignment.deleteMany({
-      where: { classId, userId },
+    await prisma.classAssignment.delete({
+      where: {
+        classId_userId: { classId, userId },
+      },
     });
 
-    revalidatePath("/classes");
+    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || "Không thể hủy phân công!" };
+    return { success: false, error: error.message || "Không thể hủy phân công nhân sự!" };
   }
 }

@@ -1,10 +1,11 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { hashPassword, verifyPassword } from "@/lib/auth";
+import { hashPassword, verifyPassword, getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import * as XLSX from "xlsx";
-import { RoleCode, Gender } from "@prisma/client";
+import { RoleCode, Gender, StaffClassRole } from "@prisma/client";
+import { sendAccountCreatedEmail } from "@/lib/mail";
 
 function safeRevalidate(path: string) {
   try {
@@ -12,9 +13,85 @@ function safeRevalidate(path: string) {
   } catch {}
 }
 
-export async function getUsersAction(roleFilter: string = "Tất cả") {
-  const whereClause: any = { isActive: true };
+// Chuẩn Regex RFC 5322 kiểm tra email hợp lệ bắt buộc có TLD
+const RFC5322_EMAIL_REGEX =
+  /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
+const ROLE_PREFIX_MAP: Record<RoleCode, string> = {
+  ADMIN: "AD",
+  SCHOOL_MANAGER: "QN",
+  TEACHER: "GV",
+  TEACHING_ASSISTANT: "TG",
+  STUDENT: "HV",
+};
+
+// Hàm sinh mã tài khoản tuần tự theo vai trò (HV1001, GV1001, TG1001, QN1001, AD1001)
+export async function generateUserCode(roleCode: RoleCode): Promise<string> {
+  const prefix = ROLE_PREFIX_MAP[roleCode] || "ND";
+  const count = await prisma.user.count({
+    where: { role: { code: roleCode } },
+  });
+  let nextNum = 1001 + count;
+  let candidate = `${prefix}${nextNum}`;
+
+  while (await prisma.user.findUnique({ where: { username: candidate } })) {
+    nextNum++;
+    candidate = `${prefix}${nextNum}`;
+  }
+  return candidate;
+}
+
+// Lấy mã người dùng tiếp theo dự kiến cho Client Form Preview
+export async function getNextUserCodeAction(roleCode: RoleCode) {
+  const code = await generateUserCode(roleCode);
+  return { success: true, code };
+}
+
+// Lấy danh sách người dùng với cơ chế phân quyền chặt chẽ (Scoping) & Lọc trạng thái Xóa mềm
+export async function getUsersAction(
+  roleFilter: string = "Tất cả",
+  searchKeyword: string = "",
+  statusFilter: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
+) {
+  const session = await getSession();
+  const whereClause: any = {};
+
+  // Lọc theo trạng thái xóa mềm
+  if (statusFilter === "ACTIVE") {
+    whereClause.isActive = true;
+  } else if (statusFilter === "INACTIVE") {
+    whereClause.isActive = false;
+  }
+
+  // 1. Kiểm soát phân quyền Quản nhiệm (Strict Scoping - BUG_01)
+  if (session?.role === "SCHOOL_MANAGER") {
+    const managedSchools = await prisma.school.findMany({
+      where: { managerId: session.userId, isActive: true },
+      select: { id: true },
+    });
+    const schoolIds = managedSchools.map((s) => s.id);
+
+    // Quản nhiệm KHÔNG ĐƯỢC thấy Admin và Quản nhiệm khác
+    whereClause.role = {
+      code: { in: ["TEACHER", "TEACHING_ASSISTANT", "STUDENT"] },
+    };
+
+    // Chỉ thấy GV, TA phụ trách lớp hoặc Học sinh thuộc trường của mình
+    whereClause.OR = [
+      {
+        classAssignments: {
+          some: { class: { schoolId: { in: schoolIds } } },
+        },
+      },
+      {
+        classEnrollments: {
+          some: { class: { schoolId: { in: schoolIds } } },
+        },
+      },
+    ];
+  }
+
+  // 2. Lọc theo vai trò (Role Filter)
   const roleMap: Record<string, RoleCode> = {
     "Quản trị viên": "ADMIN",
     "Quản nhiệm": "SCHOOL_MANAGER",
@@ -24,7 +101,41 @@ export async function getUsersAction(roleFilter: string = "Tất cả") {
   };
 
   if (roleFilter !== "Tất cả" && roleMap[roleFilter]) {
-    whereClause.role = { code: roleMap[roleFilter] };
+    const targetRole = roleMap[roleFilter];
+    // Nếu là Quản nhiệm cố chọn Admin/Quản nhiệm thì chặn
+    if (
+      session?.role === "SCHOOL_MANAGER" &&
+      (targetRole === "ADMIN" || targetRole === "SCHOOL_MANAGER")
+    ) {
+      return [];
+    }
+    whereClause.role = { code: targetRole };
+  }
+
+  // 3. Tìm kiếm từ khóa tự động .trim() (BUG_11)
+  if (searchKeyword && searchKeyword.trim()) {
+    const cleanSearch = searchKeyword.trim();
+    const searchConditions = [
+      { username: { contains: cleanSearch, mode: "insensitive" } },
+      { email: { contains: cleanSearch, mode: "insensitive" } },
+      {
+        profile: {
+          fullName: { contains: cleanSearch, mode: "insensitive" },
+        },
+      },
+      {
+        profile: {
+          phoneNumber: { contains: cleanSearch, mode: "insensitive" },
+        },
+      },
+    ];
+
+    if (whereClause.OR) {
+      whereClause.AND = [{ OR: whereClause.OR }, { OR: searchConditions }];
+      delete whereClause.OR;
+    } else {
+      whereClause.OR = searchConditions;
+    }
   }
 
   return prisma.user.findMany({
@@ -33,6 +144,9 @@ export async function getUsersAction(roleFilter: string = "Tất cả") {
       role: true,
       profile: true,
       managedSchools: true,
+      classAssignments: {
+        include: { class: { include: { school: true } } },
+      },
       classEnrollments: {
         include: { class: { include: { school: true } } },
       },
@@ -57,17 +171,31 @@ export async function getTAsAction() {
   });
 }
 
-import { sendAccountCreatedEmail } from "@/lib/mail";
-
+// Tạo người dùng mới với cơ chế Role-First, RFC5322 validation, sinh mã tuần tự & gán đa nhiệm (+)
 export async function createUserAction(data: {
   fullName: string;
   email: string;
   roleCode: RoleCode;
   phoneNumber?: string;
-  classId?: string;
+  address?: string;
+  dateOfBirth?: string;
+  gender?: Gender;
+  schoolIds?: string[]; // Dành cho Quản nhiệm (1 QN quản lý nhiều trường)
+  classIds?: string[]; // Dành cho GV, TA hoặc Học sinh (gán nhiều lớp)
+  extraInfo?: any;
 }) {
   try {
     const cleanEmail = data.email.trim().toLowerCase();
+
+    // 1. Kiểm tra định dạng Email RFC 5322 (BUG_17)
+    if (!RFC5322_EMAIL_REGEX.test(cleanEmail)) {
+      return {
+        success: false,
+        error:
+          "Email không đúng định dạng chuẩn! Vui lòng nhập đúng định dạng (Ví dụ: name@simpace.edu.vn)",
+      };
+    }
+
     const role = await prisma.role.findUnique({
       where: { code: data.roleCode },
     });
@@ -78,7 +206,9 @@ export async function createUserAction(data: {
 
     const defaultPassword = "Simpace@2026";
     const passwordHash = await hashPassword(defaultPassword);
-    const username = cleanEmail.split("@")[0];
+
+    // 2. Tự động sinh mã người dùng chuẩn (HV1001, GV1001...) (BUG_08)
+    const username = await generateUserCode(data.roleCode);
 
     const existing = await prisma.user.findUnique({
       where: { email: cleanEmail },
@@ -93,11 +223,13 @@ export async function createUserAction(data: {
         };
       }
 
-      // Tài khoản đã từng bị xóa -> Tái kích hoạt và cập nhật thông tin mới
+      // Tái kích hoạt tài khoản đã xóa mềm
       const updatedUser = await prisma.user.update({
         where: { id: existing.id },
         data: {
-          username,
+          username: existing.username.startsWith(ROLE_PREFIX_MAP[data.roleCode] || "ND")
+            ? existing.username
+            : username,
           passwordHash,
           roleId: role.id,
           isActive: true,
@@ -107,10 +239,18 @@ export async function createUserAction(data: {
               create: {
                 fullName: data.fullName.trim(),
                 phoneNumber: data.phoneNumber || null,
+                address: data.address || null,
+                dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+                gender: data.gender || null,
+                extraInfo: data.extraInfo || null,
               },
               update: {
                 fullName: data.fullName.trim(),
                 phoneNumber: data.phoneNumber || null,
+                address: data.address || null,
+                dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+                gender: data.gender || null,
+                extraInfo: data.extraInfo || null,
               },
             },
           },
@@ -118,31 +258,14 @@ export async function createUserAction(data: {
         include: { profile: true, role: true },
       });
 
-      // Nếu là Học sinh và có chọn lớp học
-      if (data.classId && data.roleCode === "STUDENT") {
-        await prisma.classEnrollment.upsert({
-          where: {
-            classId_studentId: {
-              classId: data.classId,
-              studentId: updatedUser.id,
-            },
-          },
-          create: {
-            classId: data.classId,
-            studentId: updatedUser.id,
-            status: "STUDYING",
-          },
-          update: {
-            status: "STUDYING",
-          },
-        });
-      }
+      // Gán đa nhiệm theo vai trò
+      await handleAssignments(updatedUser.id, data.roleCode, data.schoolIds, data.classIds);
 
-      // Gửi email thông báo cấp lại / tái kích hoạt tài khoản
+      // Gửi email thông báo
       const mailResult = await sendAccountCreatedEmail({
         to: cleanEmail,
         fullName: data.fullName.trim(),
-        username,
+        username: updatedUser.username,
         tempPassword: defaultPassword,
         roleName: role.name,
       });
@@ -156,6 +279,7 @@ export async function createUserAction(data: {
       };
     }
 
+    // Tạo mới tài khoản
     const newUser = await prisma.user.create({
       data: {
         username,
@@ -167,24 +291,20 @@ export async function createUserAction(data: {
           create: {
             fullName: data.fullName.trim(),
             phoneNumber: data.phoneNumber || null,
+            address: data.address || null,
+            dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+            gender: data.gender || null,
+            extraInfo: data.extraInfo || null,
           },
         },
       },
       include: { profile: true, role: true },
     });
 
-    // Nếu là Học sinh và có chọn lớp học
-    if (data.classId && data.roleCode === "STUDENT") {
-      await prisma.classEnrollment.create({
-        data: {
-          classId: data.classId,
-          studentId: newUser.id,
-          status: "STUDYING",
-        },
-      });
-    }
+    // Xử lý gán đa nhiệm
+    await handleAssignments(newUser.id, data.roleCode, data.schoolIds, data.classIds);
 
-    // Gửi email thông báo cấp tài khoản mới
+    // Gửi email thông báo
     const mailResult = await sendAccountCreatedEmail({
       to: cleanEmail,
       fullName: data.fullName.trim(),
@@ -205,23 +325,86 @@ export async function createUserAction(data: {
   }
 }
 
+// Xử lý gán đa nhiệm cho Quản nhiệm (Trường) hoặc GV/TA/Học sinh (Lớp)
+async function handleAssignments(
+  userId: string,
+  roleCode: RoleCode,
+  schoolIds?: string[],
+  classIds?: string[]
+) {
+  // 1. Quản nhiệm: gán các trường phụ trách
+  if (roleCode === "SCHOOL_MANAGER" && schoolIds && schoolIds.length > 0) {
+    await prisma.school.updateMany({
+      where: { id: { in: schoolIds } },
+      data: { managerId: userId },
+    });
+  }
+
+  // 2. Giáo viên: gán các lớp giảng dạy
+  if (roleCode === "TEACHER" && classIds && classIds.length > 0) {
+    for (const classId of classIds) {
+      if (!classId) continue;
+      await prisma.classAssignment.upsert({
+        where: { classId_userId: { classId, userId } },
+        create: { classId, userId, roleInClass: "TEACHER" },
+        update: { roleInClass: "TEACHER" },
+      });
+    }
+  }
+
+  // 3. Trợ giảng: gán các lớp trợ giảng
+  if (roleCode === "TEACHING_ASSISTANT" && classIds && classIds.length > 0) {
+    for (const classId of classIds) {
+      if (!classId) continue;
+      await prisma.classAssignment.upsert({
+        where: { classId_userId: { classId, userId } },
+        create: { classId, userId, roleInClass: "TEACHING_ASSISTANT" },
+        update: { roleInClass: "TEACHING_ASSISTANT" },
+      });
+    }
+  }
+
+  // 4. Học sinh: ghi danh vào các lớp học
+  if (roleCode === "STUDENT" && classIds && classIds.length > 0) {
+    for (const classId of classIds) {
+      if (!classId) continue;
+      await prisma.classEnrollment.upsert({
+        where: { classId_studentId: { classId, studentId: userId } },
+        create: { classId, studentId: userId, status: "STUDYING" },
+        update: { status: "STUDYING" },
+      });
+    }
+  }
+}
+
+// Cập nhật thông tin người dùng
 export async function updateUserAction(
   id: string,
   data: {
     fullName?: string;
     email?: string;
-    username?: string;
     phoneNumber?: string;
+    address?: string;
+    dateOfBirth?: string;
+    gender?: Gender;
     roleCode?: RoleCode;
     newPassword?: string;
+    schoolIds?: string[];
+    classIds?: string[];
   }
 ) {
   try {
     const updateUserData: any = {};
 
-    // 1. Kiểm tra và cập nhật email
+    // 1. Kiểm tra và cập nhật email RFC 5322
     if (data.email && data.email.trim()) {
       const cleanEmail = data.email.trim().toLowerCase();
+      if (!RFC5322_EMAIL_REGEX.test(cleanEmail)) {
+        return {
+          success: false,
+          error: "Email không đúng định dạng chuẩn có tên miền (VD: name@simpace.edu.vn)!",
+        };
+      }
       const existingEmailUser = await prisma.user.findFirst({
         where: { email: cleanEmail, id: { not: id } },
       });
@@ -234,28 +417,13 @@ export async function updateUserAction(
       updateUserData.email = cleanEmail;
     }
 
-    // 2. Kiểm tra và cập nhật username
-    if (data.username && data.username.trim()) {
-      const cleanUsername = data.username.trim().toLowerCase();
-      const existingNameUser = await prisma.user.findFirst({
-        where: { username: cleanUsername, id: { not: id } },
-      });
-      if (existingNameUser) {
-        return {
-          success: false,
-          error: `Tên đăng nhập '${cleanUsername}' đã được sử dụng bởi tài khoản khác!`,
-        };
-      }
-      updateUserData.username = cleanUsername;
-    }
-
-    // 3. Cập nhật vai trò
+    // 2. Cập nhật vai trò
     if (data.roleCode) {
       const role = await prisma.role.findUnique({ where: { code: data.roleCode } });
       if (role) updateUserData.roleId = role.id;
     }
 
-    // 4. Đặt lại mật khẩu mới nếu có nhập
+    // 3. Đặt lại mật khẩu mới nếu có
     if (data.newPassword && data.newPassword.trim()) {
       if (data.newPassword.trim().length < 6) {
         return {
@@ -275,16 +443,67 @@ export async function updateUserAction(
           upsert: {
             create: {
               fullName: data.fullName || "Người dùng",
-              phoneNumber: data.phoneNumber,
+              phoneNumber: data.phoneNumber || null,
+              address: data.address || null,
+              dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+              gender: data.gender || null,
             },
             update: {
               fullName: data.fullName,
-              phoneNumber: data.phoneNumber,
+              phoneNumber: data.phoneNumber || null,
+              address: data.address || null,
+              dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+              gender: data.gender || null,
             },
           },
         },
       },
     });
+
+    // 4. Đồng bộ gán trường cho Quản nhiệm nếu có cập nhật
+    if (data.schoolIds !== undefined) {
+      // Bỏ gán các trường cũ của quản nhiệm này
+      await prisma.school.updateMany({
+        where: { managerId: id },
+        data: { managerId: null },
+      });
+      // Gán các trường mới
+      if (data.schoolIds.length > 0) {
+        await prisma.school.updateMany({
+          where: { id: { in: data.schoolIds } },
+          data: { managerId: id },
+        });
+      }
+    }
+
+    // 5. Đồng bộ gán lớp cho GV / TA nếu có cập nhật
+    if (data.classIds !== undefined && data.roleCode) {
+      if (data.roleCode === "TEACHER" || data.roleCode === "TEACHING_ASSISTANT") {
+        await prisma.classAssignment.deleteMany({ where: { userId: id } });
+        for (const classId of data.classIds) {
+          if (!classId) continue;
+          await prisma.classAssignment.create({
+            data: {
+              classId,
+              userId: id,
+              roleInClass: data.roleCode as StaffClassRole,
+            },
+          });
+        }
+      } else if (data.roleCode === "STUDENT") {
+        await prisma.classEnrollment.deleteMany({ where: { studentId: id } });
+        for (const classId of data.classIds) {
+          if (!classId) continue;
+          await prisma.classEnrollment.create({
+            data: {
+              classId,
+              studentId: id,
+              status: "STUDYING",
+            },
+          });
+        }
+      }
+    }
 
     safeRevalidate("/users");
     return { success: true };
@@ -293,87 +512,92 @@ export async function updateUserAction(
   }
 }
 
+// Xóa mềm người dùng (isActive: false) - Tuyệt đối bảo vệ dữ liệu lịch sử (BUG_05)
 export async function deleteUserAction(id: string) {
   try {
-    // Thử xóa sạch các liên kết phụ thuộc trước
-    await prisma.classAssignment.deleteMany({ where: { userId: id } });
-    await prisma.classEnrollment.deleteMany({ where: { studentId: id } });
-    await prisma.passwordResetToken.deleteMany({ where: { userId: id } });
-    await prisma.school.updateMany({ where: { managerId: id }, data: { managerId: null } });
-    await prisma.userProfile.deleteMany({ where: { userId: id } });
-    await prisma.user.delete({ where: { id } });
+    const session = await getSession();
+    if (session?.userId === id) {
+      return { success: false, error: "Bạn không thể tự xóa tài khoản của chính mình!" };
+    }
 
-    safeRevalidate("/users");
-    return { success: true };
-  } catch (error: any) {
-    // Nếu có ràng buộc lịch sử (VD: ImportLog), chuyển sang xóa mềm
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      include: { role: true },
+    });
+
+    if (!targetUser) {
+      return { success: false, error: "Tài khoản không tồn tại!" };
+    }
+
+    if (targetUser.role.code === "ADMIN" && session?.role !== "ADMIN") {
+      return { success: false, error: "Bạn không có quyền xóa tài khoản Quản trị viên!" };
+    }
+
     await prisma.user.update({
       where: { id },
       data: { isActive: false },
     });
-    safeRevalidate("/users");
-    return { success: true };
-  }
-}
-
-export async function deleteMultipleUsersAction(ids: string[]) {
-  try {
-    await prisma.classAssignment.deleteMany({ where: { userId: { in: ids } } });
-    await prisma.classEnrollment.deleteMany({ where: { studentId: { in: ids } } });
-    await prisma.passwordResetToken.deleteMany({ where: { userId: { in: ids } } });
-    await prisma.school.updateMany({ where: { managerId: { in: ids } }, data: { managerId: null } });
-    await prisma.userProfile.deleteMany({ where: { userId: { in: ids } } });
-    await prisma.user.deleteMany({ where: { id: { in: ids } } });
 
     safeRevalidate("/users");
     return { success: true };
   } catch (error: any) {
-    await prisma.user.updateMany({
-      where: { id: { in: ids } },
-      data: { isActive: false },
-    });
-    safeRevalidate("/users");
-    return { success: true };
+    return { success: false, error: error.message || "Không thể xóa người dùng!" };
   }
 }
 
-// Cập nhật hồ sơ cá nhân (My Profile)
+// Khôi phục tài khoản người dùng đã xóa mềm
+export async function restoreUserAction(id: string) {
+  try {
+    await prisma.user.update({
+      where: { id },
+      data: { isActive: true },
+    });
+
+    safeRevalidate("/users");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể khôi phục tài khoản!" };
+  }
+}
+
+// Xóa mềm hàng loạt
+export async function deleteMultipleUsersAction(ids: string[]) {
+  try {
+    const session = await getSession();
+    const safeIds = ids.filter((id) => id !== session?.userId);
+
+    await prisma.user.updateMany({
+      where: { id: { in: safeIds } },
+      data: { isActive: false },
+    });
+
+    safeRevalidate("/users");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể xóa các tài khoản đã chọn!" };
+  }
+}
+
+// Cập nhật hồ sơ cá nhân (Chỉ cho phép cập nhật thông tin profile cá nhân, KHÔNG cho sửa username) (BUG_12)
 export async function updateProfileAction(
   userId: string,
   data: {
     fullName: string;
-    username?: string;
     phoneNumber?: string;
+    address?: string;
     dateOfBirth?: string;
-    gender?: "MALE" | "FEMALE" | "OTHER";
+    gender?: Gender;
     avatarUrl?: string;
   }
 ) {
   try {
-    if (data.username && data.username.trim()) {
-      const cleanUsername = data.username.trim().toLowerCase();
-      const existingUser = await prisma.user.findUnique({
-        where: { username: cleanUsername },
-      });
-      if (existingUser && existingUser.id !== userId) {
-        return {
-          success: false,
-          error: `Tên đăng nhập '${cleanUsername}' đã được sử dụng bởi tài khoản khác!`,
-        };
-      }
-
-      await prisma.user.update({
-        where: { id: userId },
-        data: { username: cleanUsername },
-      });
-    }
-
     await prisma.userProfile.upsert({
       where: { userId },
       create: {
         userId,
         fullName: data.fullName.trim(),
         phoneNumber: data.phoneNumber || null,
+        address: data.address || null,
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
         gender: data.gender || null,
         avatarUrl: data.avatarUrl || null,
@@ -381,6 +605,7 @@ export async function updateProfileAction(
       update: {
         fullName: data.fullName.trim(),
         phoneNumber: data.phoneNumber || null,
+        address: data.address || null,
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
         gender: data.gender || null,
         avatarUrl: data.avatarUrl || null,
@@ -421,8 +646,6 @@ export async function parseAndValidateExcelAction(fileBase64: string) {
     const errorRows: any[] = [];
     const seenEmailsInFile = new Set<string>();
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
     for (let i = 1; i < rawRows.length; i++) {
       const row = rawRows[i];
       if (!row || row.length === 0 || !row[1]) continue;
@@ -440,8 +663,14 @@ export async function parseAndValidateExcelAction(fileBase64: string) {
         continue;
       }
 
-      if (!emailRegex.test(email)) {
-        errorRows.push({ stt, fullName, email, classCode, reason: "Email sai định dạng" });
+      if (!RFC5322_EMAIL_REGEX.test(email)) {
+        errorRows.push({
+          stt,
+          fullName,
+          email,
+          classCode,
+          reason: "Email sai định dạng (thiếu tên miền hợp lệ)",
+        });
         continue;
       }
 
@@ -496,6 +725,7 @@ export async function parseAndValidateExcelAction(fileBase64: string) {
   }
 }
 
+// Lưu hàng loạt học viên từ Excel với mã sinh tự động HV...
 export async function commitImportUsersAction(validRows: any[], fileName: string) {
   try {
     const studentRole = await prisma.role.findUnique({ where: { code: "STUDENT" } });
@@ -507,9 +737,19 @@ export async function commitImportUsersAction(validRows: any[], fileName: string
     const defaultPassword = "Simpace@2026";
     const passwordHash = await hashPassword(defaultPassword);
 
+    let currentStudentCount = await prisma.user.count({
+      where: { role: { code: "STUDENT" } },
+    });
+
     await prisma.$transaction(async (tx) => {
       for (const row of validRows) {
-        const username = row.email.split("@")[0];
+        currentStudentCount++;
+        let username = `HV${(1000 + currentStudentCount).toString()}`;
+        while (await tx.user.findUnique({ where: { username } })) {
+          currentStudentCount++;
+          username = `HV${(1000 + currentStudentCount).toString()}`;
+        }
+
         const user = await tx.user.create({
           data: {
             username,
