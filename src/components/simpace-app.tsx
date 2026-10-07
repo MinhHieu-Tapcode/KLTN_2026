@@ -38,6 +38,7 @@ import {
   RotateCcw,
   Lock,
   Clock,
+  List,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -181,11 +182,24 @@ export function SimpaceApp({
     return perm.allowedRoles?.includes(currentUser?.role as RoleCode);
   };
 
-  // Điều hướng
+  // Điều hướng an toàn có kiểm tra phân quyền (RBAC)
   const navigate = (next: View) => {
+    if (next === "users" && !hasPerm("VIEW_USERS")) return;
+    if (next === "schools" && !hasPerm("VIEW_SCHOOLS")) return;
+    if (next === "classes" && !hasPerm("VIEW_CLASSES")) return;
+    if (next === "schedule" && !hasPerm("VIEW_SCHEDULE")) return;
+    if (next === "import" && !hasPerm("IMPORT_EXCEL")) return;
     setView(next);
     setSidebar(false);
   };
+
+  // Tự động chuyển về Dashboard nếu view hiện tại không được phép truy cập
+  useEffect(() => {
+    if (view === "users" && !hasPerm("VIEW_USERS")) setView("dashboard");
+    if (view === "schools" && !hasPerm("VIEW_SCHOOLS")) setView("dashboard");
+    if (view === "classes" && !hasPerm("VIEW_CLASSES")) setView("dashboard");
+    if (view === "import" && !hasPerm("IMPORT_EXCEL")) setView("dashboard");
+  }, [currentUser?.role, permissions, view]);
 
   const handleLogout = async () => {
     await logoutAction();
@@ -208,9 +222,10 @@ export function SimpaceApp({
   if (!currentUser) {
     return (
       <LoginView
-        onLoggedIn={(user) => {
+        onLoggedIn={async (user) => {
           setCurrentUser(user);
           setNotice("Đăng nhập thành công!");
+          await refreshAll();
         }}
       />
     );
@@ -441,7 +456,7 @@ export function SimpaceApp({
               </div>
 
               <div className="flex gap-2.5">
-                {view === "users" && (
+                {view === "users" && (currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && (
                   <Button
                     onClick={() => setAddUserOpen(true)}
                     className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm"
@@ -449,7 +464,7 @@ export function SimpaceApp({
                     <Plus className="size-4 mr-1.5" /> Thêm người dùng
                   </Button>
                 )}
-                {view === "schools" && currentUser?.role !== "SCHOOL_MANAGER" && (
+                {view === "schools" && currentUser?.role === "ADMIN" && (
                   <Button
                     onClick={() => setAddSchoolOpen(true)}
                     className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm"
@@ -457,7 +472,7 @@ export function SimpaceApp({
                     <Plus className="size-4 mr-1.5" /> Thêm trường học
                   </Button>
                 )}
-                {view === "classes" && (
+                {view === "classes" && (currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && (
                   <Button
                     onClick={() => setAddClassOpen(true)}
                     className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm"
@@ -475,9 +490,11 @@ export function SimpaceApp({
                 usersCount={users.length}
                 schoolsCount={schools.length}
                 classesCount={classes.length}
+                currentUser={currentUser}
+                classes={classes}
               />
             )}
-            {view === "users" && (
+            {view === "users" && hasPerm("VIEW_USERS") && (
               <UsersPageView
                 users={users}
                 currentUser={currentUser}
@@ -489,7 +506,7 @@ export function SimpaceApp({
                 onViewUser={(u) => setViewingUser(u)}
               />
             )}
-            {view === "schools" && (
+            {view === "schools" && hasPerm("VIEW_SCHOOLS") && (
               <SchoolsPageView
                 schools={schools}
                 onRefresh={refreshAll}
@@ -497,9 +514,10 @@ export function SimpaceApp({
                 onEditSchool={(s) => setEditingSchool(s)}
               />
             )}
-            {view === "classes" && (
+            {view === "classes" && hasPerm("VIEW_CLASSES") && (
               <ClassesPageView
                 classes={classes}
+                currentUser={currentUser}
                 onRefresh={refreshAll}
                 onOpenDetail={async (cls) => {
                   const detail = await getClassDetailAction(cls.id);
@@ -509,7 +527,7 @@ export function SimpaceApp({
                 onEditClass={(c) => setEditingClass(c)}
               />
             )}
-            {view === "class-detail" && (
+            {view === "class-detail" && hasPerm("VIEW_CLASSES") && (
               <ClassDetailView
                 classItem={selectedClass}
                 teachers={teachers}
@@ -524,7 +542,7 @@ export function SimpaceApp({
                 }}
               />
             )}
-            {view === "schedule" && (
+            {view === "schedule" && hasPerm("VIEW_SCHEDULE") && (
               <SchedulePageView
                 classes={classes}
                 currentUser={currentUser}
@@ -1261,12 +1279,133 @@ function DashboardView({
   usersCount,
   schoolsCount,
   classesCount,
+  currentUser,
+  classes = [],
 }: {
   navigate: (v: View) => void;
   usersCount: number;
   schoolsCount: number;
   classesCount: number;
+  currentUser?: any;
+  classes?: any[];
 }) {
+  const currentUid = currentUser?.userId || currentUser?.id;
+
+  // Dành riêng cho Học viên (STUDENT)
+  if (currentUser?.role === "STUDENT") {
+    const myClasses = classes.filter(
+      (c) =>
+        c.isActive &&
+        c.enrollments?.some(
+          (e: any) =>
+            e.studentId === currentUid ||
+            e.student?.id === currentUid ||
+            e.student?.username === currentUser?.username
+        )
+    );
+
+    const activeSchoolName = myClasses[0]?.school?.name || "SIMPACE Việt Nam";
+
+    const studentStats = [
+      [GraduationCap, "Lớp học của tôi", `${myClasses.length} lớp`, "Đang diễn ra", "schedule"],
+      [CalendarDays, "Thời khóa biểu tuần", `${myClasses.filter((c) => c.description).length} ca/tuần`, "Đúng tiến độ", "schedule"],
+      [Building2, "Trường liên kết", activeSchoolName, "Đối tác", "schedule"],
+      [UserRound, "Tài khoản học viên", currentUser?.fullName || "Học viên", "Hoạt động", "settings"],
+    ] as const;
+
+    return (
+      <>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {studentStats.map(([Icon, label, value, tag, dest]) => (
+            <button
+              key={label}
+              onClick={() => navigate(dest as View)}
+              className="panel text-left transition hover:-translate-y-0.5 hover:border-[#EA580C]/30 group"
+            >
+              <span className="grid size-11 place-items-center rounded-xl bg-[#FFF1EB] text-[#EA580C] group-hover:bg-[#EA580C] group-hover:text-white transition">
+                <Icon className="size-5.5" />
+              </span>
+              <p className="mt-4 text-sm text-[#64748B] font-medium">{label}</p>
+              <b className="mt-1 block text-2xl font-extrabold text-[#0F172A] truncate">{value}</b>
+              <small className="font-semibold text-emerald-600">● {tag}</small>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
+          <section className="panel">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-bold text-base text-[#0F172A]">Lớp học đang theo học</h2>
+                <p className="text-xs text-[#64748B]">Danh sách lớp học và thời khóa biểu cá nhân của bạn</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("schedule")}
+                className="text-xs font-semibold text-[#EA580C] hover:bg-orange-50"
+              >
+                Xem thời khóa biểu tuần →
+              </Button>
+            </div>
+
+            {myClasses.length > 0 ? (
+              <div className="space-y-3">
+                {myClasses.map((cls) => {
+                  const teacher = cls.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff?.profile?.fullName;
+                  const ta = cls.assignments?.find((a: any) => a.roleInClass === "TEACHING_ASSISTANT")?.staff?.profile?.fullName;
+
+                  return (
+                    <div
+                      key={cls.id}
+                      className="rounded-2xl border border-orange-200/90 bg-[#FFF7ED]/30 p-4 hover:border-[#EA580C] transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-[#EA580C] bg-orange-100 px-2 py-0.5 rounded">
+                          {cls.code}
+                        </span>
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          Đang theo học
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-base text-[#0F172A] mt-2">{cls.name}</h3>
+                      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 text-[#475569]">
+                        <div><b>Trường:</b> {cls.school?.name}</div>
+                        <div><b>Lịch học:</b> <span className="text-[#EA580C] font-semibold">{cls.description || "Chưa xếp lịch"}</span></div>
+                        <div><b>Giáo viên:</b> {teacher || "Đang cập nhật"}</div>
+                        <div><b>Trợ giảng:</b> {ta || "Đang cập nhật"}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-10 text-sm text-[#94A3B8] italic">
+                Bạn chưa được ghi danh vào lớp học nào. Vui lòng liên hệ Quản nhiệm trường hoặc Admin để được hỗ trợ.
+              </div>
+            )}
+          </section>
+
+          <section className="panel space-y-4">
+            <h2 className="font-bold text-base text-[#0F172A]">Thông tin học viên</h2>
+            <div className="rounded-xl border border-[#E2E8F0] p-4 bg-[#F8FAFC] space-y-2 text-xs">
+              <div><span className="text-[#64748B]">Mã học viên:</span> <b className="font-mono ml-1 text-[#0F172A]">{currentUser.username}</b></div>
+              <div><span className="text-[#64748B]">Họ và tên:</span> <b className="ml-1 text-[#0F172A]">{currentUser.fullName}</b></div>
+              <div><span className="text-[#64748B]">Email:</span> <b className="ml-1 text-[#0F172A]">{currentUser.email}</b></div>
+              <div><span className="text-[#64748B]">Vai trò:</span> <span className="ml-1 font-bold text-[#EA580C]">Học viên (STUDENT)</span></div>
+            </div>
+
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-800 space-y-1.5">
+              <b className="block font-bold">💡 Lưu ý học tập:</b>
+              <p>Học viên vui lòng theo dõi thời khóa biểu hàng tuần, tham gia đầy đủ các buổi học và hoàn thành bài tập đúng hạn để đảm bảo kết quả cam kết đầu ra.</p>
+            </div>
+          </section>
+        </div>
+      </>
+    );
+  }
+
+  // Dành cho Quản trị viên & Quản nhiệm & Giáo viên
   const stats = [
     [UserRound, "Người dùng", usersCount.toLocaleString("vi-VN"), "+12%", "users"],
     [Building2, "Trường học", schoolsCount.toLocaleString("vi-VN"), "+2 trường", "schools"],
@@ -2213,15 +2352,18 @@ function SchoolDetailDrawer({
 
 function ClassesPageView({
   classes,
+  currentUser,
   onRefresh,
   onOpenDetail,
   onEditClass,
 }: {
   classes: any[];
+  currentUser?: any;
   onRefresh: () => void;
   onOpenDetail: (c: any) => void;
   onEditClass: (c: any) => void;
 }) {
+  const canManageClass = currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER";
   const [lifecycleStatus, setLifecycleStatus] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
   const [search, setSearch] = useState("");
@@ -2510,7 +2652,7 @@ function ClassesPageView({
                       >
                         <Eye className="size-4" />
                       </Button>
-                      {c.isActive ? (
+                      {canManageClass && c.isActive ? (
                         <>
                           <Button
                             variant="ghost"
@@ -2531,7 +2673,7 @@ function ClassesPageView({
                             <Trash2 className="size-4" />
                           </Button>
                         </>
-                      ) : (
+                      ) : canManageClass && !c.isActive ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -2540,7 +2682,7 @@ function ClassesPageView({
                         >
                           <RotateCcw className="size-3.5 mr-1" /> Khôi phục
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -2837,26 +2979,42 @@ function SchedulePageView({
   currentUser: any;
 }) {
   const [selectedSchool, setSelectedSchool] = useState("ALL");
+  const [viewMode, setViewMode] = useState<"TIMETABLE" | "LIST">("TIMETABLE");
+
+  const currentUid = currentUser?.userId || currentUser?.id;
 
   // Lọc các lớp học liên quan đến vai trò của người dùng
   const relevantClasses = classes.filter((c) => {
-    if (c.status !== "ACTIVE") return false;
+    if (c.status !== "ACTIVE" || !c.isActive) return false;
 
-    if (currentUser.role === "ADMIN") return true;
+    if (currentUser?.role === "ADMIN") return true;
 
-    if (currentUser.role === "SCHOOL_MANAGER") {
+    if (currentUser?.role === "SCHOOL_MANAGER") {
       // Xem lớp của trường mình quản lý
-      return c.school?.managerId === currentUser.userId;
+      return c.school?.managerId === currentUid;
     }
 
-    if (currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT") {
-      // Xem lớp mình được phân công
-      return c.assignments?.some((a: any) => a.userId === currentUser.userId);
+    if (currentUser?.role === "TEACHER" || currentUser?.role === "TEACHING_ASSISTANT") {
+      // Xem lớp mình được phân công giảng dạy / trợ giảng
+      return c.assignments?.some(
+        (a: any) =>
+          a.userId === currentUid ||
+          a.staff?.id === currentUid ||
+          a.staff?.username === currentUser?.username
+      );
     }
 
-    if (currentUser.role === "STUDENT") {
-      // Xem lớp mình ghi danh
-      return c.enrollments?.some((e: any) => e.studentId === currentUser.userId);
+    if (currentUser?.role === "STUDENT") {
+      // Xem lớp mình ghi danh học tập
+      const isEnrolled = c.enrollments?.some(
+        (e: any) =>
+          e.studentId === currentUid ||
+          e.student?.id === currentUid ||
+          e.student?.username === currentUser?.username
+      );
+      if (isEnrolled) return true;
+      // Dự phòng trường hợp server đã lọc trực tiếp cho student
+      return !c.enrollments || c.enrollments.length === 0;
     }
 
     return true;
@@ -2866,92 +3024,256 @@ function SchedulePageView({
     (c) => selectedSchool === "ALL" || c.schoolId === selectedSchool
   );
 
-  return (
-    <section className="panel">
-      <div className="mb-5 flex flex-wrap justify-between items-center gap-3">
-        <div>
-          <h2 className="font-bold text-base text-[#0F172A]">Lịch học & Giảng dạy các lớp</h2>
-          <p className="text-xs text-[#64748B]">
-            Hiển thị thời khóa biểu của các lớp học đang hoạt động liên quan đến tài khoản của bạn.
-          </p>
-        </div>
+  const daysOfWeek = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
 
-        {currentUser.role === "ADMIN" && (
-          <select
-            className="field max-w-xs"
-            value={selectedSchool}
-            onChange={(e) => setSelectedSchool(e.target.value)}
-          >
-            <option value="ALL">-- Tất cả các trường --</option>
-            {Array.from(
-              new Map(
-                classes
-                  .map((c) => c.school)
-                  .filter(Boolean)
-                  .map((s: any) => [s.id, s])
-              ).values()
-            ).map((s: any) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        )}
+  return (
+    <section className="space-y-4">
+      {/* Banner chào mừng & Thông tin phạm vi học tập */}
+      <div className="rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50/50 p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <span className="grid size-12 place-items-center rounded-2xl bg-[#EA580C] text-white shadow-md shadow-orange-500/20">
+              <CalendarDays className="size-6" />
+            </span>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-[#0F172A]">
+                {currentUser?.role === "STUDENT"
+                  ? "Thời khóa biểu học tập của bạn"
+                  : "Lịch học & Giảng dạy các lớp"}
+              </h2>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                {currentUser?.role === "STUDENT"
+                  ? `Xin chào ${currentUser?.fullName || "Học viên"}! Bạn đang theo học ${displayed.length} lớp học tại SIMPACE.`
+                  : "Thời khóa biểu các lớp học đang hoạt động trong phạm vi phụ trách của bạn."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Chuyển đổi chế độ xem: Thời khóa biểu tuần vs Danh sách */}
+            <div className="inline-flex rounded-xl bg-white border border-[#E2E8F0] p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setViewMode("TIMETABLE")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  viewMode === "TIMETABLE"
+                    ? "bg-[#EA580C] text-white shadow-sm"
+                    : "text-[#64748B] hover:text-[#0F172A]"
+                }`}
+              >
+                <CalendarDays className="size-3.5" /> Bảng thời khóa biểu tuần
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("LIST")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  viewMode === "LIST"
+                    ? "bg-[#EA580C] text-white shadow-sm"
+                    : "text-[#64748B] hover:text-[#0F172A]"
+                }`}
+              >
+                <List className="size-3.5" /> Danh sách lớp học
+              </button>
+            </div>
+
+            {currentUser?.role === "ADMIN" && (
+              <select
+                className="field text-xs max-w-xs bg-white"
+                value={selectedSchool}
+                onChange={(e) => setSelectedSchool(e.target.value)}
+              >
+                <option value="ALL">-- Tất cả các trường --</option>
+                {Array.from(
+                  new Map(
+                    classes
+                      .map((c) => c.school)
+                      .filter(Boolean)
+                      .map((s: any) => [s.id, s])
+                  ).values()
+                ).map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-        <table className="w-full min-w-[700px] border-collapse text-left text-sm">
-          <thead>
-            <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Lớp học</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường học</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Thời gian học</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Giáo viên phụ trách</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trợ giảng</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#F1F5F9] bg-white">
-            {displayed.length > 0 ? (
-              displayed.map((c) => (
-                <tr key={c.id} className="hover:bg-[#F8FAFC]">
-                  <td className="px-4 py-3.5 font-bold text-[#0F172A]">
-                    {c.name} <code className="text-xs text-[#64748B] font-mono">({c.code})</code>
-                  </td>
-                  <td className="px-4 py-3.5 text-[#475569]">{c.school?.name}</td>
-                  <td className="px-4 py-3.5 text-xs text-[#0F172A] font-medium">
-                    <div>{c.description || "Chưa xếp lịch cụ thể"}</div>
-                    {(c.startDate || c.endDate) && (
-                      <div className="text-[11px] text-[#64748B] mt-0.5 font-normal">
-                        {c.startDate ? new Date(c.startDate).toLocaleDateString("vi-VN") : "---"}
-                        {" → "}
-                        {c.endDate ? new Date(c.endDate).toLocaleDateString("vi-VN") : "---"}
+      {/* CHẾ ĐỘ 1: BẢNG THỜI KHÓA BIỂU THEO TUẦN (TIMETABLE GRID) */}
+      {viewMode === "TIMETABLE" && (
+        <div className="space-y-3">
+          <div className="grid gap-3.5 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+            {daysOfWeek.map((day) => {
+              // Tìm các lớp học diễn ra vào thứ này (dựa trên chuỗi lịch học đã tạo bởi Date Time Picker)
+              const classesForDay = displayed.filter((c) => {
+                if (!c.description) return false;
+                return c.description.toLowerCase().includes(day.toLowerCase());
+              });
+
+              return (
+                <div
+                  key={day}
+                  className="rounded-2xl border border-[#E2E8F0] bg-white p-3.5 shadow-sm flex flex-col min-h-[220px]"
+                >
+                  <div className="flex items-center justify-between pb-2.5 border-b border-[#F1F5F9]">
+                    <span className="font-bold text-sm text-[#0F172A]">{day}</span>
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                        classesForDay.length > 0
+                          ? "bg-orange-100 text-[#EA580C] border border-orange-200"
+                          : "bg-slate-100 text-[#94A3B8]"
+                      }`}
+                    >
+                      {classesForDay.length > 0 ? `${classesForDay.length} ca học` : "Nghỉ"}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2.5 flex-1">
+                    {classesForDay.length > 0 ? (
+                      classesForDay.map((cls) => {
+                        const teacherName =
+                          cls.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff
+                            ?.profile?.fullName || "Chưa phân công";
+                        const taName = cls.assignments?.find(
+                          (a: any) => a.roleInClass === "TEACHING_ASSISTANT"
+                        )?.staff?.profile?.fullName;
+
+                        return (
+                          <div
+                            key={cls.id}
+                            className="rounded-xl border border-orange-200/80 bg-[#FFF7ED]/40 p-3 hover:border-[#EA580C] transition group shadow-xs"
+                          >
+                            <div className="flex items-center justify-between gap-1 mb-1.5">
+                              <span className="font-mono text-[11px] font-bold text-[#EA580C] bg-orange-100/70 px-1.5 py-0.5 rounded">
+                                {cls.code}
+                              </span>
+                              <span className="text-[10px] uppercase font-bold text-slate-500">
+                                {cls.program || "IELTS"}
+                              </span>
+                            </div>
+
+                            <b className="block text-xs font-bold text-[#0F172A] group-hover:text-[#EA580C] transition leading-snug">
+                              {cls.name}
+                            </b>
+
+                            <div className="mt-2 space-y-1 text-[11px] text-[#475569]">
+                              <div className="flex items-center gap-1.5 font-semibold text-[#EA580C]">
+                                <Clock className="size-3 shrink-0" />
+                                <span>{cls.description}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[#64748B]">
+                                <Building2 className="size-3 shrink-0" />
+                                <span className="truncate">{cls.school?.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[#64748B]">
+                                <GraduationCap className="size-3 shrink-0" />
+                                <span className="truncate">GV: {teacherName}</span>
+                              </div>
+                              {taName && (
+                                <div className="text-[10px] text-[#94A3B8] pl-4">TA: {taName}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="grid place-items-center h-full py-8 text-center text-xs text-[#94A3B8] italic">
+                        Không có ca học
                       </div>
                     )}
-                  </td>
-                  <td className="px-4 py-3.5 text-xs text-[#475569]">
-                    {c.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff?.profile
-                      ?.fullName || "Chưa phân công"}
-                  </td>
-                  <td className="px-4 py-3.5 text-xs text-[#475569]">
-                    {c.assignments?.find((a: any) => a.roleInClass === "TEACHING_ASSISTANT")?.staff
-                      ?.profile?.fullName || "Chưa phân công"}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <Status tone="success">Đang diễn ra</Status>
-                  </td>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Hiển thị các lớp học có lịch đặc thù / chưa gán cố định thứ */}
+          {displayed.some((c) => !daysOfWeek.some((d) => c.description?.includes(d))) && (
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+              <h4 className="font-bold text-xs uppercase tracking-wider text-[#64748B] mb-3">
+                Các lớp học đang diễn ra (Lịch học linh hoạt):
+              </h4>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {displayed
+                  .filter((c) => !daysOfWeek.some((d) => c.description?.includes(d)))
+                  .map((cls) => (
+                    <div
+                      key={cls.id}
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs"
+                    >
+                      <b className="text-[#0F172A] block font-bold">{cls.name} ({cls.code})</b>
+                      <p className="text-[#64748B] mt-1">Trường: {cls.school?.name}</p>
+                      <p className="text-[#EA580C] font-semibold mt-1">
+                        Lịch: {cls.description || "Chưa xếp lịch cụ thể"}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CHẾ ĐỘ 2: DANH SÁCH BẢNG BIỂU CHI TIẾT (LIST VIEW) */}
+      {viewMode === "LIST" && (
+        <div className="panel overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[750px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Lớp học</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường học</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Thời gian học</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Giáo viên phụ trách</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trợ giảng</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={6} className="text-center py-8 text-sm text-[#94A3B8] italic">
-                  Không có lịch học nào phù hợp với phạm vi quản lý của bạn.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9] bg-white">
+                {displayed.length > 0 ? (
+                  displayed.map((c) => (
+                    <tr key={c.id} className="hover:bg-[#F8FAFC]">
+                      <td className="px-4 py-3.5 font-bold text-[#0F172A]">
+                        {c.name} <code className="text-xs text-[#64748B] font-mono">({c.code})</code>
+                      </td>
+                      <td className="px-4 py-3.5 text-[#475569]">{c.school?.name}</td>
+                      <td className="px-4 py-3.5 text-xs text-[#0F172A] font-medium">
+                        <div className="font-semibold text-[#EA580C]">{c.description || "Chưa xếp lịch cụ thể"}</div>
+                        {(c.startDate || c.endDate) && (
+                          <div className="text-[11px] text-[#64748B] mt-0.5 font-normal">
+                            {c.startDate ? new Date(c.startDate).toLocaleDateString("vi-VN") : "---"}
+                            {" → "}
+                            {c.endDate ? new Date(c.endDate).toLocaleDateString("vi-VN") : "---"}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-[#475569]">
+                        {c.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff?.profile
+                          ?.fullName || "Chưa phân công"}
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-[#475569]">
+                        {c.assignments?.find((a: any) => a.roleInClass === "TEACHING_ASSISTANT")?.staff
+                          ?.profile?.fullName || "Chưa phân công"}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <Status tone="success">Đang diễn ra</Status>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="text-center py-8 text-sm text-[#94A3B8] italic">
+                      Không có lịch học nào phù hợp với phạm vi quản lý của bạn.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

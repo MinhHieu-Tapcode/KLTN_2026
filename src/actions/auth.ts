@@ -86,6 +86,8 @@ export async function loginAction(formData: FormData) {
     role: user.role.code,
     user: {
       id: user.id,
+      userId: user.id,
+      username: user.username,
       fullName: user.profile?.fullName || user.username,
       email: user.email,
       role: user.role.code,

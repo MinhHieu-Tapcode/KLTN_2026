@@ -23,7 +23,7 @@ export const DEFAULT_PERMISSIONS = [
     featureKey: "VIEW_CLASSES",
     name: "Quản lý Lớp học (Danh sách, Chi tiết, Tạo lớp)",
     category: "Lớp học",
-    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT", "STUDENT"] as RoleCode[],
+    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT"] as RoleCode[],
   },
   {
     featureKey: "VIEW_SCHEDULE",

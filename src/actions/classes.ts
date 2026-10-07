@@ -89,6 +89,11 @@ export async function getClassesAction(
           staff: { include: { profile: true } },
         },
       },
+      enrollments: {
+        include: {
+          student: { include: { profile: true } },
+        },
+      },
       _count: {
         select: { enrollments: true },
       },
