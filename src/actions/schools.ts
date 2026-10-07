@@ -12,18 +12,25 @@ function safeRevalidate(path: string) {
 
 // Hàm sinh mã trường học tự động (BUG_06) - VD: THPT Trương Định -> SCH_TD
 export async function generateSchoolCode(schoolName: string): Promise<string> {
-  const cleanName = schoolName
+  let cleanName = schoolName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[đĐ]/g, "d")
+    .replace(/[đĐ]/g, "D")
     .toUpperCase();
+
+  // Bỏ tiền tố trường học nếu có: "TRUONG THPT", "THPT", "THCS", "TRUONG THCS"
+  cleanName = cleanName
+    .replace(/^TRUONG\s+(THPT|THCS|DAI\s+HOC|CD|TIEU\s+HOC)\s+/, "")
+    .replace(/^(THPT|THCS|DAI\s+HOC|CD|TIEU\s+HOC)\s+/, "");
 
   const words = cleanName
     .split(/[\s,.-]+/)
-    .filter((w) => w && !["THPT", "THCS", "TRUONG", "DAI", "HOC", "TRUNG", "TAM"].includes(w));
+    .filter(Boolean);
 
   let acronym = words.map((w) => w[0]).join("");
-  if (!acronym || acronym.length < 2) acronym = "SIM";
+  if (!acronym || acronym.length < 2) {
+    acronym = words[0]?.slice(0, 3) || "SIM";
+  }
 
   let candidate = `SCH_${acronym}`;
   let existing = await prisma.school.findUnique({ where: { code: candidate } });
