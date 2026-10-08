@@ -142,7 +142,7 @@ export async function getSchoolManagersAction() {
   });
 }
 
-// Tạo trường học mới - Tự động sinh mã nếu không nhập, bỏ gán Quản nhiệm bắt buộc (BUG_06)
+// Tạo trường học mới - Bắt buộc Quản nhiệm, Đại diện BGH, SĐT và Địa chỉ
 export async function createSchoolAction(data: {
   code?: string;
   name: string;
@@ -156,6 +156,18 @@ export async function createSchoolAction(data: {
     const cleanName = data.name.trim();
     if (!cleanName) {
       return { success: false, error: "Tên trường học là bắt buộc!" };
+    }
+    if (!data.managerId) {
+      return { success: false, error: "Trường học bắt buộc phải có Quản nhiệm phụ trách!" };
+    }
+    if (!data.contactName?.trim()) {
+      return { success: false, error: "Vui lòng nhập tên Đại diện BGH / Giáo vụ liên hệ!" };
+    }
+    if (!data.contactPhone?.trim()) {
+      return { success: false, error: "Vui lòng nhập Số điện thoại liên hệ BGH!" };
+    }
+    if (!data.address?.trim()) {
+      return { success: false, error: "Vui lòng nhập Địa chỉ trường học!" };
     }
 
     // Tự sinh mã nếu không cung cấp
@@ -207,6 +219,13 @@ export async function updateSchoolAction(
   }
 ) {
   try {
+    if (data.name !== undefined && !data.name.trim()) {
+      return { success: false, error: "Tên trường học không được để trống!" };
+    }
+    if (data.managerId !== undefined && !data.managerId) {
+      return { success: false, error: "Trường học bắt buộc phải có Quản nhiệm phụ trách!" };
+    }
+
     await prisma.school.update({
       where: { id },
       data: {

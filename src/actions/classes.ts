@@ -144,6 +144,16 @@ export async function createClassAction(data: {
       return { success: false, error: "Vui lòng nhập tên lớp và chọn trường học!" };
     }
 
+    const teachersToAssign = (data.teacherIds || (data.teacherId ? [data.teacherId] : [])).filter(Boolean);
+    if (teachersToAssign.length === 0) {
+      return { success: false, error: "Lớp học bắt buộc phải có ít nhất 1 Giáo viên giảng dạy!" };
+    }
+
+    const tasToAssign = (data.taIds || (data.taId ? [data.taId] : [])).filter(Boolean);
+    if (tasToAssign.length === 0) {
+      return { success: false, error: "Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!" };
+    }
+
     // Tự sinh mã lớp học nếu chưa có (BUG_07)
     let code = data.code?.trim().toUpperCase();
     if (!code) {
@@ -175,7 +185,6 @@ export async function createClassAction(data: {
     });
 
     // Phân công giáo viên
-    const teachersToAssign = data.teacherIds || (data.teacherId ? [data.teacherId] : []);
     for (const tid of teachersToAssign) {
       if (!tid) continue;
       await prisma.classAssignment.create({
@@ -188,7 +197,6 @@ export async function createClassAction(data: {
     }
 
     // Phân công trợ giảng
-    const tasToAssign = data.taIds || (data.taId ? [data.taId] : []);
     for (const taId of tasToAssign) {
       if (!taId) continue;
       await prisma.classAssignment.create({
@@ -225,6 +233,12 @@ export async function updateClassAction(
   }
 ) {
   try {
+    if (data.teacherIds !== undefined && data.teacherIds.filter(Boolean).length === 0) {
+      return { success: false, error: "Lớp học bắt buộc phải có ít nhất 1 Giáo viên giảng dạy!" };
+    }
+    if (data.taIds !== undefined && data.taIds.filter(Boolean).length === 0) {
+      return { success: false, error: "Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!" };
+    }
     const updateData: any = {
       name: data.name?.trim(),
       program: data.program,

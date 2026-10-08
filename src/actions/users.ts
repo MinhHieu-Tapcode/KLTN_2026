@@ -204,6 +204,19 @@ export async function createUserAction(data: {
       return { success: false, error: `Vai trò ${data.roleCode} không hợp lệ!` };
     }
 
+    if (data.roleCode === "SCHOOL_MANAGER" && (!data.schoolIds || data.schoolIds.filter(Boolean).length === 0)) {
+      return { success: false, error: "Quản nhiệm bắt buộc phải được phân công ít nhất 1 trường học phụ trách!" };
+    }
+    if (data.roleCode === "TEACHER" && (!data.classIds || data.classIds.filter(Boolean).length === 0)) {
+      return { success: false, error: "Giáo viên bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!" };
+    }
+    if (data.roleCode === "TEACHING_ASSISTANT" && (!data.classIds || data.classIds.filter(Boolean).length === 0)) {
+      return { success: false, error: "Trợ giảng bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!" };
+    }
+    if (data.roleCode === "STUDENT" && (!data.classIds || data.classIds.filter(Boolean).length === 0)) {
+      return { success: false, error: "Học sinh bắt buộc phải được ghi danh vào ít nhất 1 lớp học!" };
+    }
+
     const defaultPassword = "Simpace@2026";
     const passwordHash = await hashPassword(defaultPassword);
 

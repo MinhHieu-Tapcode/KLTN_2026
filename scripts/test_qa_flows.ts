@@ -99,18 +99,29 @@ async function runAllTests() {
     assert("Chặn email thiếu phần mở rộng domain (TLD)", !resBadEmail2.success);
 
     // -------------------------------------------------------------
-    // TEST 4: Tạo Trường học độc lập & Tìm kiếm .trim() (BUG_06, BUG_09)
+    // TEST 4: Tạo Trường học (Bắt buộc Quản nhiệm, Đại diện BGH, SĐT, Địa chỉ) & Tìm kiếm .trim()
     // -------------------------------------------------------------
-    console.log("\n--- 4. KIỂM THỬ TẠO TRƯỜNG ĐỘC LẬP & TÌM KIẾM TRIM (BUG_06, BUG_09) ---");
+    console.log("\n--- 4. KIỂM THỬ TẠO TRƯỜNG HỌC & TÌM KIẾM TRIM ---");
+    const manager = await prisma.user.findFirst({
+      where: { role: { code: "SCHOOL_MANAGER" }, isActive: true },
+    });
+    const teacher = await prisma.user.findFirst({
+      where: { role: { code: "TEACHER" }, isActive: true },
+    });
+    const ta = await prisma.user.findFirst({
+      where: { role: { code: "TEACHING_ASSISTANT" }, isActive: true },
+    });
+
     const testSchoolName = `THPT Thử Nghiệm ${Date.now().toString().slice(-4)}`;
     const schoolCreateRes = await createSchoolAction({
       name: testSchoolName,
       address: "123 Đường Giải Phóng, Hà Nội",
       type: "THPT",
+      managerId: manager?.id,
       contactName: "Thầy Hiệu Trưởng",
       contactPhone: "0912345678",
     });
-    assert("Tạo trường học thành công không cần bắt buộc Quản nhiệm", schoolCreateRes.success);
+    assert("Tạo trường học thành công với Quản nhiệm và đầy đủ thông tin", schoolCreateRes.success);
 
     const createdSchoolId = (schoolCreateRes as any).school?.id;
 
@@ -121,13 +132,14 @@ async function runAllTests() {
     // Xem chi tiết trường học (BUG_13)
     if (createdSchoolId) {
       const detail = await getSchoolDetailAction(createdSchoolId);
-      assert("Xem chi tiết trường học (BUG_13) đầy đủ thông tin", !!detail && detail.name === testSchoolName);
+      assert("Xem chi tiết trường học đầy đủ thông tin", !!detail && detail.name === testSchoolName && !!detail.contactName);
     }
 
     // -------------------------------------------------------------
-    // TEST 5: Tạo Lớp học với Lịch học & Tự sinh mã lớp (BUG_07, BUG_10)
+    // TEST 5: Tạo Lớp học với Bắt buộc ít nhất 1 GV và 1 TA & Date Time Picker
     // -------------------------------------------------------------
-    console.log("\n--- 5. KIỂM THỬ TẠO LỚP HỌC & DATE TIME PICKER (BUG_07, BUG_10) ---");
+    console.log("\n--- 5. KIỂM THỬ TẠO LỚP HỌC (GV + TA BẮT BUỘC) & DATE TIME PICKER ---");
+    let createdClassId: string | undefined;
     if (createdSchoolId) {
       const classCodePreview = await getNextClassCodeAction(createdSchoolId, "IELTS");
       assert("Lấy mã lớp học tiếp theo đúng định dạng IELTS_...", classCodePreview.success && classCodePreview.code.includes("IELTS_"));
@@ -137,80 +149,82 @@ async function runAllTests() {
         schoolId: createdSchoolId,
         program: "IELTS",
         capacity: 25,
+        teacherIds: teacher ? [teacher.id] : [],
+        taIds: ta ? [ta.id] : [],
         schedule: "Thứ 2, Thứ 4, Thứ 6 • 18:00 - 20:00",
         startDate: "2026-10-15",
         endDate: "2026-12-30",
       });
-      assert("Tạo lớp học với lịch học Date Time Picker thành công", classCreateRes.success);
+      assert("Tạo lớp học thành công khi đã có GV và TA", classCreateRes.success);
 
       const createdClass = (classCreateRes as any).class;
+      createdClassId = createdClass?.id;
 
       // Tìm kiếm lớp học với khoảng trắng thừa
       const searchClasses = await getClassesAction("ALL", "   Bứt Phá   ");
       assert("Tìm kiếm lớp học tự động .trim() khoảng trắng", searchClasses.length > 0);
 
-      // Xóa mềm & Khôi phục lớp học (BUG_05, BUG_15b)
+      // Xóa lớp học
       if (createdClass?.id) {
         const delClassRes = await deleteClassAction(createdClass.id);
         assert("Xóa mềm lớp học (isActive = false)", delClassRes.success);
 
         const checkDeleted = await prisma.class.findUnique({ where: { id: createdClass.id } });
         assert("Trạng thái lớp học sau xóa mềm là isActive: false", checkDeleted?.isActive === false);
-
-        const restoreClassRes = await restoreClassAction(createdClass.id);
-        assert("Khôi phục lớp học thành công (isActive = true)", restoreClassRes.success);
       }
     }
 
     // -------------------------------------------------------------
-    // TEST 6: Xóa mềm & Khôi phục Trường học (BUG_05, BUG_15a)
+    // TEST 6: Xóa Trường học
     // -------------------------------------------------------------
-    console.log("\n--- 6. KIỂM THỬ XÓA MỀM & KHÔI PHỤC TRƯỜNG HỌC (BUG_05, BUG_15a) ---");
+    console.log("\n--- 6. KIỂM THỬ XÓA TRƯỜNG HỌC ---");
     if (createdSchoolId) {
       const delSchoolRes = await deleteSchoolAction(createdSchoolId);
-      assert("Xóa mềm trường học thành công", delSchoolRes.success);
+      assert("Xóa trường học thành công", delSchoolRes.success);
 
       const checkSchoolDeleted = await prisma.school.findUnique({ where: { id: createdSchoolId } });
-      assert("Trường học sau xóa mềm có isActive: false", checkSchoolDeleted?.isActive === false);
-
-      const restoreSchoolRes = await restoreSchoolAction(createdSchoolId);
-      assert("Khôi phục trường học thành công (isActive: true)", restoreSchoolRes.success);
+      assert("Trường học sau xóa có isActive: false", checkSchoolDeleted?.isActive === false);
     }
 
     // -------------------------------------------------------------
-    // TEST 7: Role-First & Multi-assignment (+) cho Người dùng
+    // TEST 7: Role-First & Gán bắt buộc Lớp/Trường khi tạo Người dùng
     // -------------------------------------------------------------
-    console.log("\n--- 7. KIỂM THỬ ROLE-FIRST & GÁN ĐA NHIỆM (+) CHO NGƯỜI DÙNG ---");
+    console.log("\n--- 7. KIỂM THỬ ROLE-FIRST & GÁN BẮT BUỘC LỚP/TRƯỜNG KHI TẠO NGƯỜI DÙNG ---");
     const testTeacherEmail = `teacher_${Date.now()}@simpace.edu.vn`;
+    const someClass = await prisma.class.findFirst({ where: { isActive: true } });
     const userRes = await createUserAction({
       fullName: "Cô Giáo Test Flow",
       email: testTeacherEmail,
       roleCode: "TEACHER",
       address: "Hà Nội, Việt Nam",
       phoneNumber: "0988776655",
+      gender: "FEMALE",
+      dateOfBirth: "1992-05-15",
+      classIds: someClass ? [someClass.id] : [],
     });
-    assert("Tạo người dùng với đầy đủ trường thông tin (Role-First, Địa chỉ) thành công", userRes.success);
+    assert("Tạo giáo viên thành công với gán lớp bắt buộc", userRes.success);
 
     const createdUserId = (userRes as any).user?.id;
     if (createdUserId) {
-      // Xóa mềm người dùng
+      // Xóa người dùng
       const delUserRes = await deleteUserAction(createdUserId);
-      assert("Xóa mềm người dùng thành công", delUserRes.success);
+      assert("Xóa người dùng thành công", delUserRes.success);
 
       const checkUser = await prisma.user.findUnique({ where: { id: createdUserId } });
-      assert("Tài khoản sau xóa mềm có isActive: false", checkUser?.isActive === false);
-
-      const restoreUserRes = await restoreUserAction(createdUserId);
-      assert("Khôi phục tài khoản thành công", restoreUserRes.success);
+      assert("Tài khoản sau xóa có isActive: false", checkUser?.isActive === false);
 
       // Clean up test user
       await prisma.userProfile.deleteMany({ where: { userId: createdUserId } });
+      await prisma.classAssignment.deleteMany({ where: { userId: createdUserId } });
       await prisma.user.delete({ where: { id: createdUserId } });
     }
 
     // Clean up test class & school
     if (createdSchoolId) {
-      await prisma.class.deleteMany({ where: { schoolId: createdSchoolId } });
+      if (createdClassId) {
+        await prisma.classAssignment.deleteMany({ where: { classId: createdClassId } });
+        await prisma.class.deleteMany({ where: { id: createdClassId } });
+      }
       await prisma.school.delete({ where: { id: createdSchoolId } });
     }
 

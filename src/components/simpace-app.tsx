@@ -75,6 +75,7 @@ import {
   restoreSchoolAction,
   getSchoolDetailAction,
   getNextSchoolCodeAction,
+  getSchoolManagersAction,
 } from "@/actions/schools";
 import {
   createClassAction,
@@ -99,6 +100,8 @@ import {
   commitImportUsersAction,
   restoreUserAction,
   getNextUserCodeAction,
+  getTeachersAction,
+  getTAsAction,
 } from "@/actions/users";
 import {
   updateSystemPermissionAction,
@@ -207,16 +210,22 @@ export function SimpaceApp({
   };
 
   const refreshAll = async () => {
-    const [sc, cl, us, per] = await Promise.all([
+    const [sc, cl, us, per, mgrs, tchs, taList] = await Promise.all([
       getSchoolsAction("", "ALL"),
       getClassesAction("ALL", "", "ALL"),
       getUsersAction("Tất cả", "", "ALL"),
       getSystemPermissionsAction(),
+      getSchoolManagersAction(),
+      getTeachersAction(),
+      getTAsAction(),
     ]);
     setSchools(sc);
     setClasses(cl);
     setUsers(us);
     setPermissions(per);
+    setManagers(mgrs);
+    setTeachers(tchs);
+    setTAs(taList);
   };
 
   if (!currentUser) {
@@ -588,6 +597,7 @@ export function SimpaceApp({
         schools={schools}
         classes={classes}
         onAddClassShortcut={() => setAddClassOpen(true)}
+        onAddSchoolShortcut={() => setAddSchoolOpen(true)}
         onCreatedSuccess={(acc) => {
           setAddUserOpen(false);
           refreshAll();
@@ -612,6 +622,7 @@ export function SimpaceApp({
       <SchoolSheet
         open={addSchoolOpen}
         onOpenChange={setAddSchoolOpen}
+        managers={managers}
         onDone={() => {
           setAddSchoolOpen(false);
           refreshAll();
@@ -1512,7 +1523,6 @@ function UsersPageView({
   onViewUser?: (u: any) => void;
 }) {
   const [tab, setTab] = useState("Tất cả");
-  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
@@ -1529,9 +1539,8 @@ function UsersPageView({
     : ["Tất cả", "Quản trị viên", "Quản nhiệm", "Giáo viên", "Trợ giảng", "Học sinh"];
 
   const filtered = localUsers.filter((u) => {
-    // 1. Lọc theo trạng thái xóa mềm (BUG_05)
-    if (statusFilter === "ACTIVE" && !u.isActive) return false;
-    if (statusFilter === "INACTIVE" && u.isActive) return false;
+    // 1. Chỉ hiển thị tài khoản đang hoạt động (Bỏ trạng thái & thùng rác theo phản hồi)
+    if (!u.isActive) return false;
 
     // 2. Lọc theo quyền của Quản nhiệm: Ẩn tuyệt đối Admin và QN khác
     if (isSchoolManager && (u.role?.code === "ADMIN" || u.role?.code === "SCHOOL_MANAGER")) {
@@ -1588,9 +1597,8 @@ function UsersPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa người dùng đã chọn",
-      description: `Bạn có chắc chắn muốn ngưng hoạt động ${selectedIds.length} người dùng đã chọn? Thao tác này sẽ bảo vệ lịch sử học tập và chuyển trạng thái sang ngưng hoạt động.`,
+      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} người dùng đã chọn khỏi hệ thống?`,
       action: async () => {
-        // Optimistic UI (BUG_04)
         setLocalUsers((prev) =>
           prev.map((u) => (selectedIds.includes(u.id) ? { ...u, isActive: false } : u))
         );
@@ -1605,9 +1613,8 @@ function UsersPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa người dùng",
-      description: `Bạn có chắc chắn muốn xóa tài khoản ${name ? `"${name}"` : "này"}? Tài khoản sẽ chuyển sang trạng thái ngưng hoạt động và có thể khôi phục lại bất kỳ lúc nào.`,
+      description: `Bạn có chắc chắn muốn xóa tài khoản ${name ? `"${name}"` : "này"} khỏi hệ thống?`,
       action: async () => {
-        // Optimistic UI (BUG_04)
         setLocalUsers((prev) =>
           prev.map((u) => (u.id === id ? { ...u, isActive: false } : u))
         );
@@ -1615,15 +1622,6 @@ function UsersPageView({
         onRefresh();
       },
     });
-  };
-
-  const handleRestoreSingle = async (id: string) => {
-    // Optimistic UI
-    setLocalUsers((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, isActive: true } : u))
-    );
-    await restoreUserAction(id);
-    onRefresh();
   };
 
   return (
@@ -1643,56 +1641,16 @@ function UsersPageView({
         ))}
       </div>
 
-      {/* Toolbar & Bộ lọc trạng thái xóa mềm (BUG_05) */}
+      {/* Toolbar: Tìm kiếm & Xóa chọn */}
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
-        <div className="flex flex-wrap items-center gap-2.5 flex-1 max-w-xl">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-            <input
-              className="field field-search border-[#CBD5E1]"
-              placeholder="Tìm kiếm theo họ tên, email, mã..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          {/* Lọc trạng thái (Soft-delete filter) */}
-          <div className="inline-flex rounded-xl bg-[#F1F5F9] p-1 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setStatusFilter("ACTIVE")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === "ACTIVE"
-                  ? "bg-white text-[#EA580C] shadow-sm font-bold"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              Đang hoạt động
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter("INACTIVE")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === "INACTIVE"
-                  ? "bg-white text-rose-600 shadow-sm font-bold"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-              title="Danh sách tài khoản đã tạm xóa, có thể khôi phục lại bất kỳ lúc nào"
-            >
-              Thùng rác (Đã xóa)
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter("ALL")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === "ALL"
-                  ? "bg-white text-[#0F172A] shadow-sm font-bold"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              Tất cả
-            </button>
-          </div>
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+          <input
+            className="field field-search border-[#CBD5E1]"
+            placeholder="Tìm kiếm theo họ tên, email, mã..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -1704,23 +1662,14 @@ function UsersPageView({
               disabled={isDeleting}
               className="rounded-xl shadow-sm"
             >
-              <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) mục
-            </Button>
-          )}
-
-          {onOpenAddUser && (
-            <Button
-              onClick={onOpenAddUser}
-              className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm text-xs"
-            >
-              <Plus className="size-4 mr-1.5" /> Thêm người dùng
+              <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) người dùng đã chọn
             </Button>
           )}
         </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-        <table className="w-full min-w-[800px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[750px] border-collapse text-left text-sm">
           <thead>
             <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
               <th className="px-4 py-3.5 w-10">
@@ -1735,7 +1684,6 @@ function UsersPageView({
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Email / Mã định danh</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Vai trò</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường / Lớp phụ trách</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase text-right">Thao tác</th>
             </tr>
           </thead>
@@ -1749,8 +1697,10 @@ function UsersPageView({
                 const canDelete = (!isSchoolManager || !isTargetAdmin) && !isSelf;
 
                 // Chuỗi hiển thị phân công trường / lớp đa nhiệm
-                let assignmentText = "—";
-                if (u.role?.code === "SCHOOL_MANAGER" && u.managedSchools?.length > 0) {
+                let assignmentText = "Chưa phân công";
+                if (u.role?.code === "ADMIN") {
+                  assignmentText = "Toàn hệ thống";
+                } else if (u.role?.code === "SCHOOL_MANAGER" && u.managedSchools?.length > 0) {
                   assignmentText = u.managedSchools.map((s: any) => s.name).join(", ");
                 } else if (
                   (u.role?.code === "TEACHER" || u.role?.code === "TEACHING_ASSISTANT") &&
@@ -1803,16 +1753,13 @@ function UsersPageView({
                     <td className="px-4 py-3.5">
                       <Badge>{u.role?.name || u.role?.code}</Badge>
                     </td>
-                    <td className="px-4 py-3.5 text-[#64748B] text-xs max-w-[200px] truncate" title={assignmentText}>
-                      {assignmentText}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      {u.isActive ? (
-                        <Status tone="success">Đang hoạt động</Status>
+                    <td className="px-4 py-3.5 text-xs max-w-[220px] truncate" title={assignmentText}>
+                      {assignmentText === "Chưa phân công" ? (
+                        <span className="text-amber-600 font-medium italic">Chưa phân công</span>
+                      ) : assignmentText === "Toàn hệ thống" ? (
+                        <span className="text-[#64748B] font-medium">Toàn hệ thống</span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                          Đã xóa (Thùng rác)
-                        </span>
+                        <span className="text-[#0F172A] font-medium">{assignmentText}</span>
                       )}
                     </td>
                     <td className="px-4 py-3.5 text-right">
@@ -1826,40 +1773,26 @@ function UsersPageView({
                         >
                           <Eye className="size-4" />
                         </Button>
-                        {u.isActive ? (
-                          <>
-                            {canEdit && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-[#64748B] hover:text-[#0F172A]"
-                                onClick={() => onEditUser(u)}
-                                title="Chỉnh sửa"
-                              >
-                                <Edit2 className="size-4" />
-                              </Button>
-                            )}
-                            {canDelete && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-[#64748B] hover:text-[#EF4444]"
-                                onClick={() => handleDeleteSingle(u.id, u.profile?.fullName || u.username)}
-                                title="Xóa tài khoản (Chuyển vào thùng rác)"
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
-                            )}
-                          </>
-                        ) : (
+                        {canEdit && (
                           <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2.5 text-xs text-emerald-700 hover:bg-emerald-50 border-emerald-300"
-                            onClick={() => handleRestoreSingle(u.id)}
-                            title="Khôi phục tài khoản này"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-[#64748B] hover:text-[#0F172A]"
+                            onClick={() => onEditUser(u)}
+                            title="Chỉnh sửa"
                           >
-                            <RotateCcw className="size-3.5 mr-1 text-emerald-600" /> Khôi phục
+                            <Edit2 className="size-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-[#64748B] hover:text-[#EF4444]"
+                            onClick={() => handleDeleteSingle(u.id, u.profile?.fullName || u.username)}
+                            title="Xóa tài khoản"
+                          >
+                            <Trash2 className="size-4" />
                           </Button>
                         )}
                       </div>
@@ -1869,7 +1802,7 @@ function UsersPageView({
               })
             ) : (
               <tr>
-                <td colSpan={7} className="text-center py-8 text-sm text-[#94A3B8] italic">
+                <td colSpan={6} className="text-center py-8 text-sm text-[#94A3B8] italic">
                   Không tìm thấy người dùng phù hợp.
                 </td>
               </tr>
@@ -1964,7 +1897,7 @@ function SchoolsPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa các trường học đã chọn",
-      description: `Bạn có chắc chắn muốn ngưng hoạt động ${selectedIds.length} trường học đã chọn? Thao tác này sẽ chuyển trạng thái các trường học sang không hoạt động.`,
+      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} trường học đã chọn khỏi hệ thống?`,
       action: async () => {
         setLocalSchools((prev) =>
           prev.map((s) => (selectedIds.includes(s.id) ? { ...s, isActive: false } : s))
@@ -1976,12 +1909,11 @@ function SchoolsPageView({
     });
   };
 
-  // BUG_15a: Hiển thị cả Tên trường VÀ Mã trường trong dialog xác nhận xóa
   const handleDeleteSingle = (id: string, name: string, code: string) => {
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa trường học",
-      description: `Bạn có chắc chắn muốn xóa trường "${name}" (Mã trường: ${code}) không? Hành động này sẽ chuyển trạng thái trường sang ngưng hoạt động. Lịch sử các lớp học và học sinh trực thuộc vẫn được bảo lưu.`,
+      description: `Bạn có chắc chắn muốn xóa trường "${name}" (Mã trường: ${code}) khỏi hệ thống?`,
       action: async () => {
         setLocalSchools((prev) =>
           prev.map((s) => (s.id === id ? { ...s, isActive: false } : s))
@@ -1992,64 +1924,17 @@ function SchoolsPageView({
     });
   };
 
-  const handleRestoreSingle = async (id: string) => {
-    setLocalSchools((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, isActive: true } : s))
-    );
-    await restoreSchoolAction(id);
-    onRefresh();
-  };
-
   return (
     <section className="panel">
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
-        <div className="flex flex-wrap items-center gap-2.5 flex-1 max-w-xl">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-            <input
-              className="field field-search border-[#CBD5E1]"
-              placeholder="Tìm kiếm trường học theo tên, mã..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <div className="inline-flex rounded-xl bg-[#F1F5F9] p-1 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setStatusFilter("ACTIVE")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === "ACTIVE"
-                  ? "bg-white text-[#EA580C] shadow-sm font-bold"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              Đang hoạt động
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter("INACTIVE")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === "INACTIVE"
-                  ? "bg-white text-rose-600 shadow-sm font-bold"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-              title="Danh sách trường học đã tạm xóa, có thể khôi phục lại bất kỳ lúc nào"
-            >
-              Thùng rác (Đã xóa)
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter("ALL")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === "ALL"
-                  ? "bg-white text-[#0F172A] shadow-sm font-bold"
-                  : "text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              Tất cả
-            </button>
-          </div>
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+          <input
+            className="field field-search border-[#CBD5E1]"
+            placeholder="Tìm kiếm trường học theo tên, mã, địa chỉ..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
         {selectedIds.length > 0 && (
@@ -2066,7 +1951,7 @@ function SchoolsPageView({
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-        <table className="w-full min-w-[780px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[750px] border-collapse text-left text-sm">
           <thead>
             <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
               <th className="px-4 py-3.5 w-10">
@@ -2082,7 +1967,6 @@ function SchoolsPageView({
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Khối học</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Quản nhiệm phụ trách</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Số lớp</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase text-right">Thao tác</th>
             </tr>
           </thead>
@@ -2120,15 +2004,6 @@ function SchoolsPageView({
                   <td className="px-4 py-3.5 font-semibold text-[#EA580C]">
                     {s._count?.classes || s.classes?.length || 0} lớp
                   </td>
-                  <td className="px-4 py-3.5">
-                    {s.isActive ? (
-                      <Status tone="success">Hoạt động</Status>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                        Đã xóa (Thùng rác)
-                      </span>
-                    )}
-                  </td>
                   <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
                       <Button
@@ -2140,45 +2015,31 @@ function SchoolsPageView({
                       >
                         <Eye className="size-4" />
                       </Button>
-                      {s.isActive ? (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-[#64748B] hover:text-[#0F172A]"
-                            onClick={() => onEditSchool(s)}
-                            title="Chỉnh sửa"
-                          >
-                            <Edit2 className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-[#64748B] hover:text-[#EF4444]"
-                            onClick={() => handleDeleteSingle(s.id, s.name, s.code)}
-                            title="Xóa trường học (Chuyển vào thùng rác)"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2 text-xs text-emerald-700 hover:bg-emerald-50 border-emerald-300"
-                          onClick={() => handleRestoreSingle(s.id)}
-                          title="Khôi phục trường học"
-                        >
-                          <RotateCcw className="size-3.5 mr-1 text-emerald-600" /> Khôi phục
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-[#64748B] hover:text-[#0F172A]"
+                        onClick={() => onEditSchool(s)}
+                        title="Chỉnh sửa"
+                      >
+                        <Edit2 className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-[#64748B] hover:text-[#EF4444]"
+                        onClick={() => handleDeleteSingle(s.id, s.name, s.code)}
+                        title="Xóa trường học"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={8} className="text-center py-8 text-sm text-[#94A3B8] italic">
+                <td colSpan={7} className="text-center py-8 text-sm text-[#94A3B8] italic">
                   Không tìm thấy trường học phù hợp.
                 </td>
               </tr>
@@ -2187,7 +2048,7 @@ function SchoolsPageView({
         </table>
       </div>
 
-      {/* DRAWER XEM CHI TIẾT TRƯỜNG HỌC (BUG_13) */}
+      {/* MODAL XEM CHI TIẾT TRƯỜNG HỌC (CENTER DIALOG) */}
       <SchoolDetailDrawer
         school={selectedSchoolDetail}
         open={!!selectedSchoolDetail}
@@ -2230,9 +2091,9 @@ function SchoolDetailDrawer({
   if (!school) return null;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-        <SheetHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-orange-100 text-[#EA580C]">
               {school.code}
@@ -2241,37 +2102,37 @@ function SchoolDetailDrawer({
               {school.type}
             </span>
           </div>
-          <SheetTitle className="text-xl font-bold text-[#0F172A] mt-1">
+          <DialogTitle className="text-xl font-bold text-[#0F172A] mt-1">
             {school.name}
-          </SheetTitle>
-          <SheetDescription>
+          </DialogTitle>
+          <DialogDescription>
             Chi tiết đối tác đào tạo và các lớp học trực thuộc tại trường.
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="mt-6 space-y-5 text-sm">
+        <div className="mt-4 space-y-4 text-sm">
           {/* Thông tin liên hệ */}
           <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-4 space-y-2">
             <b className="text-xs uppercase text-slate-500 tracking-wider block">
               Thông tin liên hệ trường học
             </b>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-slate-400 block">Đại diện BGH / Giáo vụ:</span>
+                <span className="text-slate-400 block mb-0.5">Đại diện BGH / Giáo vụ:</span>
                 <span className="font-semibold text-slate-800">
-                  {school.contactName || "—"}
+                  {school.contactName || "Chưa cập nhật"}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block">Số điện thoại:</span>
+                <span className="text-slate-400 block mb-0.5">Số điện thoại:</span>
                 <span className="font-semibold text-slate-800">
-                  {school.contactPhone || "—"}
+                  {school.contactPhone || "Chưa cập nhật"}
                 </span>
               </div>
               <div className="col-span-2">
-                <span className="text-slate-400 block">Địa chỉ:</span>
+                <span className="text-slate-400 block mb-0.5">Địa chỉ:</span>
                 <span className="font-semibold text-slate-800">
-                  {school.address || "—"}
+                  {school.address || "Chưa cập nhật"}
                 </span>
               </div>
             </div>
@@ -2285,11 +2146,16 @@ function SchoolDetailDrawer({
             <p className="font-bold text-slate-900 text-sm">
               {school.manager?.profile?.fullName ||
                 school.manager?.username ||
-                "Chưa phân công quản nhiệm (Gán tại Quản lý người dùng)"}
+                "Chưa phân công quản nhiệm"}
             </p>
             {school.manager?.email && (
               <p className="text-xs text-slate-600">
                 Email: {school.manager.email}
+              </p>
+            )}
+            {school.manager?.profile?.phone && (
+              <p className="text-xs text-slate-600">
+                SĐT Quản nhiệm: {school.manager.profile.phone}
               </p>
             )}
           </div>
@@ -2302,7 +2168,7 @@ function SchoolDetailDrawer({
               </b>
             </div>
             {school.classes && school.classes.length > 0 ? (
-              <div className="space-y-2 max-h-60 overflow-y-auto">
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {school.classes.map((cls: any) => (
                   <div
                     key={cls.id}
@@ -2327,22 +2193,30 @@ function SchoolDetailDrawer({
             )}
           </div>
 
-          {onEditSchool && (
-            <div className="pt-2">
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Đóng
+            </Button>
+            {onEditSchool && (
               <Button
+                type="button"
                 onClick={() => {
                   onOpenChange(false);
                   onEditSchool(school);
                 }}
-                className="w-full bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl"
+                className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white"
               >
-                <Edit2 className="size-4 mr-1.5" /> Chỉnh sửa thông tin trường
+                <Edit2 className="size-4 mr-1.5" /> Chỉnh sửa thông tin
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2365,7 +2239,6 @@ function ClassesPageView({
 }) {
   const canManageClass = currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER";
   const [lifecycleStatus, setLifecycleStatus] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
@@ -2379,18 +2252,17 @@ function ClassesPageView({
     ["ALL", "Tất cả"],
     ["ACTIVE", "Đang diễn ra"],
     ["UPCOMING", "Sắp khai giảng"],
-    ["FINISHED", "Lịch sử"],
+    ["FINISHED", "Đã kết thúc"],
   ] as const;
 
   const filtered = localClasses.filter((c) => {
-    // 1. Lọc theo trạng thái xóa mềm
-    if (statusFilter === "ACTIVE" && !c.isActive) return false;
-    if (statusFilter === "INACTIVE" && c.isActive) return false;
+    // Chỉ hiển thị lớp học còn hoạt động (không hiện thùng rác)
+    if (!c.isActive) return false;
 
-    // 2. Lọc theo chu kỳ lớp học
+    // Lọc theo chu kỳ lớp học
     const matchesLifecycle = lifecycleStatus === "ALL" || c.status === lifecycleStatus;
 
-    // 3. Tìm kiếm .trim() (BUG_10)
+    // Tìm kiếm .trim()
     const cleanSearch = search.trim().toLowerCase();
     const matchesSearch =
       !cleanSearch ||
@@ -2431,7 +2303,7 @@ function ClassesPageView({
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa các lớp học đã chọn",
-      description: `Bạn có chắc chắn muốn chuyển ${selectedIds.length} lớp học đã chọn sang danh sách Đã xóa mềm? Các lớp học này có thể khôi phục lại bất kỳ lúc nào.`,
+      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} lớp học đã chọn? Các lớp học này sẽ ngừng hoạt động và bị xóa khỏi hệ thống.`,
       action: async () => {
         // Optimistic UI update
         const toDeleteIds = [...selectedIds];
@@ -2446,11 +2318,10 @@ function ClassesPageView({
   };
 
   const handleDeleteSingle = (cls: any) => {
-    // Hiển thị cả Tên lớp học VÀ Mã lớp học (BUG_15b)
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa lớp học",
-      description: `Bạn có chắc chắn muốn xóa lớp học "${cls.name}" (Mã lớp: ${cls.code})? Lớp học sẽ được chuyển sang trạng thái Đã xóa mềm và có thể khôi phục lại.`,
+      description: `Bạn có chắc chắn muốn xóa lớp học "${cls.name}" (Mã lớp: ${cls.code})? Lớp học sẽ ngừng hoạt động và bị xóa khỏi hệ thống.`,
       action: async () => {
         // Optimistic UI update
         setLocalClasses((prev) =>
@@ -2462,19 +2333,10 @@ function ClassesPageView({
     });
   };
 
-  const handleRestore = async (cls: any) => {
-    setLocalClasses((prev) =>
-      prev.map((c) => (c.id === cls.id ? { ...c, isActive: true } : c))
-    );
-    await restoreClassAction(cls.id);
-    onRefresh();
-  };
-
   return (
     <section className="panel">
-      {/* Hàng 1: Tabs Trạng thái xóa mềm (Đang hoạt động / Đã xóa mềm / Tất cả) + Tabs Tiến độ */}
+      {/* Hàng 1: Tabs Chu kỳ lớp học (Tất cả / Đang diễn ra / Sắp khai giảng / Đã kết thúc) */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F5F9] pb-4">
-        {/* Pills Tabs Chu kỳ lớp học */}
         <div className="flex gap-2 overflow-x-auto">
           {classTabs.map(([key, label]) => (
             <button
@@ -2489,44 +2351,6 @@ function ClassesPageView({
               {label}
             </button>
           ))}
-        </div>
-
-        {/* Bộ lọc xóa mềm */}
-        <div className="flex items-center gap-1.5 bg-[#F1F5F9] p-1 rounded-xl">
-          <button
-            type="button"
-            onClick={() => setStatusFilter("ACTIVE")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
-              statusFilter === "ACTIVE"
-                ? "bg-white text-[#EA580C] shadow-sm"
-                : "text-[#64748B] hover:text-[#0F172A]"
-            }`}
-          >
-            Đang hoạt động
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter("INACTIVE")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
-              statusFilter === "INACTIVE"
-                ? "bg-white text-rose-600 shadow-sm"
-                : "text-[#64748B] hover:text-[#0F172A]"
-            }`}
-            title="Danh sách lớp học đã tạm xóa, có thể khôi phục lại bất kỳ lúc nào"
-          >
-            Thùng rác (Đã xóa)
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter("ALL")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
-              statusFilter === "ALL"
-                ? "bg-white text-[#0F172A] shadow-sm"
-                : "text-[#64748B] hover:text-[#0F172A]"
-            }`}
-          >
-            Tất cả
-          </button>
         </div>
       </div>
 
@@ -2578,7 +2402,7 @@ function ClassesPageView({
           <tbody className="divide-y divide-[#F1F5F9] bg-white">
             {filtered.length > 0 ? (
               filtered.map((c) => (
-                <tr key={c.id} className={`hover:bg-[#F8FAFC] transition ${!c.isActive ? "bg-rose-50/20" : ""}`}>
+                <tr key={c.id} className="hover:bg-[#F8FAFC] transition">
                   <td className="px-4 py-3.5">
                     <input
                       type="checkbox"
@@ -2622,24 +2446,17 @@ function ClassesPageView({
                     {c._count?.enrollments || 0}/{c.capacity}
                   </td>
                   <td className="px-4 py-3.5">
-                    <div className="flex flex-col gap-1">
-                      <Status
-                        tone={
-                          c.status === "FINISHED" ? "neutral" : c.status === "UPCOMING" ? "warn" : "success"
-                        }
-                      >
-                        {c.status === "ACTIVE"
-                          ? "Hoạt động"
-                          : c.status === "UPCOMING"
-                          ? "Sắp mở"
-                          : "Đã kết thúc"}
-                      </Status>
-                      {!c.isActive && (
-                        <span className="inline-flex w-fit items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
-                          Đã xóa (Thùng rác)
-                        </span>
-                      )}
-                    </div>
+                    <Status
+                      tone={
+                        c.status === "FINISHED" ? "neutral" : c.status === "UPCOMING" ? "warn" : "success"
+                      }
+                    >
+                      {c.status === "ACTIVE"
+                        ? "Đang diễn ra"
+                        : c.status === "UPCOMING"
+                        ? "Sắp khai giảng"
+                        : "Đã kết thúc"}
+                    </Status>
                   </td>
                   <td className="px-4 py-3.5 text-right">
                     <div className="flex justify-end items-center gap-1">
@@ -2652,7 +2469,7 @@ function ClassesPageView({
                       >
                         <Eye className="size-4" />
                       </Button>
-                      {canManageClass && c.isActive ? (
+                      {canManageClass && (
                         <>
                           <Button
                             variant="ghost"
@@ -2668,21 +2485,12 @@ function ClassesPageView({
                             size="icon"
                             className="size-8 text-[#64748B] hover:text-[#EF4444]"
                             onClick={() => handleDeleteSingle(c)}
-                            title="Xóa lớp học (Chuyển vào thùng rác)"
+                            title="Xóa lớp học"
                           >
                             <Trash2 className="size-4" />
                           </Button>
                         </>
-                      ) : canManageClass && !c.isActive ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRestore(c)}
-                          className="text-xs text-emerald-600 border-emerald-300 hover:bg-emerald-50 font-semibold"
-                        >
-                          <RotateCcw className="size-3.5 mr-1" /> Khôi phục
-                        </Button>
-                      ) : null}
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -2734,8 +2542,8 @@ function ClassDetailView({
 
   if (!classItem) return null;
 
-  const currentTeacher = classItem.assignments?.find((a: any) => a.roleInClass === "TEACHER");
-  const currentTA = classItem.assignments?.find((a: any) => a.roleInClass === "TEACHING_ASSISTANT");
+  const assignedTeachers = classItem.assignments?.filter((a: any) => a.roleInClass === "TEACHER") || [];
+  const assignedTAs = classItem.assignments?.filter((a: any) => a.roleInClass === "TEACHING_ASSISTANT") || [];
 
   const handleAssign = () => {
     if (!assignRole || !selectedStaffId) return;
@@ -2762,6 +2570,13 @@ function ClassDetailView({
     });
   };
 
+  const statusLabel =
+    classItem.status === "ACTIVE"
+      ? "Đang diễn ra"
+      : classItem.status === "UPCOMING"
+      ? "Sắp khai giảng"
+      : "Đã kết thúc";
+
   return (
     <>
       <button
@@ -2779,86 +2594,110 @@ function ClassDetailView({
             `Khóa học: ${classItem.program || "IELTS"}`,
             `Trường học: ${classItem.school?.name || "Chưa gán"}`,
             `Sĩ số: ${classItem.enrollments?.length || 0}/${classItem.capacity} học viên`,
-            `Trạng thái: ${classItem.status}`,
+            `Trạng thái: ${statusLabel}`,
           ]}
         />
 
-        {/* Card Giáo viên với nút Đổi / Hủy phân công */}
+        {/* Card Giáo viên với nút Gán thêm giáo viên */}
         <section className="panel flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-center mb-3">
-              <h2 className="font-bold text-base text-[#0F172A]">Giáo viên phụ trách</h2>
+              <h2 className="font-bold text-base text-[#0F172A]">
+                Giáo viên phụ trách ({assignedTeachers.length})
+              </h2>
               <Button
                 variant="outline"
                 size="sm"
-                className="text-xs h-7 rounded-lg"
+                className="text-xs h-7 rounded-lg text-[#EA580C] border-orange-200 hover:bg-orange-50"
                 onClick={() => {
                   setAssignRole("TEACHER");
-                  setSelectedStaffId(currentTeacher?.userId || "");
+                  setSelectedStaffId("");
                 }}
               >
-                {currentTeacher ? "Đổi giáo viên" : "+ Gán giáo viên"}
+                <Plus className="size-3 mr-1" /> Gán thêm GV
               </Button>
             </div>
-            {currentTeacher ? (
-              <div className="space-y-1.5 text-sm">
-                <b className="text-[#0F172A] block text-base">
-                  {currentTeacher.staff?.profile?.fullName || currentTeacher.staff?.username}
-                </b>
-                <p className="text-[#64748B] text-xs">{currentTeacher.staff?.email}</p>
-                <Badge>Giáo viên giảng dạy chính</Badge>
+            {assignedTeachers.length > 0 ? (
+              <div className="space-y-2.5">
+                {assignedTeachers.map((tch: any) => (
+                  <div
+                    key={tch.id}
+                    className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/50 flex justify-between items-start"
+                  >
+                    <div className="space-y-1 text-sm">
+                      <b className="text-[#0F172A] block text-sm">
+                        {tch.staff?.profile?.fullName || tch.staff?.username}
+                      </b>
+                      <p className="text-[#64748B] text-xs">{tch.staff?.email}</p>
+                      <Badge>Giáo viên giảng dạy</Badge>
+                    </div>
+                    {assignedTeachers.length > 1 && (
+                      <button
+                        onClick={() => handleUnassign(tch.userId, "giáo viên")}
+                        className="text-xs font-semibold text-rose-600 hover:underline ml-2"
+                        title="Hủy phân công giáo viên này"
+                      >
+                        Gỡ
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             ) : (
               <p className="text-sm text-[#94A3B8] italic">Chưa phân công giáo viên</p>
             )}
           </div>
-          {currentTeacher && (
-            <button
-              onClick={() => handleUnassign(currentTeacher.userId, "giáo viên")}
-              className="mt-4 text-xs font-semibold text-red-600 hover:underline text-left"
-            >
-              Hủy phân công giáo viên này
-            </button>
-          )}
         </section>
 
-        {/* Card Trợ giảng với nút Đổi / Hủy phân công */}
+        {/* Card Trợ giảng với nút Gán thêm trợ giảng */}
         <section className="panel flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-center mb-3">
-              <h2 className="font-bold text-base text-[#0F172A]">Trợ giảng (TA) phụ trách</h2>
+              <h2 className="font-bold text-base text-[#0F172A]">
+                Trợ giảng (TA) phụ trách ({assignedTAs.length})
+              </h2>
               <Button
                 variant="outline"
                 size="sm"
-                className="text-xs h-7 rounded-lg"
+                className="text-xs h-7 rounded-lg text-purple-600 border-purple-200 hover:bg-purple-50"
                 onClick={() => {
                   setAssignRole("TEACHING_ASSISTANT");
-                  setSelectedStaffId(currentTA?.userId || "");
+                  setSelectedStaffId("");
                 }}
               >
-                {currentTA ? "Đổi trợ giảng" : "+ Gán trợ giảng"}
+                <Plus className="size-3 mr-1" /> Gán thêm TA
               </Button>
             </div>
-            {currentTA ? (
-              <div className="space-y-1.5 text-sm">
-                <b className="text-[#0F172A] block text-base">
-                  {currentTA.staff?.profile?.fullName || currentTA.staff?.username}
-                </b>
-                <p className="text-[#64748B] text-xs">{currentTA.staff?.email}</p>
-                <Badge>Trợ giảng hỗ trợ lớp</Badge>
+            {assignedTAs.length > 0 ? (
+              <div className="space-y-2.5">
+                {assignedTAs.map((ta: any) => (
+                  <div
+                    key={ta.id}
+                    className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/50 flex justify-between items-start"
+                  >
+                    <div className="space-y-1 text-sm">
+                      <b className="text-[#0F172A] block text-sm">
+                        {ta.staff?.profile?.fullName || ta.staff?.username}
+                      </b>
+                      <p className="text-[#64748B] text-xs">{ta.staff?.email}</p>
+                      <Badge>Trợ giảng hỗ trợ lớp</Badge>
+                    </div>
+                    {assignedTAs.length > 1 && (
+                      <button
+                        onClick={() => handleUnassign(ta.userId, "trợ giảng")}
+                        className="text-xs font-semibold text-rose-600 hover:underline ml-2"
+                        title="Hủy phân công trợ giảng này"
+                      >
+                        Gỡ
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             ) : (
               <p className="text-sm text-[#94A3B8] italic">Chưa phân công trợ giảng</p>
             )}
           </div>
-          {currentTA && (
-            <button
-              onClick={() => handleUnassign(currentTA.userId, "trợ giảng")}
-              className="mt-4 text-xs font-semibold text-red-600 hover:underline text-left"
-            >
-              Hủy phân công trợ giảng này
-            </button>
-          )}
         </section>
       </div>
 
@@ -2915,10 +2754,10 @@ function ClassDetailView({
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
-                {assignRole === "TEACHER" ? "Phân công Giáo viên" : "Phân công Trợ giảng"}
+                {assignRole === "TEACHER" ? "Gán thêm Giáo viên" : "Gán thêm Trợ giảng (TA)"}
               </DialogTitle>
               <DialogDescription>
-                Chọn nhân sự để gán vào lớp {classItem.name} ({classItem.code})
+                Chọn nhân sự để gán thêm vào lớp {classItem.name} ({classItem.code})
               </DialogDescription>
             </DialogHeader>
 
@@ -2930,11 +2769,13 @@ function ClassDetailView({
                 onChange={(e) => setSelectedStaffId(e.target.value)}
               >
                 <option value="">-- Chọn nhân sự --</option>
-                {(assignRole === "TEACHER" ? teachers : tas).map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {s.profile?.fullName || s.username} ({s.email})
-                  </option>
-                ))}
+                {(assignRole === "TEACHER" ? teachers : tas)
+                  .filter((s: any) => !classItem.assignments?.some((a: any) => a.userId === s.id))
+                  .map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.profile?.fullName || s.username} ({s.email})
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -2985,7 +2826,8 @@ function SchedulePageView({
 
   // Lọc các lớp học liên quan đến vai trò của người dùng
   const relevantClasses = classes.filter((c) => {
-    if (c.status !== "ACTIVE" || !c.isActive) return false;
+    // Chỉ loại bỏ các lớp đã kết thúc hoặc đã bị xóa
+    if (c.status === "FINISHED" || !c.isActive) return false;
 
     if (currentUser?.role === "ADMIN") return true;
 
@@ -3005,16 +2847,16 @@ function SchedulePageView({
     }
 
     if (currentUser?.role === "STUDENT") {
-      // Xem lớp mình ghi danh học tập
-      const isEnrolled = c.enrollments?.some(
-        (e: any) =>
-          e.studentId === currentUid ||
-          e.student?.id === currentUid ||
-          e.student?.username === currentUser?.username
-      );
-      if (isEnrolled) return true;
-      // Dự phòng trường hợp server đã lọc trực tiếp cho student
-      return !c.enrollments || c.enrollments.length === 0;
+      // Xem lớp mình ghi danh học tập (cả từ server filter lẫn client check)
+      if (c.enrollments && c.enrollments.length > 0) {
+        return c.enrollments.some(
+          (e: any) =>
+            e.studentId === currentUid ||
+            e.student?.id === currentUid ||
+            e.student?.username === currentUser?.username
+        );
+      }
+      return true;
     }
 
     return true;
@@ -4080,6 +3922,7 @@ function UserDialog({
   schools,
   classes,
   onAddClassShortcut,
+  onAddSchoolShortcut,
   onCreatedSuccess,
 }: {
   open: boolean;
@@ -4087,6 +3930,7 @@ function UserDialog({
   schools: any[];
   classes: any[];
   onAddClassShortcut: () => void;
+  onAddSchoolShortcut?: () => void;
   onCreatedSuccess: (acc: any) => void;
 }) {
   const [modalMode, setModalMode] = useState<"manual" | "excel">("manual");
@@ -4234,6 +4078,23 @@ function UserDialog({
         ? studentClasses.filter(Boolean)
         : staffClasses.filter(Boolean);
 
+    if (selectedRole === "SCHOOL_MANAGER" && schoolIds.length === 0) {
+      setErrorMsg("Quản nhiệm bắt buộc phải được phân công ít nhất 1 trường học phụ trách!");
+      return;
+    }
+    if (selectedRole === "TEACHER" && classIds.length === 0) {
+      setErrorMsg("Giáo viên bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
+      return;
+    }
+    if (selectedRole === "TEACHING_ASSISTANT" && classIds.length === 0) {
+      setErrorMsg("Trợ giảng bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
+      return;
+    }
+    if (selectedRole === "STUDENT" && classIds.length === 0) {
+      setErrorMsg("Học sinh bắt buộc phải được ghi danh vào ít nhất 1 lớp học!");
+      return;
+    }
+
     startTransition(async () => {
       const res = await createUserAction({
         fullName: formData.get("fullName")?.toString() || "",
@@ -4241,6 +4102,8 @@ function UserDialog({
         roleCode: selectedRole,
         phoneNumber: formData.get("phoneNumber")?.toString(),
         address: formData.get("address")?.toString(),
+        dateOfBirth: formData.get("dateOfBirth")?.toString() || undefined,
+        gender: (formData.get("gender")?.toString() as any) || undefined,
         schoolIds: selectedRole === "SCHOOL_MANAGER" ? schoolIds : undefined,
         classIds:
           selectedRole === "TEACHER" ||
@@ -4392,6 +4255,27 @@ function UserDialog({
                   label="Địa chỉ thường trú"
                   placeholder="Số nhà, đường, quận/huyện..."
                 />
+                <div>
+                  <label className="text-sm font-semibold text-[#0F172A] block mb-1.5">
+                    Ngày sinh
+                  </label>
+                  <input
+                    name="dateOfBirth"
+                    type="date"
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-[#0F172A] block mb-1.5">
+                    Giới tính
+                  </label>
+                  <select name="gender" className="field" defaultValue="">
+                    <option value="">-- Chọn giới tính --</option>
+                    <option value="MALE">Nam</option>
+                    <option value="FEMALE">Nữ</option>
+                    <option value="OTHER">Khác</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -4401,27 +4285,41 @@ function UserDialog({
                 3. Phân công & Nhiệm vụ theo vị trí
               </label>
 
-              {/* A. QUẢN NHIỆM: GÁN NHIỀU TRƯỜNG PHỤ TRÁCH DẤU (+) */}
+              {/* A. QUẢN NHIỆM: GÁN NHIỀU TRƯỜNG PHỤ TRÁCH DẤU (+) & TẠO TRƯỜNG MỚI */}
               {selectedRole === "SCHOOL_MANAGER" && (
                 <div className="space-y-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3.5">
                   <div className="flex justify-between items-center">
                     <div>
                       <h4 className="text-sm font-bold text-[#0F172A]">
-                        Trường học phụ trách (Quản lý đa trường)
+                        Trường học phụ trách (Quản lý đa trường) *
                       </h4>
                       <p className="text-xs text-[#64748B]">
-                        Quản nhiệm có thể được giao quản lý nhiều trường học đối tác cùng lúc.
+                        Bắt buộc chọn ít nhất 1 trường đối tác quản lý.
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setManagerSchools((prev) => [...prev, ""])}
-                      className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
-                    >
-                      <Plus className="size-3.5 mr-1" /> Thêm trường
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setManagerSchools((prev) => [...prev, ""])}
+                        className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
+                      >
+                        <Plus className="size-3.5 mr-1" /> Thêm trường
+                      </Button>
+                      {onAddSchoolShortcut && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onAddSchoolShortcut}
+                          title="Tạo nhanh trường mới"
+                          className="text-xs h-7"
+                        >
+                          <CirclePlus className="size-3.5 mr-1 text-[#EA580C]" /> Tạo trường mới
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2 mt-2">
@@ -4439,7 +4337,7 @@ function UserDialog({
                             });
                           }}
                         >
-                          <option value="">-- Chọn trường học phụ trách #{idx + 1} --</option>
+                          <option value="">-- Chọn trường học phụ trách #{idx + 1} * --</option>
                           {schools.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name} ({s.code})
@@ -4465,27 +4363,41 @@ function UserDialog({
                 </div>
               )}
 
-              {/* B. GIÁO VIÊN: GÁN NHIỀU LỚP GIẢNG DẠY DẤU (+) */}
+              {/* B. GIÁO VIÊN: GÁN NHIỀU LỚP GIẢNG DẠY DẤU (+) & TẠO LỚP MỚI */}
               {selectedRole === "TEACHER" && (
                 <div className="space-y-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3.5">
                   <div className="flex justify-between items-center">
                     <div>
                       <h4 className="text-sm font-bold text-[#0F172A]">
-                        Lớp học phụ trách giảng dạy
+                        Lớp học phụ trách giảng dạy *
                       </h4>
                       <p className="text-xs text-[#64748B]">
-                        Giáo viên có thể đảm nhiệm giảng dạy nhiều lớp cùng lúc.
+                        Bắt buộc chọn ít nhất 1 lớp học giảng dạy.
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setStaffClasses((prev) => [...prev, ""])}
-                      className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
-                    >
-                      <Plus className="size-3.5 mr-1" /> Thêm lớp
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setStaffClasses((prev) => [...prev, ""])}
+                        className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
+                      >
+                        <Plus className="size-3.5 mr-1" /> Thêm lớp
+                      </Button>
+                      {onAddClassShortcut && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onAddClassShortcut}
+                          title="Tạo nhanh lớp mới"
+                          className="text-xs h-7"
+                        >
+                          <CirclePlus className="size-3.5 mr-1 text-[#EA580C]" /> Tạo lớp mới
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2 mt-2">
@@ -4503,7 +4415,7 @@ function UserDialog({
                             });
                           }}
                         >
-                          <option value="">-- Chọn lớp học #{idx + 1} --</option>
+                          <option value="">-- Chọn lớp học #{idx + 1} * --</option>
                           {classes.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name} ({c.code}) - {c.school?.name}
@@ -4529,27 +4441,41 @@ function UserDialog({
                 </div>
               )}
 
-              {/* C. TRỢ GIẢNG: GÁN NHIỀU LỚP TRỢ GIẢNG DẤU (+) */}
+              {/* C. TRỢ GIẢNG: GÁN NHIỀU LỚP TRỢ GIẢNG DẤU (+) & TẠO LỚP MỚI */}
               {selectedRole === "TEACHING_ASSISTANT" && (
                 <div className="space-y-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3.5">
                   <div className="flex justify-between items-center">
                     <div>
                       <h4 className="text-sm font-bold text-[#0F172A]">
-                        Lớp học phụ trách trợ giảng
+                        Lớp học phụ trách trợ giảng *
                       </h4>
                       <p className="text-xs text-[#64748B]">
-                        Trợ giảng có thể phụ trách hỗ trợ nhiều lớp học.
+                        Bắt buộc chọn ít nhất 1 lớp học trợ giảng.
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setStaffClasses((prev) => [...prev, ""])}
-                      className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
-                    >
-                      <Plus className="size-3.5 mr-1" /> Thêm lớp
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setStaffClasses((prev) => [...prev, ""])}
+                        className="text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 h-7"
+                      >
+                        <Plus className="size-3.5 mr-1" /> Thêm lớp
+                      </Button>
+                      {onAddClassShortcut && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onAddClassShortcut}
+                          title="Tạo nhanh lớp mới"
+                          className="text-xs h-7"
+                        >
+                          <CirclePlus className="size-3.5 mr-1 text-[#EA580C]" /> Tạo lớp mới
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2 mt-2">
@@ -4567,7 +4493,7 @@ function UserDialog({
                             });
                           }}
                         >
-                          <option value="">-- Chọn lớp trợ giảng #{idx + 1} --</option>
+                          <option value="">-- Chọn lớp trợ giảng #{idx + 1} * --</option>
                           {classes.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name} ({c.code}) - {c.school?.name}
@@ -5112,13 +5038,24 @@ function ViewUserModal({
     STUDENT: "Học viên",
   };
 
-  const managedSchools = schools?.filter((s) => s.managerId === user.id) || [];
-  const assignedClasses = classes?.filter((c) =>
-    c.assignments?.some((a: any) => a.userId === user.id)
-  ) || [];
-  const enrolledClasses = classes?.filter((c) =>
-    c.enrollments?.some((e: any) => e.studentId === user.id)
-  ) || [];
+  const managedSchools =
+    user.managedSchools?.length > 0
+      ? user.managedSchools
+      : schools?.filter((s) => s.managerId === user.id) || [];
+
+  const assignedClasses =
+    user.classAssignments?.length > 0
+      ? user.classAssignments.map((a: any) => a.class).filter(Boolean)
+      : classes?.filter((c) =>
+          c.assignments?.some((a: any) => a.userId === user.id)
+        ) || [];
+
+  const enrolledClasses =
+    user.classEnrollments?.length > 0
+      ? user.classEnrollments.map((e: any) => e.class).filter(Boolean)
+      : classes?.filter((c) =>
+          c.enrollments?.some((e: any) => e.studentId === user.id)
+        ) || [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -5154,14 +5091,8 @@ function ViewUserModal({
                 <span className="font-mono text-xs text-[#64748B]">Mã tài khoản: {user.username}</span>
               </div>
             </div>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-bold ${
-                user.isActive
-                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                  : "bg-rose-100 text-rose-800 border border-rose-200"
-              }`}
-            >
-              {user.isActive ? "Đang hoạt động" : "Đã tạm dừng (Thùng rác)"}
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              Đang hoạt động
             </span>
           </div>
 
@@ -5173,18 +5104,22 @@ function ViewUserModal({
             </div>
             <div>
               <span className="text-xs text-[#64748B] block">Số điện thoại:</span>
-              <b className="text-[#0F172A]">{user.profile?.phoneNumber || "—"}</b>
+              <b className="text-[#0F172A]">{user.profile?.phoneNumber || "Chưa cập nhật"}</b>
             </div>
             <div className="sm:col-span-2">
               <span className="text-xs text-[#64748B] block">Địa chỉ cư trú:</span>
-              <b className="text-[#0F172A]">{user.profile?.address || "—"}</b>
+              <b className="text-[#0F172A]">{user.profile?.address || "Chưa cập nhật"}</b>
             </div>
             <div>
               <span className="text-xs text-[#64748B] block">Ngày sinh:</span>
               <b className="text-[#0F172A]">
                 {user.profile?.dateOfBirth
-                  ? new Date(user.profile.dateOfBirth).toLocaleDateString("vi-VN")
-                  : "—"}
+                  ? new Date(user.profile.dateOfBirth).toLocaleDateString("vi-VN", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    })
+                  : "Chưa cập nhật"}
               </b>
             </div>
             <div>
@@ -5194,7 +5129,9 @@ function ViewUserModal({
                   ? "Nam"
                   : user.profile?.gender === "FEMALE"
                   ? "Nữ"
-                  : "Khác"}
+                  : user.profile?.gender === "OTHER"
+                  ? "Khác"
+                  : "Chưa cập nhật"}
               </b>
             </div>
           </div>
@@ -5204,12 +5141,18 @@ function ViewUserModal({
             <h4 className="font-bold text-xs uppercase tracking-wider text-[#64748B]">
               Phạm vi phụ trách / Lớp theo học
             </h4>
+            {user.role?.code === "ADMIN" && (
+              <p className="text-xs text-[#64748B]">
+                Toàn hệ thống (Quản trị viên có toàn quyền quản lý toàn bộ trường học và lớp học).
+              </p>
+            )}
+
             {user.role?.code === "SCHOOL_MANAGER" && (
               <div>
                 <p className="text-xs text-[#64748B] mb-1.5">Các trường học đang quản lý:</p>
                 {managedSchools.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
-                    {managedSchools.map((s) => (
+                    {managedSchools.map((s: any) => (
                       <span
                         key={s.id}
                         className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200"
@@ -5229,12 +5172,12 @@ function ViewUserModal({
                 <p className="text-xs text-[#64748B] mb-1.5">Các lớp học được phân công:</p>
                 {assignedClasses.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
-                    {assignedClasses.map((c) => (
+                    {assignedClasses.map((c: any) => (
                       <span
                         key={c.id}
                         className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200"
                       >
-                        {c.name} ({c.code}) - {c.school?.name}
+                        {c.name} ({c.code})
                       </span>
                     ))}
                   </div>
@@ -5246,15 +5189,15 @@ function ViewUserModal({
 
             {user.role?.code === "STUDENT" && (
               <div>
-                <p className="text-xs text-[#64748B] mb-1.5">Các lớp học đang ghi danh:</p>
+                <p className="text-xs text-[#64748B] mb-1.5">Các lớp học đang theo học:</p>
                 {enrolledClasses.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
-                    {enrolledClasses.map((c) => (
+                    {enrolledClasses.map((c: any) => (
                       <span
                         key={c.id}
                         className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
                       >
-                        {c.name} ({c.code}) - {c.school?.name}
+                        {c.name} ({c.code})
                       </span>
                     ))}
                   </div>
@@ -5262,12 +5205,6 @@ function ViewUserModal({
                   <span className="text-xs text-[#94A3B8] italic">Chưa ghi danh vào lớp nào</span>
                 )}
               </div>
-            )}
-
-            {user.role?.code === "ADMIN" && (
-              <span className="text-xs text-[#475569] font-medium">
-                Toàn quyền giám sát tất cả trường học, lớp học và học viên trên hệ thống.
-              </span>
             )}
           </div>
         </div>
@@ -5373,24 +5310,34 @@ function ClassDialog({
     e.preventDefault();
     setErrorMsg("");
 
+    const validTeachers = teacherIds.filter(Boolean);
+    const validTas = taIds.filter(Boolean);
+
+    if (!name.trim()) {
+      setErrorMsg("Vui lòng nhập tên lớp học!");
+      return;
+    }
     if (!selectedSchoolId) {
       setErrorMsg("Vui lòng chọn trường học đối tác!");
       return;
     }
-    if (!name.trim()) {
-      setErrorMsg("Vui lòng nhập tên lớp học!");
+    if (validTeachers.length === 0) {
+      setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Giáo viên giảng dạy!");
+      return;
+    }
+    if (validTas.length === 0) {
+      setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!");
       return;
     }
 
     startTransition(async () => {
       const res = await createClassAction({
-        code: code.trim(),
         name: name.trim(),
         schoolId: selectedSchoolId,
         program: selectedProgram as any,
         capacity: Number(capacity) || 30,
-        teacherIds: teacherIds.filter(Boolean),
-        taIds: taIds.filter(Boolean),
+        teacherIds: validTeachers,
+        taIds: validTas,
         schedule: customSchedule.trim(),
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -5411,7 +5358,7 @@ function ClassDialog({
         <DialogHeader>
           <DialogTitle>Tạo lớp học mới</DialogTitle>
           <DialogDescription>
-            Lớp học sẽ trực thuộc trường học đối tác, hỗ trợ tự sinh mã lớp, bộ chọn lịch học thông minh và gán đa giáo viên / trợ giảng.
+            Lớp học sẽ trực thuộc trường học đối tác, tự động sinh mã lớp, bộ chọn lịch học thông minh và gán giáo viên / trợ giảng.
           </DialogDescription>
         </DialogHeader>
 
@@ -5423,6 +5370,21 @@ function ClassDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
+            {/* Tên lớp học */}
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-semibold text-[#0F172A] mb-1.5">
+                Tên lớp học *
+              </label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="VD: IELTS Bứt Phá - 10A1"
+                className="field"
+              />
+            </div>
+
             {/* Trường học & Thêm nhanh trường */}
             <div className="sm:col-span-2">
               <label className="text-sm font-semibold text-[#0F172A] block mb-1.5">
@@ -5486,42 +5448,6 @@ function ClassDialog({
                 className="field"
               />
             </div>
-
-            {/* Mã lớp học (Tự sinh hoặc sửa) */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-semibold text-[#0F172A]">Mã lớp học *</label>
-                <span className="text-[11px] text-[#EA580C] font-semibold bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
-                  Tự động sinh mã
-                </span>
-              </div>
-              <input
-                type="text"
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="VD: IELTS_TD_01"
-                className="field font-mono font-bold uppercase"
-              />
-              <p className="text-[11px] text-[#64748B] mt-1">
-                Quy chuẩn: [Chương trình]_[MãTrường]_[STT]
-              </p>
-            </div>
-
-            {/* Tên lớp học */}
-            <div>
-              <label className="block text-sm font-semibold text-[#0F172A] mb-1.5">
-                Tên lớp học *
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="VD: IELTS Bứt Phá - 10A1"
-                className="field"
-              />
-            </div>
           </div>
 
           {/* KHỐI BỘ CHỌN LỊCH HỌC & THỜI KHÓA BIỂU (DATE TIME PICKER) */}
@@ -5546,7 +5472,7 @@ function ClassDialog({
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-semibold text-[#0F172A]">
-                  Giáo viên giảng dạy
+                  Giáo viên giảng dạy *
                 </label>
                 <Button
                   type="button"
@@ -5590,7 +5516,7 @@ function ClassDialog({
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-semibold text-[#0F172A]">
-                  Trợ giảng (TA) phụ trách
+                  Trợ giảng (TA) phụ trách *
                 </label>
                 <Button
                   type="button"
@@ -5648,40 +5574,57 @@ function ClassDialog({
 function SchoolSheet({
   open,
   onOpenChange,
+  managers = [],
   onDone,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  managers?: any[];
   onDone: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
   const [schoolName, setSchoolName] = useState("");
-  const [codePreview, setCodePreview] = useState("SCH_SIM");
-
-  useEffect(() => {
-    if (schoolName.trim()) {
-      getNextSchoolCodeAction(schoolName.trim()).then((res) => {
-        if (res.success && res.code) setCodePreview(res.code);
-      });
-    } else {
-      setCodePreview("SCH_SIM");
-    }
-  }, [schoolName]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
     const form = e.currentTarget;
     const formData = new FormData(form);
+    const managerId = formData.get("managerId")?.toString();
+    const contactName = formData.get("contactName")?.toString()?.trim();
+    const contactPhone = formData.get("contactPhone")?.toString()?.trim();
+    const address = formData.get("address")?.toString()?.trim();
+
+    if (!schoolName.trim()) {
+      setErrorMsg("Vui lòng nhập tên trường học!");
+      return;
+    }
+    if (!managerId) {
+      setErrorMsg("Trường học bắt buộc phải có Quản nhiệm phụ trách!");
+      return;
+    }
+    if (!contactName) {
+      setErrorMsg("Vui lòng nhập tên Đại diện BGH / Giáo vụ liên hệ!");
+      return;
+    }
+    if (!contactPhone) {
+      setErrorMsg("Vui lòng nhập Số điện thoại liên hệ BGH!");
+      return;
+    }
+    if (!address) {
+      setErrorMsg("Vui lòng nhập Địa chỉ trường học!");
+      return;
+    }
 
     startTransition(async () => {
       const res = await createSchoolAction({
         name: schoolName.trim(),
         type: (formData.get("type")?.toString() as any) || "THPT",
-        contactPhone: formData.get("contactPhone")?.toString(),
-        address: formData.get("address")?.toString(),
-        contactName: formData.get("contactName")?.toString(),
+        managerId,
+        contactName,
+        contactPhone,
+        address,
       });
 
       if (!res.success) {
@@ -5696,14 +5639,14 @@ function SchoolSheet({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>Thêm trường học mới</SheetTitle>
-          <SheetDescription>
-            Tạo trường học đối tác mới (Quản nhiệm sẽ được gán tại Quản lý người dùng).
-          </SheetDescription>
-        </SheetHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Thêm trường học mới</DialogTitle>
+          <DialogDescription>
+            Tạo trường học đối tác mới (Mã trường sẽ được hệ thống tự động sinh).
+          </DialogDescription>
+        </DialogHeader>
 
         {errorMsg && (
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
@@ -5711,7 +5654,7 @@ function SchoolSheet({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <label className="text-sm font-semibold text-[#0F172A] block">
               Tên trường học *
@@ -5726,25 +5669,8 @@ function SchoolSheet({
             </label>
           </div>
 
-          <div>
-            <label className="text-sm font-semibold text-[#0F172A] block">
-              Mã trường học (Tự động sinh)
-              <input
-                name="code"
-                readOnly
-                disabled
-                className="field mt-2 bg-slate-100 text-slate-500 font-mono cursor-not-allowed"
-                value={codePreview}
-                title="Mã trường học được hệ thống tự động sinh theo quy tắc viết tắt"
-              />
-            </label>
-            <p className="text-[11px] text-[#64748B] mt-1">
-              * Hệ thống tự động sinh mã viết tắt chuẩn hóa khi lưu.
-            </p>
-          </div>
-
           <label className="block text-sm font-semibold">
-            Khối / Cấp học
+            Khối / Cấp học *
             <select name="type" className="field mt-2" defaultValue="THPT">
               <option value="THPT">THPT</option>
               <option value="THCS">THCS</option>
@@ -5753,11 +5679,23 @@ function SchoolSheet({
             </select>
           </label>
 
-          <Field name="contactPhone" label="Số điện thoại liên hệ BGH" placeholder="0987xxxxxx" />
-          <Field name="contactName" label="Đại diện liên hệ BGH" placeholder="Thầy/Cô..." />
-          <Field name="address" label="Địa chỉ trường học" placeholder="Địa chỉ chi tiết..." />
+          <label className="block text-sm font-semibold">
+            Quản nhiệm phụ trách *
+            <select name="managerId" required className="field mt-2" defaultValue="">
+              <option value="">-- Chọn Quản nhiệm phụ trách --</option>
+              {managers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.profile?.fullName || m.username} ({m.username})
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <div className="flex justify-end gap-2 pt-6">
+          <Field name="contactName" label="Đại diện liên hệ BGH / Giáo vụ *" placeholder="Thầy/Cô..." required />
+          <Field name="contactPhone" label="Số điện thoại liên hệ BGH *" placeholder="0987xxxxxx" required />
+          <Field name="address" label="Địa chỉ trường học *" placeholder="Địa chỉ chi tiết..." required />
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-[#E2E8F0]">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Hủy
             </Button>
@@ -5766,8 +5704,8 @@ function SchoolSheet({
             </Button>
           </div>
         </form>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -5783,55 +5721,92 @@ function EditSchoolModal({
   onDone: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleUpdate = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setErrorMsg("");
     const formData = new FormData(e.currentTarget);
+    const managerId = formData.get("managerId")?.toString();
+    const contactName = formData.get("contactName")?.toString()?.trim();
+    const contactPhone = formData.get("contactPhone")?.toString()?.trim();
+    const address = formData.get("address")?.toString()?.trim();
+
+    if (!managerId) {
+      setErrorMsg("Trường học bắt buộc phải có Quản nhiệm phụ trách!");
+      return;
+    }
+    if (!contactName) {
+      setErrorMsg("Vui lòng nhập tên Đại diện BGH / Giáo vụ liên hệ!");
+      return;
+    }
+    if (!contactPhone) {
+      setErrorMsg("Vui lòng nhập Số điện thoại liên hệ BGH!");
+      return;
+    }
+    if (!address) {
+      setErrorMsg("Vui lòng nhập Địa chỉ trường học!");
+      return;
+    }
+
     startTransition(async () => {
-      await updateSchoolAction(school.id, {
+      const res = await updateSchoolAction(school.id, {
         name: formData.get("name")?.toString(),
         type: formData.get("type")?.toString() as any,
-        managerId: formData.get("managerId")?.toString(),
-        contactPhone: formData.get("contactPhone")?.toString(),
-        address: formData.get("address")?.toString(),
+        managerId,
+        contactName,
+        contactPhone,
+        address,
       });
+      if (res && !res.success) {
+        setErrorMsg(res.error || "Không thể cập nhật trường học!");
+        return;
+      }
       onDone();
     });
   };
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Chỉnh sửa trường học</DialogTitle>
           <DialogDescription>Mã trường: {school.code}</DialogDescription>
         </DialogHeader>
 
+        {errorMsg && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+            {errorMsg}
+          </div>
+        )}
+
         <form onSubmit={handleUpdate} className="space-y-4">
-          <Field name="name" label="Tên trường học" defaultValue={school.name} required />
+          <Field name="name" label="Tên trường học *" defaultValue={school.name} required />
           <label className="block text-sm font-semibold">
-            Khối / Cấp học
+            Khối / Cấp học *
             <select name="type" className="field mt-2" defaultValue={school.type}>
               <option value="THPT">THPT</option>
               <option value="THCS">THCS</option>
               <option value="UNIVERSITY">Đại học</option>
+              <option value="OTHER">Khác</option>
             </select>
           </label>
           <label className="block text-sm font-semibold">
-            Quản nhiệm phụ trách
-            <select name="managerId" className="field mt-2" defaultValue={school.managerId || ""}>
-              <option value="">-- Chưa gán quản nhiệm --</option>
+            Quản nhiệm phụ trách *
+            <select name="managerId" required className="field mt-2" defaultValue={school.managerId || ""}>
+              <option value="">-- Chọn Quản nhiệm --</option>
               {managers.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.profile?.fullName || m.username}
+                  {m.profile?.fullName || m.username} ({m.username})
                 </option>
               ))}
             </select>
           </label>
-          <Field name="contactPhone" label="Số điện thoại" defaultValue={school.contactPhone} />
-          <Field name="address" label="Địa chỉ" defaultValue={school.address} />
+          <Field name="contactName" label="Đại diện liên hệ BGH / Giáo vụ *" defaultValue={school.contactName} required />
+          <Field name="contactPhone" label="Số điện thoại liên hệ BGH *" defaultValue={school.contactPhone} required />
+          <Field name="address" label="Địa chỉ trường học *" defaultValue={school.address} required />
 
-          <div className="flex justify-end gap-2 pt-3">
+          <div className="flex justify-end gap-2 pt-3 border-t border-[#E2E8F0]">
             <Button type="button" variant="outline" onClick={onClose}>
               Hủy
             </Button>
@@ -5914,14 +5889,26 @@ function EditClassModal({
     e.preventDefault();
     setErrorMsg("");
     const formData = new FormData(e.currentTarget);
+    const validTeachers = teacherIds.filter(Boolean);
+    const validTas = taIds.filter(Boolean);
+
+    if (validTeachers.length === 0) {
+      setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Giáo viên giảng dạy!");
+      return;
+    }
+    if (validTas.length === 0) {
+      setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!");
+      return;
+    }
+
     startTransition(async () => {
       const res = await updateClassAction(classItem.id, {
         name: formData.get("name")?.toString(),
         program: formData.get("program")?.toString() as any,
         capacity: Number(formData.get("capacity")) || 30,
         status: formData.get("status")?.toString() as any,
-        teacherIds: teacherIds.filter(Boolean),
-        taIds: taIds.filter(Boolean),
+        teacherIds: validTeachers,
+        taIds: validTas,
         schedule: scheduleStr.trim(),
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -5986,7 +5973,7 @@ function EditClassModal({
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-semibold text-[#0F172A]">
-                  Giáo viên giảng dạy
+                  Giáo viên giảng dạy *
                 </label>
                 <Button
                   type="button"
@@ -6030,7 +6017,7 @@ function EditClassModal({
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-semibold text-[#0F172A]">
-                  Trợ giảng (TA) phụ trách
+                  Trợ giảng (TA) phụ trách *
                 </label>
                 <Button
                   type="button"
@@ -6126,12 +6113,31 @@ function EditUserModal({
     const schoolIds = managerSchools.filter(Boolean);
     const classIds = assignedClasses.filter(Boolean);
 
+    if (selectedRole === "SCHOOL_MANAGER" && schoolIds.length === 0) {
+      setErrorMsg("Quản nhiệm bắt buộc phải được phân công ít nhất 1 trường học phụ trách!");
+      return;
+    }
+    if (selectedRole === "TEACHER" && classIds.length === 0) {
+      setErrorMsg("Giáo viên bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
+      return;
+    }
+    if (selectedRole === "TEACHING_ASSISTANT" && classIds.length === 0) {
+      setErrorMsg("Trợ giảng bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
+      return;
+    }
+    if (selectedRole === "STUDENT" && classIds.length === 0) {
+      setErrorMsg("Học sinh bắt buộc phải được ghi danh vào ít nhất 1 lớp học!");
+      return;
+    }
+
     startTransition(async () => {
       const res = await updateUserAction(user.id, {
         fullName: formData.get("fullName")?.toString()?.trim(),
         email: formData.get("email")?.toString()?.trim(),
         phoneNumber: formData.get("phoneNumber")?.toString()?.trim(),
         address: formData.get("address")?.toString()?.trim(),
+        dateOfBirth: formData.get("dateOfBirth")?.toString() || undefined,
+        gender: (formData.get("gender")?.toString() as any) || undefined,
         roleCode: selectedRole,
         schoolIds: selectedRole === "SCHOOL_MANAGER" ? schoolIds : undefined,
         classIds:
@@ -6206,6 +6212,40 @@ function EditUserModal({
               defaultValue={user.profile?.phoneNumber || ""}
               placeholder="0987xxxxxx"
             />
+          </div>
+
+          {/* Bổ sung ô Ngày sinh & Giới tính */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-sm font-semibold text-[#0F172A] block mb-1.5">
+                Ngày sinh
+              </label>
+              <input
+                name="dateOfBirth"
+                type="date"
+                className="field"
+                defaultValue={
+                  user.profile?.dateOfBirth
+                    ? new Date(user.profile.dateOfBirth).toISOString().split("T")[0]
+                    : ""
+                }
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-[#0F172A] block mb-1.5">
+                Giới tính
+              </label>
+              <select
+                name="gender"
+                className="field"
+                defaultValue={user.profile?.gender || ""}
+              >
+                <option value="">-- Chọn giới tính --</option>
+                <option value="MALE">Nam</option>
+                <option value="FEMALE">Nữ</option>
+                <option value="OTHER">Khác</option>
+              </select>
+            </div>
           </div>
 
           {/* Bổ sung ô Địa chỉ (BUG_16) */}
