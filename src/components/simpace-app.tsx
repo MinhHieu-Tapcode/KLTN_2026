@@ -164,6 +164,7 @@ export function SimpaceApp({
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [addClassOpen, setAddClassOpen] = useState(false);
   const [addSchoolOpen, setAddSchoolOpen] = useState(false);
+  const [selectedSchoolForAdd, setSelectedSchoolForAdd] = useState<string | undefined>(undefined);
 
   // Modals chỉnh sửa
   const [editingSchool, setEditingSchool] = useState<any>(null);
@@ -551,6 +552,7 @@ export function SimpaceApp({
             {view === "classes" && hasPerm("VIEW_CLASSES") && (
               <ClassesPageView
                 classes={classes}
+                schools={schools}
                 currentUser={currentUser}
                 onRefresh={refreshClasses}
                 onOpenDetail={async (cls) => {
@@ -559,6 +561,10 @@ export function SimpaceApp({
                   navigate("class-detail");
                 }}
                 onEditClass={(c) => setEditingClass(c)}
+                onOpenAddClass={(schoolId) => {
+                  setSelectedSchoolForAdd(schoolId);
+                  setAddClassOpen(true);
+                }}
               />
             )}
             {view === "class-detail" && hasPerm("VIEW_CLASSES") && (
@@ -579,7 +585,12 @@ export function SimpaceApp({
             {view === "schedule" && hasPerm("VIEW_SCHEDULE") && (
               <SchedulePageView
                 classes={classes}
+                schools={schools}
                 currentUser={currentUser}
+                onOpenAddClass={(schoolId) => {
+                  setSelectedSchoolForAdd(schoolId);
+                  setAddClassOpen(true);
+                }}
               />
             )}
             {view === "import" && (
@@ -633,13 +644,18 @@ export function SimpaceApp({
 
       <ClassDialog
         open={addClassOpen}
-        onOpenChange={setAddClassOpen}
+        onOpenChange={(v) => {
+          setAddClassOpen(v);
+          if (!v) setSelectedSchoolForAdd(undefined);
+        }}
         schools={schools}
         teachers={teachers}
         tas={tas}
+        defaultSchoolId={selectedSchoolForAdd}
         onAddSchoolShortcut={() => setAddSchoolOpen(true)}
         onDone={() => {
           setAddClassOpen(false);
+          setSelectedSchoolForAdd(undefined);
           refreshAll();
           setNotice("Đã tạo lớp học mới thành công!");
         }}
@@ -2252,15 +2268,20 @@ function ClassesPageView({
   onRefresh,
   onOpenDetail,
   onEditClass,
+  schools = [],
+  onOpenAddClass,
 }: {
   classes: any[];
   currentUser?: any;
   onRefresh: () => void;
   onOpenDetail: (c: any) => void;
   onEditClass: (c: any) => void;
+  schools?: any[];
+  onOpenAddClass?: (schoolId?: string) => void;
 }) {
   const canManageClass = currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER";
   const [lifecycleStatus, setLifecycleStatus] = useState("ALL");
+  const [selectedSchoolId, setSelectedSchoolId] = useState("ALL");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
@@ -2281,6 +2302,9 @@ function ClassesPageView({
     // Chỉ hiển thị lớp học còn hoạt động (không hiện thùng rác)
     if (!c.isActive) return false;
 
+    // Lọc theo trường học
+    const matchesSchool = selectedSchoolId === "ALL" || c.schoolId === selectedSchoolId;
+
     // Lọc theo chu kỳ lớp học
     const matchesLifecycle = lifecycleStatus === "ALL" || c.status === lifecycleStatus;
 
@@ -2292,7 +2316,7 @@ function ClassesPageView({
       c.code.toLowerCase().includes(cleanSearch) ||
       (c.school?.name || "").toLowerCase().includes(cleanSearch);
 
-    return matchesLifecycle && matchesSearch;
+    return matchesSchool && matchesLifecycle && matchesSearch;
   });
 
   const toggleSelectAll = () => {
@@ -2371,14 +2395,34 @@ function ClassesPageView({
       </div>
 
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-          <input
-            className="field field-search border-[#CBD5E1]"
-            placeholder="Tìm theo tên lớp, mã lớp, trường..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-wrap items-center gap-3 flex-1">
+          <div className="relative max-w-sm flex-1 min-w-[220px]">
+            <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+            <input
+              className="field field-search border-[#CBD5E1]"
+              placeholder="Tìm theo tên lớp, mã lớp, trường..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <select
+            className="field text-xs max-w-xs bg-white border-[#CBD5E1]"
+            value={selectedSchoolId}
+            onChange={(e) => setSelectedSchoolId(e.target.value)}
+          >
+            <option value="ALL">-- Tất cả trường học ({schools.filter((s: any) => s.isActive).length} trường) --</option>
+            {schools
+              .filter((s: any) => s.isActive)
+              .map((s: any) => {
+                const count = localClasses.filter((c: any) => c.schoolId === s.id && c.isActive).length;
+                return (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({count} lớp)
+                  </option>
+                );
+              })}
+          </select>
         </div>
 
         {selectedIds.length > 0 && (
@@ -2513,8 +2557,33 @@ function ClassesPageView({
               ))
             ) : (
               <tr>
-                <td colSpan={8} className="text-center py-8 text-sm text-[#94A3B8] italic">
-                  Không tìm thấy lớp học nào.
+                <td colSpan={8} className="text-center py-12 text-sm">
+                  {selectedSchoolId !== "ALL" ? (
+                    <div className="flex flex-col items-center justify-center space-y-3">
+                      <div className="size-12 rounded-full bg-orange-100 flex items-center justify-center text-[#EA580C]">
+                        <Building2 className="size-6" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-bold text-[#0F172A]">
+                          Trường &quot;{schools.find((s: any) => s.id === selectedSchoolId)?.name}&quot; hiện chưa có lớp học nào
+                        </p>
+                        <p className="text-xs text-[#64748B]">
+                          Mỗi trường học quản lý các lớp học riêng biệt. Bạn hãy tạo lớp học mới để gán cho trường này.
+                        </p>
+                      </div>
+                      {canManageClass && onOpenAddClass && (
+                        <Button
+                          size="sm"
+                          onClick={() => onOpenAddClass(selectedSchoolId)}
+                          className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
+                        >
+                          <Plus className="size-3.5 mr-1" /> + Tạo lớp học cho trường này
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[#94A3B8] italic">Không tìm thấy lớp học nào.</span>
+                  )}
                 </td>
               </tr>
             )}
@@ -2833,9 +2902,13 @@ function ClassDetailView({
 function SchedulePageView({
   classes,
   currentUser,
+  schools = [],
+  onOpenAddClass,
 }: {
   classes: any[];
   currentUser: any;
+  schools?: any[];
+  onOpenAddClass?: (schoolId?: string) => void;
 }) {
   const [selectedSchool, setSelectedSchool] = useState("ALL");
   const [viewMode, setViewMode] = useState<"TIMETABLE" | "LIST">("TIMETABLE");
@@ -2936,25 +3009,23 @@ function SchedulePageView({
               </button>
             </div>
 
-            {currentUser?.role === "ADMIN" && (
+            {(currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && (
               <select
-                className="field text-xs max-w-xs bg-white"
+                className="field text-xs max-w-xs bg-white border-[#CBD5E1]"
                 value={selectedSchool}
                 onChange={(e) => setSelectedSchool(e.target.value)}
               >
-                <option value="ALL">-- Tất cả các trường --</option>
-                {Array.from(
-                  new Map(
-                    classes
-                      .map((c) => c.school)
-                      .filter(Boolean)
-                      .map((s: any) => [s.id, s])
-                  ).values()
-                ).map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
+                <option value="ALL">-- Tất cả các trường ({schools.filter((s: any) => s.isActive).length} trường) --</option>
+                {schools
+                  .filter((s: any) => s.isActive)
+                  .map((s: any) => {
+                    const count = relevantClasses.filter((c: any) => c.schoolId === s.id && c.isActive).length;
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({count} lớp)
+                      </option>
+                    );
+                  })}
               </select>
             )}
           </div>
@@ -2963,7 +3034,33 @@ function SchedulePageView({
 
       {/* CHẾ ĐỘ 1: BẢNG THỜI KHÓA BIỂU THEO TUẦN (TIMETABLE GRID) */}
       {viewMode === "TIMETABLE" && (
-        <div className="space-y-3">
+        displayed.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#CBD5E1] bg-white p-10 text-center flex flex-col items-center justify-center space-y-3 shadow-xs">
+            <div className="size-12 rounded-full bg-orange-100 flex items-center justify-center text-[#EA580C]">
+              <Building2 className="size-6" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-bold text-[#0F172A]">
+                {selectedSchool !== "ALL"
+                  ? `Trường "${schools.find((s: any) => s.id === selectedSchool)?.name}" hiện chưa có lịch học nào`
+                  : "Chưa có lịch học nào trong phạm vi quản lý của bạn"}
+              </p>
+              <p className="text-xs text-[#64748B]">
+                Tạo lớp học mới và chọn các thứ trong tuần để lịch học tự động hiển thị trên bảng thời khóa biểu.
+              </p>
+            </div>
+            {onOpenAddClass && (
+              <Button
+                size="sm"
+                onClick={() => onOpenAddClass(selectedSchool !== "ALL" ? selectedSchool : undefined)}
+                className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
+              >
+                <Plus className="size-3.5 mr-1" /> + Tạo lớp học mới
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
           <div className="grid gap-3.5 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
             {daysOfWeek.map((day) => {
               // Tìm các lớp học diễn ra vào thứ này (dựa trên chuỗi lịch học đã tạo bởi Date Time Picker)
@@ -3073,7 +3170,8 @@ function SchedulePageView({
               </div>
             </div>
           )}
-        </div>
+          </div>
+        )
       )}
 
       {/* CHẾ ĐỘ 2: DANH SÁCH BẢNG BIỂU CHI TIẾT (LIST VIEW) */}
@@ -3124,8 +3222,35 @@ function SchedulePageView({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-sm text-[#94A3B8] italic">
-                      Không có lịch học nào phù hợp với phạm vi quản lý của bạn.
+                    <td colSpan={6} className="text-center py-12 text-sm">
+                      {selectedSchool !== "ALL" ? (
+                        <div className="flex flex-col items-center justify-center space-y-3">
+                          <div className="size-12 rounded-full bg-orange-100 flex items-center justify-center text-[#EA580C]">
+                            <Building2 className="size-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="font-bold text-[#0F172A]">
+                              Trường &quot;{schools.find((s: any) => s.id === selectedSchool)?.name}&quot; hiện chưa có lớp học nào
+                            </p>
+                            <p className="text-xs text-[#64748B]">
+                              Tạo lớp học mới và chọn ngày giờ để lịch học tự động xuất hiện tại đây.
+                            </p>
+                          </div>
+                          {onOpenAddClass && (
+                            <Button
+                              size="sm"
+                              onClick={() => onOpenAddClass(selectedSchool)}
+                              className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
+                            >
+                              <Plus className="size-3.5 mr-1" /> + Tạo lớp học cho trường này
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[#94A3B8] italic">
+                          Không có lịch học nào phù hợp với phạm vi quản lý của bạn.
+                        </span>
+                      )}
                     </td>
                   </tr>
                 )}
@@ -5388,6 +5513,7 @@ function ClassDialog({
   schools,
   teachers,
   tas,
+  defaultSchoolId,
   onAddSchoolShortcut,
   onDone,
 }: {
@@ -5396,6 +5522,7 @@ function ClassDialog({
   schools: any[];
   teachers: any[];
   tas: any[];
+  defaultSchoolId?: string;
   onAddSchoolShortcut: () => void;
   onDone: () => void;
 }) {
@@ -5406,6 +5533,21 @@ function ClassDialog({
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(30);
+
+  // Khởi tạo trường học khi mở modal
+  useEffect(() => {
+    if (open) {
+      if (defaultSchoolId) {
+        setSelectedSchoolId(defaultSchoolId);
+      } else {
+        setSelectedSchoolId("");
+      }
+      setErrorMsg("");
+      setName("");
+      setSelectedDays([]);
+      setCustomSchedule("");
+    }
+  }, [open, defaultSchoolId]);
 
   // Gán đa nhiệm GV và TA (+)
   const [teacherIds, setTeacherIds] = useState<string[]>([""]);
