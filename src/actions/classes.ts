@@ -305,7 +305,6 @@ export async function deleteClassAction(id: string) {
       data: { isActive: false },
     });
 
-    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa lớp học!" };
@@ -320,7 +319,6 @@ export async function restoreClassAction(id: string) {
       data: { isActive: true },
     });
 
-    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể khôi phục lớp học!" };
@@ -334,7 +332,6 @@ export async function deleteMultipleClassesAction(ids: string[]) {
       data: { isActive: false },
     });
 
-    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa các lớp đã chọn!" };

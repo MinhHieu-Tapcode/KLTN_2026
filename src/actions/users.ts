@@ -535,14 +535,17 @@ export async function deleteUserAction(id: string) {
 
     const targetUser = await prisma.user.findUnique({
       where: { id },
-      include: { role: true },
+      select: {
+        id: true,
+        role: { select: { code: true } },
+      },
     });
 
     if (!targetUser) {
       return { success: false, error: "Tài khoản không tồn tại!" };
     }
 
-    if (targetUser.role.code === "ADMIN" && session?.role !== "ADMIN") {
+    if (targetUser.role?.code === "ADMIN" && session?.role !== "ADMIN") {
       return { success: false, error: "Bạn không có quyền xóa tài khoản Quản trị viên!" };
     }
 
@@ -551,7 +554,6 @@ export async function deleteUserAction(id: string) {
       data: { isActive: false },
     });
 
-    safeRevalidate("/users");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa người dùng!" };
@@ -566,7 +568,6 @@ export async function restoreUserAction(id: string) {
       data: { isActive: true },
     });
 
-    safeRevalidate("/users");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể khôi phục tài khoản!" };
@@ -580,11 +581,13 @@ export async function deleteMultipleUsersAction(ids: string[]) {
     const safeIds = ids.filter((id) => id !== session?.userId);
 
     await prisma.user.updateMany({
-      where: { id: { in: safeIds } },
+      where: {
+        id: { in: safeIds },
+        role: { code: { not: "ADMIN" } },
+      },
       data: { isActive: false },
     });
 
-    safeRevalidate("/users");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa các tài khoản đã chọn!" };

@@ -253,7 +253,6 @@ export async function deleteSchoolAction(id: string) {
       data: { isActive: false },
     });
 
-    safeRevalidate("/schools");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa trường học!" };
@@ -268,7 +267,6 @@ export async function restoreSchoolAction(id: string) {
       data: { isActive: true },
     });
 
-    safeRevalidate("/schools");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể khôi phục trường học!" };
@@ -283,7 +281,6 @@ export async function deleteMultipleSchoolsAction(ids: string[]) {
       data: { isActive: false },
     });
 
-    safeRevalidate("/schools");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa các trường đã chọn!" };

@@ -228,6 +228,31 @@ export function SimpaceApp({
     setTAs(taList);
   };
 
+  const refreshUsers = async () => {
+    const us = await getUsersAction("Tất cả", "", "ALL");
+    setUsers(us);
+  };
+
+  const refreshSchools = async () => {
+    const [sc, mgrs] = await Promise.all([
+      getSchoolsAction("", "ALL"),
+      getSchoolManagersAction(),
+    ]);
+    setSchools(sc);
+    setManagers(mgrs);
+  };
+
+  const refreshClasses = async () => {
+    const [cl, tchs, taList] = await Promise.all([
+      getClassesAction("ALL", "", "ALL"),
+      getTeachersAction(),
+      getTAsAction(),
+    ]);
+    setClasses(cl);
+    setTeachers(tchs);
+    setTAs(taList);
+  };
+
   if (!currentUser) {
     return (
       <LoginView
@@ -509,7 +534,7 @@ export function SimpaceApp({
                 currentUser={currentUser}
                 schools={schools}
                 classes={classes}
-                onRefresh={refreshAll}
+                onRefresh={refreshUsers}
                 onOpenAddUser={() => setAddUserOpen(true)}
                 onEditUser={(u) => setEditingUser(u)}
                 onViewUser={(u) => setViewingUser(u)}
@@ -518,7 +543,7 @@ export function SimpaceApp({
             {view === "schools" && hasPerm("VIEW_SCHOOLS") && (
               <SchoolsPageView
                 schools={schools}
-                onRefresh={refreshAll}
+                onRefresh={refreshSchools}
                 onAdd={() => setAddSchoolOpen(true)}
                 onEditSchool={(s) => setEditingSchool(s)}
               />
@@ -527,7 +552,7 @@ export function SimpaceApp({
               <ClassesPageView
                 classes={classes}
                 currentUser={currentUser}
-                onRefresh={refreshAll}
+                onRefresh={refreshClasses}
                 onOpenDetail={async (cls) => {
                   const detail = await getClassDetailAction(cls.id);
                   setSelectedClass(detail || cls);
@@ -1594,16 +1619,15 @@ function UsersPageView({
   });
 
   const handleBatchDelete = () => {
+    const idsToDelete = [...selectedIds];
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa người dùng đã chọn",
-      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} người dùng đã chọn khỏi hệ thống?`,
+      description: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} người dùng đã chọn khỏi hệ thống?`,
       action: async () => {
-        setLocalUsers((prev) =>
-          prev.map((u) => (selectedIds.includes(u.id) ? { ...u, isActive: false } : u))
-        );
-        await deleteMultipleUsersAction(selectedIds);
+        setLocalUsers((prev) => prev.filter((u) => !idsToDelete.includes(u.id)));
         setSelectedIds([]);
+        await deleteMultipleUsersAction(idsToDelete);
         onRefresh();
       },
     });
@@ -1615,9 +1639,7 @@ function UsersPageView({
       title: "Xác nhận xóa người dùng",
       description: `Bạn có chắc chắn muốn xóa tài khoản ${name ? `"${name}"` : "này"} khỏi hệ thống?`,
       action: async () => {
-        setLocalUsers((prev) =>
-          prev.map((u) => (u.id === id ? { ...u, isActive: false } : u))
-        );
+        setLocalUsers((prev) => prev.filter((u) => u.id !== id));
         await deleteUserAction(id);
         onRefresh();
       },
@@ -1818,9 +1840,10 @@ function UsersPageView({
         description={confirmModal.description}
         isPending={isDeleting}
         onConfirm={() => {
+          const action = confirmModal.action;
+          setConfirmModal((prev) => ({ ...prev, open: false }));
           startTransition(async () => {
-            await confirmModal.action();
-            setConfirmModal((prev) => ({ ...prev, open: false }));
+            await action();
           });
         }}
       />
@@ -1894,16 +1917,15 @@ function SchoolsPageView({
   });
 
   const handleBatchDelete = () => {
+    const idsToDelete = [...selectedIds];
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa các trường học đã chọn",
-      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} trường học đã chọn khỏi hệ thống?`,
+      description: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} trường học đã chọn khỏi hệ thống?`,
       action: async () => {
-        setLocalSchools((prev) =>
-          prev.map((s) => (selectedIds.includes(s.id) ? { ...s, isActive: false } : s))
-        );
-        await deleteMultipleSchoolsAction(selectedIds);
+        setLocalSchools((prev) => prev.filter((s) => !idsToDelete.includes(s.id)));
         setSelectedIds([]);
+        await deleteMultipleSchoolsAction(idsToDelete);
         onRefresh();
       },
     });
@@ -1915,9 +1937,7 @@ function SchoolsPageView({
       title: "Xác nhận xóa trường học",
       description: `Bạn có chắc chắn muốn xóa trường "${name}" (Mã trường: ${code}) khỏi hệ thống?`,
       action: async () => {
-        setLocalSchools((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, isActive: false } : s))
-        );
+        setLocalSchools((prev) => prev.filter((s) => s.id !== id));
         await deleteSchoolAction(id);
         onRefresh();
       },
@@ -2063,9 +2083,10 @@ function SchoolsPageView({
         description={confirmModal.description}
         isPending={isDeleting}
         onConfirm={() => {
+          const action = confirmModal.action;
+          setConfirmModal((prev) => ({ ...prev, open: false }));
           startTransition(async () => {
-            await confirmModal.action();
-            setConfirmModal((prev) => ({ ...prev, open: false }));
+            await action();
           });
         }}
       />
@@ -2300,16 +2321,13 @@ function ClassesPageView({
   });
 
   const handleBatchDelete = () => {
+    const toDeleteIds = [...selectedIds];
     setConfirmModal({
       open: true,
       title: "Xác nhận xóa các lớp học đã chọn",
-      description: `Bạn có chắc chắn muốn xóa ${selectedIds.length} lớp học đã chọn? Các lớp học này sẽ ngừng hoạt động và bị xóa khỏi hệ thống.`,
+      description: `Bạn có chắc chắn muốn xóa ${toDeleteIds.length} lớp học đã chọn? Các lớp học này sẽ ngừng hoạt động và bị xóa khỏi hệ thống.`,
       action: async () => {
-        // Optimistic UI update
-        const toDeleteIds = [...selectedIds];
-        setLocalClasses((prev) =>
-          prev.map((c) => (toDeleteIds.includes(c.id) ? { ...c, isActive: false } : c))
-        );
+        setLocalClasses((prev) => prev.filter((c) => !toDeleteIds.includes(c.id)));
         setSelectedIds([]);
         await deleteMultipleClassesAction(toDeleteIds);
         onRefresh();
@@ -2323,10 +2341,7 @@ function ClassesPageView({
       title: "Xác nhận xóa lớp học",
       description: `Bạn có chắc chắn muốn xóa lớp học "${cls.name}" (Mã lớp: ${cls.code})? Lớp học sẽ ngừng hoạt động và bị xóa khỏi hệ thống.`,
       action: async () => {
-        // Optimistic UI update
-        setLocalClasses((prev) =>
-          prev.map((c) => (c.id === cls.id ? { ...c, isActive: false } : c))
-        );
+        setLocalClasses((prev) => prev.filter((c) => c.id !== cls.id));
         await deleteClassAction(cls.id);
         onRefresh();
       },
@@ -2513,9 +2528,10 @@ function ClassesPageView({
         description={confirmModal.description}
         isPending={isDeleting}
         onConfirm={() => {
+          const action = confirmModal.action;
+          setConfirmModal((prev) => ({ ...prev, open: false }));
           startTransition(async () => {
-            await confirmModal.action();
-            setConfirmModal((prev) => ({ ...prev, open: false }));
+            await action();
           });
         }}
       />
@@ -2563,9 +2579,10 @@ function ClassDetailView({
 
   const confirmUnassign = () => {
     if (!unassignTarget) return;
+    const target = unassignTarget;
+    setUnassignTarget(null);
     startTransition(async () => {
-      await removeStaffFromClassAction(classItem.id, unassignTarget.userId);
-      setUnassignTarget(null);
+      await removeStaffFromClassAction(classItem.id, target.userId);
       onRefreshDetail();
     });
   };
