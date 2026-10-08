@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ensureDefaultAdminAction } from "@/actions/auth";
 import { getSchoolsAction, getSchoolManagersAction } from "@/actions/schools";
@@ -11,7 +12,37 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   await ensureDefaultAdminAction();
 
-  const session = await getSession();
+  let session = await getSession();
+  if (session?.userId) {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: { select: { code: true } },
+        profile: true,
+      },
+    });
+    if (dbUser) {
+      session = {
+        ...session,
+        id: dbUser.id,
+        userId: dbUser.id,
+        username: dbUser.username,
+        email: dbUser.email,
+        role: dbUser.role.code,
+        fullName: dbUser.profile?.fullName || dbUser.username,
+        phoneNumber: dbUser.profile?.phoneNumber || "",
+        address: dbUser.profile?.address || "",
+        dateOfBirth: dbUser.profile?.dateOfBirth
+          ? dbUser.profile.dateOfBirth.toISOString().split("T")[0]
+          : "",
+        gender: dbUser.profile?.gender || null,
+        profile: dbUser.profile,
+      } as any;
+    }
+  }
 
   const [schools, classes, users, managers, teachers, tas, permissions] = await Promise.all([
     getSchoolsAction(),

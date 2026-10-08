@@ -63,6 +63,7 @@ export async function loginAction(formData: FormData) {
       success: true,
       mustChangePassword: true,
       userId: user.id,
+      username: user.username,
       email: user.email,
       fullName: user.profile?.fullName || user.username,
       role: user.role.code,
@@ -218,6 +219,8 @@ export async function activateWithOtpAction(params: {
       success: true,
       user: {
         id: updatedUser.id,
+        userId: updatedUser.id,
+        username: updatedUser.username,
         fullName: updatedUser.profile?.fullName || updatedUser.username,
         email: updatedUser.email,
         role: updatedUser.role.code,

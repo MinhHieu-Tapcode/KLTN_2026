@@ -593,6 +593,7 @@ export function SimpaceApp({
             {view === "settings" && (
               <SettingsPageView
                 currentUser={currentUser}
+                users={users}
                 permissions={permissions}
                 onRefreshPermissions={refreshAll}
                 onProfileUpdated={(updated) => {
@@ -3387,21 +3388,34 @@ function ImportPageView({ onImportSuccess }: { onImportSuccess: () => void }) {
 
 function SettingsPageView({
   currentUser,
+  users = [],
   permissions,
   onRefreshPermissions,
   onProfileUpdated,
 }: {
   currentUser: any;
+  users?: any[];
   permissions: any[];
   onRefreshPermissions: () => void;
   onProfileUpdated: (updated?: any) => void;
 }) {
+  const activeUser =
+    users.find(
+      (u) =>
+        u.id === currentUser?.userId ||
+        u.id === currentUser?.id ||
+        (currentUser?.username && u.username === currentUser?.username)
+    ) || currentUser;
+
+  const currentUsername =
+    activeUser?.username || currentUser?.username || activeUser?.email?.split("@")[0] || "";
+
   const canManageSettings =
-    currentUser?.role === "ADMIN" ||
+    (currentUser?.role === "ADMIN" || activeUser?.role?.code === "ADMIN") ||
     permissions.some(
       (p) =>
         p.featureKey === "SYSTEM_SETTINGS" &&
-        p.allowedRoles?.includes(currentUser?.role as RoleCode)
+        p.allowedRoles?.includes((currentUser?.role || activeUser?.role?.code) as RoleCode)
     );
 
   const [tab, setTab] = useState<"profile" | "matrix" | "system">(
@@ -3503,8 +3517,9 @@ function SettingsPageView({
     const fullName = formData.get("fullName")?.toString() || "";
     const address = formData.get("address")?.toString() || "";
 
+    const targetUserId = currentUser?.userId || currentUser?.id || activeUser?.id;
     startTransition(async () => {
-      const res = await updateProfileAction(currentUser.userId, {
+      const res = await updateProfileAction(targetUserId, {
         fullName,
         address,
         phoneNumber: formData.get("phoneNumber")?.toString(),
@@ -3606,17 +3621,10 @@ function SettingsPageView({
             <div>
               <h2 className="font-bold text-base text-[#0F172A]">Ma trận phân quyền hệ thống</h2>
               <p className="text-xs text-[#64748B]">
-                Tích chọn quyền truy cập cho từng vai trò trên giao diện. Quản trị viên có thể thêm trực tiếp màn hình mới mà không cần sửa code.
+                Tích chọn quyền truy cập cho từng vai trò trên giao diện. Quản trị viên bấm &quot;Lưu phân quyền&quot; sau khi điều chỉnh.
               </p>
             </div>
             <div className="flex flex-wrap gap-2.5">
-              <Button
-                variant="outline"
-                onClick={() => setAddPermOpen(true)}
-                className="rounded-xl border-[#CBD5E1] text-[#0F172A] hover:border-[#EA580C]"
-              >
-                <Plus className="size-4 mr-1.5 text-[#EA580C]" /> Thêm màn hình / Quyền mới
-              </Button>
               <Button
                 onClick={handleSavePermissionMatrix}
                 disabled={isPending}
@@ -3763,7 +3771,7 @@ function SettingsPageView({
                 <Field
                   name="fullName"
                   label="Họ và tên *"
-                  defaultValue={currentUser.fullName}
+                  defaultValue={activeUser?.profile?.fullName || activeUser?.fullName || currentUser?.fullName || ""}
                   placeholder="Nhập họ và tên thật"
                   required
                 />
@@ -3775,8 +3783,8 @@ function SettingsPageView({
                   <input
                     disabled
                     readOnly
-                    defaultValue={currentUser.username}
-                    className="field bg-slate-100 text-[#64748B] cursor-not-allowed font-mono"
+                    value={currentUsername}
+                    className="field bg-slate-100 text-[#0F172A] font-bold cursor-not-allowed font-mono"
                     title="Mã định danh tài khoản được cố định bởi hệ thống và không thể thay đổi."
                   />
                   <p className="text-[11px] text-[#94A3B8] mt-1">
@@ -3789,14 +3797,14 @@ function SettingsPageView({
                 <Field
                   name="email"
                   label="Email đăng ký (Cố định, không thể thay đổi)"
-                  defaultValue={currentUser.email}
+                  defaultValue={activeUser?.email || currentUser?.email || ""}
                   disabled
                 />
                 <Field
                   name="phoneNumber"
                   label="Số điện thoại"
                   placeholder="0987xxxxxx"
-                  defaultValue={currentUser.phoneNumber || currentUser.profile?.phoneNumber || ""}
+                  defaultValue={activeUser?.profile?.phoneNumber || activeUser?.phoneNumber || currentUser?.phoneNumber || ""}
                 />
               </div>
 
@@ -3804,7 +3812,7 @@ function SettingsPageView({
                 name="address"
                 label="Địa chỉ cư trú"
                 placeholder="VD: 123 Giải Phóng, Hai Bà Trưng, Hà Nội"
-                defaultValue={currentUser.address || currentUser.profile?.address || ""}
+                defaultValue={activeUser?.profile?.address || activeUser?.address || currentUser?.address || ""}
               />
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -3812,11 +3820,21 @@ function SettingsPageView({
                   name="dateOfBirth"
                   label="Ngày sinh"
                   type="date"
-                  defaultValue={currentUser.dateOfBirth || currentUser.profile?.dateOfBirth ? new Date(currentUser.dateOfBirth || currentUser.profile?.dateOfBirth).toISOString().split("T")[0] : ""}
+                  defaultValue={
+                    activeUser?.profile?.dateOfBirth
+                      ? new Date(activeUser.profile.dateOfBirth).toISOString().split("T")[0]
+                      : currentUser?.dateOfBirth
+                      ? new Date(currentUser.dateOfBirth).toISOString().split("T")[0]
+                      : ""
+                  }
                 />
                 <label className="block text-sm font-semibold text-[#0F172A]">
                   Giới tính
-                  <select name="gender" className="field mt-2" defaultValue={currentUser.gender || currentUser.profile?.gender || "MALE"}>
+                  <select
+                    name="gender"
+                    className="field mt-2"
+                    defaultValue={activeUser?.profile?.gender || currentUser?.gender || "MALE"}
+                  >
                     <option value="MALE">Nam</option>
                     <option value="FEMALE">Nữ</option>
                     <option value="OTHER">Khác</option>
@@ -4856,12 +4874,63 @@ function SchedulePickerSection({
 }) {
   const daysOfWeek = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
 
-  const quickShifts = [
-    { label: "Ca 1 (17:30 - 19:30)", start: "17:30", end: "19:30" },
-    { label: "Ca 2 (18:00 - 20:00)", start: "18:00", end: "20:00" },
-    { label: "Ca 3 (19:30 - 21:30)", start: "19:30", end: "21:30" },
-    { label: "Ca Sáng (08:30 - 10:30)", start: "08:30", end: "10:30" },
+  interface ShiftItem {
+    id: string;
+    label: string;
+    start: string;
+    end: string;
+  }
+
+  const defaultShifts: ShiftItem[] = [
+    { id: "s1", label: "Ca 1 (17:30 - 19:30)", start: "17:30", end: "19:30" },
+    { id: "s2", label: "Ca 2 (18:00 - 20:00)", start: "18:00", end: "20:00" },
+    { id: "s3", label: "Ca 3 (19:30 - 21:30)", start: "19:30", end: "21:30" },
+    { id: "s4", label: "Ca Sáng (08:30 - 10:30)", start: "08:30", end: "10:30" },
   ];
+
+  const [shifts, setShifts] = useState<ShiftItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("simpace_shifts");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return defaultShifts;
+  });
+
+  const [isAddingShift, setIsAddingShift] = useState(false);
+  const [newShiftName, setNewShiftName] = useState("");
+  const [newShiftStart, setNewShiftStart] = useState("14:00");
+  const [newShiftEnd, setNewShiftEnd] = useState("16:00");
+
+  const handleAddShift = () => {
+    if (!newShiftName.trim() || !newShiftStart || !newShiftEnd) return;
+    const label = `${newShiftName.trim()} (${newShiftStart} - ${newShiftEnd})`;
+    const updated = [
+      ...shifts,
+      {
+        id: `shift_${Date.now()}`,
+        label,
+        start: newShiftStart,
+        end: newShiftEnd,
+      },
+    ];
+    setShifts(updated);
+    try {
+      localStorage.setItem("simpace_shifts", JSON.stringify(updated));
+    } catch {}
+    applyShift(newShiftStart, newShiftEnd);
+    setNewShiftName("");
+    setIsAddingShift(false);
+  };
+
+  const handleDeleteShift = (id: string) => {
+    const updated = shifts.filter((s) => s.id !== id);
+    setShifts(updated);
+    try {
+      localStorage.setItem("simpace_shifts", JSON.stringify(updated));
+    } catch {}
+  };
 
   const toggleDay = (day: string) => {
     setSelectedDays((prev) => {
@@ -4951,25 +5020,102 @@ function SchedulePickerSection({
 
       {/* Ca học mẫu nhanh */}
       <div>
-        <label className="text-xs font-semibold text-[#475569] block mb-1.5">
-          2. Chọn nhanh ca học hoặc chỉnh giờ tùy ý:
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-semibold text-[#475569] block">
+            2. Chọn nhanh ca học hoặc chỉnh giờ tùy ý:
+          </label>
+          <button
+            type="button"
+            onClick={() => setIsAddingShift(!isAddingShift)}
+            className="text-[11px] font-semibold text-[#EA580C] hover:underline flex items-center gap-1"
+          >
+            <Plus className="size-3" /> {isAddingShift ? "Đóng form" : "Tự thêm ca học"}
+          </button>
+        </div>
+
+        {/* Form thêm ca học tùy biến */}
+        {isAddingShift && (
+          <div className="mb-2.5 p-2.5 rounded-xl border border-orange-200 bg-white shadow-xs space-y-2">
+            <div className="text-xs font-bold text-[#0F172A]">Thêm ca học tùy chọn:</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input
+                type="text"
+                placeholder="Tên ca (VD: Ca Chiều)"
+                value={newShiftName}
+                onChange={(e) => setNewShiftName(e.target.value)}
+                className="field text-xs py-1 px-2.5"
+              />
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] text-[#64748B]">Từ:</span>
+                <input
+                  type="time"
+                  value={newShiftStart}
+                  onChange={(e) => setNewShiftStart(e.target.value)}
+                  className="field text-xs py-1 px-1.5"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] text-[#64748B]">Đến:</span>
+                <input
+                  type="time"
+                  value={newShiftEnd}
+                  onChange={(e) => setNewShiftEnd(e.target.value)}
+                  className="field text-xs py-1 px-1.5"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-1.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsAddingShift(false)}
+                className="px-2.5 py-1 text-xs text-[#64748B] hover:text-[#0F172A]"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleAddShift}
+                className="px-3 py-1 bg-[#EA580C] text-white text-xs font-bold rounded-lg shadow-xs hover:bg-[#EA580C]/90"
+              >
+                Lưu ca học
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1.5">
-          {quickShifts.map((shift) => {
+          {shifts.map((shift) => {
             const isMatch = startTime === shift.start && endTime === shift.end;
             return (
-              <button
-                key={shift.label}
-                type="button"
-                onClick={() => applyShift(shift.start, shift.end)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
+              <div
+                key={shift.id}
+                className={`group inline-flex items-center rounded-lg border text-[11px] font-semibold transition overflow-hidden ${
                   isMatch
-                    ? "bg-[#0F172A] text-white"
-                    : "bg-white border border-[#CBD5E1] text-[#475569] hover:bg-slate-100"
+                    ? "bg-[#0F172A] border-[#0F172A] text-white"
+                    : "bg-white border-[#CBD5E1] text-[#475569] hover:bg-slate-50"
                 }`}
               >
-                {shift.label}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => applyShift(shift.start, shift.end)}
+                  className="px-2.5 py-1"
+                >
+                  {shift.label}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteShift(shift.id);
+                  }}
+                  className={`pr-2 pl-0.5 py-1 text-xs opacity-60 hover:opacity-100 hover:text-red-500 transition ${
+                    isMatch ? "text-slate-300" : "text-[#94A3B8]"
+                  }`}
+                  title="Xóa ca học này"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
             );
           })}
         </div>
@@ -5011,16 +5157,16 @@ function SchedulePickerSection({
         </div>
       </div>
 
-      {/* Chuỗi tóm tắt lịch học hoàn chỉnh */}
+      {/* Khung giờ học dự kiến */}
       <div>
         <label className="text-xs font-semibold text-[#475569] block mb-1">
-          Chuỗi tóm tắt lịch học (Tự động cập nhật khi bấm chọn trên):
+          Khung giờ học dự kiến (Đồng bộ theo thứ và ca học đã chọn):
         </label>
         <input
           type="text"
           value={scheduleStr}
           onChange={(e) => setScheduleStr(e.target.value)}
-          placeholder="VD: Thứ 2, Thứ 4, Thứ 6 • 18:00 - 20:00"
+          placeholder="VD: Thứ 2, Thứ 4, Thứ 6 • 18:00 - 20:00 (hoặc chỉnh giờ học tùy ý)"
           className="field text-sm bg-white font-semibold text-[#0F172A] border-orange-300 focus:border-[#EA580C]"
         />
       </div>
