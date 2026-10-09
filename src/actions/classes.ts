@@ -458,3 +458,202 @@ export async function getAvailableStudentsForClassAction(classId: string) {
   }
 }
 
+// Chuyển học viên giữa các lớp TRONG CÙNG MỘT TRƯỜNG (Bắt buộc cùng schoolId)
+export async function transferStudentClassAction(
+  currentClassId: string,
+  targetClassId: string,
+  studentId: string
+) {
+  try {
+    if (!currentClassId || !targetClassId || !studentId) {
+      return { success: false, error: "Thiếu thông tin chuyển lớp!" };
+    }
+
+    if (currentClassId === targetClassId) {
+      return { success: false, error: "Lớp học chuyển đến phải khác lớp hiện tại!" };
+    }
+
+    const [currentClass, targetClass] = await Promise.all([
+      prisma.class.findUnique({
+        where: { id: currentClassId },
+        include: { school: true },
+      }),
+      prisma.class.findUnique({
+        where: { id: targetClassId },
+        include: {
+          school: true,
+          _count: { select: { enrollments: true } },
+        },
+      }),
+    ]);
+
+    if (!currentClass || !currentClass.isActive) {
+      return { success: false, error: "Lớp học hiện tại không tồn tại hoặc đã ngừng hoạt động!" };
+    }
+    if (!targetClass || !targetClass.isActive) {
+      return { success: false, error: "Lớp học chuyển đến không tồn tại hoặc đã ngừng hoạt động!" };
+    }
+
+    // RÀNG BUỘC NGHIỆP VỤ BẮT BUỘC: CHỈ ĐƯỢC CHUYỂN GIỮA CÁC LỚP TRONG CÙNG 1 TRƯỜNG
+    if (currentClass.schoolId !== targetClass.schoolId) {
+      return {
+        success: false,
+        error: "Ràng buộc hệ thống: Chỉ được phép chuyển học sinh giữa các lớp trong cùng 1 trường học!",
+      };
+    }
+
+    // Kiểm tra sĩ số lớp đích
+    if (targetClass._count.enrollments >= targetClass.capacity) {
+      return {
+        success: false,
+        error: `Lớp "${targetClass.name}" đã đạt sĩ số tối đa (${targetClass.capacity} học viên)! Vui lòng chọn lớp khác.`,
+      };
+    }
+
+    // Thực hiện chuyển lớp an toàn bằng transaction
+    await prisma.$transaction([
+      prisma.classEnrollment.deleteMany({
+        where: {
+          classId: currentClassId,
+          studentId,
+        },
+      }),
+      prisma.classEnrollment.upsert({
+        where: {
+          classId_studentId: { classId: targetClassId, studentId },
+        },
+        create: {
+          classId: targetClassId,
+          studentId,
+          status: "STUDYING",
+        },
+        update: {
+          status: "STUDYING",
+        },
+      }),
+    ]);
+
+    safeRevalidate("/classes");
+    safeRevalidate("/schools");
+    return {
+      success: true,
+      message: `Đã chuyển học viên sang lớp "${targetClass.name}" (${targetClass.code}) thành công!`,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message || "Không thể chuyển lớp cho học viên!",
+    };
+  }
+}
+
+// Lấy toàn bộ danh sách lớp học kèm danh sách học sinh của từng lớp theo trường
+export async function getSchoolClassesWithStudentsAction(schoolId: string) {
+  try {
+    const school = await prisma.school.findUnique({
+      where: { id: schoolId },
+      include: {
+        manager: {
+          include: { profile: true },
+        },
+        classes: {
+          where: { isActive: true },
+          include: {
+            school: true,
+            assignments: {
+              include: { staff: { include: { profile: true } } },
+            },
+            enrollments: {
+              include: {
+                student: {
+                  include: {
+                    profile: true,
+                    classEnrollments: {
+                      where: { class: { schoolId } },
+                      include: { class: true },
+                    },
+                  },
+                },
+              },
+              orderBy: { enrolledAt: "asc" },
+            },
+            _count: {
+              select: { enrollments: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    if (!school) {
+      return { success: false, error: "Không tìm thấy trường học!", school: null };
+    }
+
+    return { success: true, school };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể tải danh sách lớp học của trường!", school: null };
+  }
+}
+
+// Lấy danh sách học sinh cùng trường khả dụng để thêm / chuyển sang lớp này
+export async function getEligibleSchoolStudentsForClassAction(classId: string) {
+  try {
+    const currentClass = await prisma.class.findUnique({
+      where: { id: classId },
+      include: { school: true },
+    });
+
+    if (!currentClass) {
+      return { success: false, error: "Không tìm thấy lớp học!", students: [] };
+    }
+
+    // Chỉ lấy học sinh thuộc cùng trường (đang học ở lớp khác của trường này) và chưa có trong classId
+    const students = await prisma.user.findMany({
+      where: {
+        role: { code: "STUDENT" },
+        isActive: true,
+        classEnrollments: {
+          some: {
+            class: {
+              schoolId: currentClass.schoolId,
+              isActive: true,
+            },
+          },
+        },
+        NOT: {
+          classEnrollments: {
+            some: { classId },
+          },
+        },
+      },
+      include: {
+        profile: true,
+        classEnrollments: {
+          where: {
+            class: { schoolId: currentClass.schoolId },
+          },
+          include: {
+            class: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      success: true,
+      schoolName: currentClass.school.name,
+      schoolId: currentClass.schoolId,
+      students,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message || "Không thể tải danh sách học sinh của trường!",
+      students: [],
+    };
+  }
+}
+
+
