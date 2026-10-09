@@ -88,6 +88,9 @@ import {
   getClassDetailAction,
   restoreClassAction,
   getNextClassCodeAction,
+  enrollStudentToClassAction,
+  removeStudentFromClassAction,
+  getAvailableStudentsForClassAction,
 } from "@/actions/classes";
 import {
   createUserAction,
@@ -188,10 +191,12 @@ export function SimpaceApp({
 
   // Điều hướng an toàn có kiểm tra phân quyền (RBAC)
   const navigate = (next: View) => {
+    if (next === "schedule") {
+      next = "classes";
+    }
     if (next === "users" && !hasPerm("VIEW_USERS")) return;
     if (next === "schools" && !hasPerm("VIEW_SCHOOLS")) return;
-    if (next === "classes" && !hasPerm("VIEW_CLASSES")) return;
-    if (next === "schedule" && !hasPerm("VIEW_SCHEDULE")) return;
+    if (next === "classes" && !hasPerm("VIEW_CLASSES") && !hasPerm("VIEW_SCHEDULE")) return;
     if (next === "import" && !hasPerm("IMPORT_EXCEL")) return;
     setView(next);
     setSidebar(false);
@@ -201,7 +206,8 @@ export function SimpaceApp({
   useEffect(() => {
     if (view === "users" && !hasPerm("VIEW_USERS")) setView("dashboard");
     if (view === "schools" && !hasPerm("VIEW_SCHOOLS")) setView("dashboard");
-    if (view === "classes" && !hasPerm("VIEW_CLASSES")) setView("dashboard");
+    if (view === "classes" && !hasPerm("VIEW_CLASSES") && !hasPerm("VIEW_SCHEDULE")) setView("dashboard");
+    if (view === "schedule") setView("classes");
     if (view === "import" && !hasPerm("IMPORT_EXCEL")) setView("dashboard");
   }, [currentUser?.role, permissions, view]);
 
@@ -338,20 +344,12 @@ export function SimpaceApp({
                 onClick={() => navigate("schools")}
               />
             )}
-            {hasPerm("VIEW_CLASSES") && (
+            {(hasPerm("VIEW_CLASSES") || hasPerm("VIEW_SCHEDULE")) && (
               <NavItem
                 icon={GraduationCap}
                 label="Quản lý lớp học"
-                active={view === "classes" || view === "class-detail"}
+                active={view === "classes" || view === "class-detail" || view === "schedule"}
                 onClick={() => navigate("classes")}
-              />
-            )}
-            {hasPerm("VIEW_SCHEDULE") && (
-              <NavItem
-                icon={CalendarDays}
-                label="Lịch học & Giảng dạy"
-                active={view === "schedule"}
-                onClick={() => navigate("schedule")}
               />
             )}
             <NavItem
@@ -549,7 +547,7 @@ export function SimpaceApp({
                 onEditSchool={(s) => setEditingSchool(s)}
               />
             )}
-            {view === "classes" && hasPerm("VIEW_CLASSES") && (
+            {view === "classes" && (hasPerm("VIEW_CLASSES") || hasPerm("VIEW_SCHEDULE")) && (
               <ClassesPageView
                 classes={classes}
                 schools={schools}
@@ -567,29 +565,19 @@ export function SimpaceApp({
                 }}
               />
             )}
-            {view === "class-detail" && hasPerm("VIEW_CLASSES") && (
+            {view === "class-detail" && (hasPerm("VIEW_CLASSES") || hasPerm("VIEW_SCHEDULE")) && (
               <ClassDetailView
                 classItem={selectedClass}
                 teachers={teachers}
                 tas={tas}
                 onBack={() => navigate("classes")}
+                onEditClass={(c) => setEditingClass(c)}
                 onRefreshDetail={async () => {
                   if (selectedClass) {
                     const detail = await getClassDetailAction(selectedClass.id);
                     setSelectedClass(detail);
                   }
                   refreshAll();
-                }}
-              />
-            )}
-            {view === "schedule" && hasPerm("VIEW_SCHEDULE") && (
-              <SchedulePageView
-                classes={classes}
-                schools={schools}
-                currentUser={currentUser}
-                onOpenAddClass={(schoolId) => {
-                  setSelectedSchoolForAdd(schoolId);
-                  setAddClassOpen(true);
                 }}
               />
             )}
@@ -2280,6 +2268,7 @@ function ClassesPageView({
   onOpenAddClass?: (schoolId?: string) => void;
 }) {
   const canManageClass = currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER";
+  const [viewMode, setViewMode] = useState<"LIST" | "TIMETABLE">("LIST");
   const [lifecycleStatus, setLifecycleStatus] = useState("ALL");
   const [selectedSchoolId, setSelectedSchoolId] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -2290,6 +2279,8 @@ function ClassesPageView({
   useEffect(() => {
     setLocalClasses(classes);
   }, [classes]);
+
+  const daysOfWeek = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
 
   const classTabs = [
     ["ALL", "Tất cả"],
@@ -2317,6 +2308,13 @@ function ClassesPageView({
       (c.school?.name || "").toLowerCase().includes(cleanSearch);
 
     return matchesSchool && matchesLifecycle && matchesSearch;
+  });
+
+  // Danh sách lớp dùng cho Thời khóa biểu tuần
+  const scheduleClasses = localClasses.filter((c) => {
+    if (!c.isActive || c.status === "FINISHED") return false;
+    if (selectedSchoolId !== "ALL" && c.schoolId !== selectedSchoolId) return false;
+    return true;
   });
 
   const toggleSelectAll = () => {
@@ -2374,38 +2372,37 @@ function ClassesPageView({
   };
 
   return (
-    <section className="panel">
-      {/* Hàng 1: Tabs Chu kỳ lớp học (Tất cả / Đang diễn ra / Sắp khai giảng / Đã kết thúc) */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F5F9] pb-4">
-        <div className="flex gap-2 overflow-x-auto">
-          {classTabs.map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setLifecycleStatus(key)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
-                lifecycleStatus === key
-                  ? "bg-[#EA580C] text-white shadow-sm"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+    <section className="panel space-y-4">
+      {/* THANH CHUYỂN ĐỔI CHẾ ĐỘ XEM: DANH SÁCH LỚP HỌC vs THỜI KHÓA BIỂU TUẦN */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F5F9] pb-4">
+        <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-[#E2E8F0]">
+          <button
+            type="button"
+            onClick={() => setViewMode("LIST")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition ${
+              viewMode === "LIST"
+                ? "bg-[#EA580C] text-white shadow-sm"
+                : "text-[#64748B] hover:text-[#0F172A]"
+            }`}
+          >
+            <List className="size-4" /> Danh sách lớp học
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("TIMETABLE")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition ${
+              viewMode === "TIMETABLE"
+                ? "bg-[#EA580C] text-white shadow-sm"
+                : "text-[#64748B] hover:text-[#0F172A]"
+            }`}
+          >
+            <CalendarDays className="size-4" /> Thời khóa biểu tuần
+          </button>
         </div>
-      </div>
 
-      <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
-        <div className="flex flex-wrap items-center gap-3 flex-1">
-          <div className="relative max-w-sm flex-1 min-w-[220px]">
-            <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-            <input
-              className="field field-search border-[#CBD5E1]"
-              placeholder="Tìm theo tên lớp, mã lớp, trường..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
+        {/* Lọc nhanh theo trường học dùng chung cho cả 2 chế độ */}
+        <div className="flex items-center gap-2">
+          <Building2 className="size-4 text-[#94A3B8]" />
           <select
             className="field text-xs max-w-xs bg-white border-[#CBD5E1]"
             value={selectedSchoolId}
@@ -2424,172 +2421,355 @@ function ClassesPageView({
               })}
           </select>
         </div>
-
-        {selectedIds.length > 0 && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleBatchDelete}
-            disabled={isDeleting}
-            className="rounded-xl shadow-sm"
-          >
-            <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) lớp đã chọn
-          </Button>
-        )}
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-        <table className="w-full min-w-[780px] border-collapse text-left text-sm">
-          <thead>
-            <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              <th className="px-4 py-3.5 w-10">
-                <input
-                  type="checkbox"
-                  checked={filtered.length > 0 && selectedIds.length === filtered.length}
-                  onChange={toggleSelectAll}
-                  className="rounded border-[#CBD5E1]"
-                />
-              </th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Mã lớp</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Tên lớp</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường học</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Giáo viên / TA phụ trách</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Sĩ số</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
-              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#F1F5F9] bg-white">
-            {filtered.length > 0 ? (
-              filtered.map((c) => (
-                <tr key={c.id} className="hover:bg-[#F8FAFC] transition">
-                  <td className="px-4 py-3.5">
+      {/* CHẾ ĐỘ 1: DANH SÁCH LỚP HỌC (BẢNG TRUYỀN THỐNG) */}
+      {viewMode === "LIST" && (
+        <div className="space-y-4">
+          {/* Hàng: Tabs Chu kỳ lớp học (Tất cả / Đang diễn ra / Sắp khai giảng / Đã kết thúc) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F5F9] pb-3">
+            <div className="flex gap-2 overflow-x-auto">
+              {classTabs.map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setLifecycleStatus(key)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                    lifecycleStatus === key
+                      ? "bg-[#EA580C] text-white shadow-sm"
+                      : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3 justify-between items-center">
+            <div className="relative max-w-sm flex-1 min-w-[220px]">
+              <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+              <input
+                className="field field-search border-[#CBD5E1]"
+                placeholder="Tìm theo tên lớp, mã lớp, trường..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            {selectedIds.length > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBatchDelete}
+                disabled={isDeleting}
+                className="rounded-xl shadow-sm"
+              >
+                <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) lớp đã chọn
+              </Button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+            <table className="w-full min-w-[780px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="px-4 py-3.5 w-10">
                     <input
                       type="checkbox"
-                      checked={selectedIds.includes(c.id)}
-                      onChange={() => toggleSelect(c.id)}
+                      checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                      onChange={toggleSelectAll}
                       className="rounded border-[#CBD5E1]"
                     />
-                  </td>
-                  <td className="px-4 py-3.5 font-mono font-bold text-xs text-[#0F172A]">{c.code}</td>
-                  <td className="px-4 py-3.5 font-bold text-[#0F172A]">
-                    <button
-                      onClick={() => onOpenDetail(c)}
-                      className="hover:text-[#EA580C] text-left transition"
-                    >
-                      {c.name}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3.5 text-[#475569]">{c.school?.name || "—"}</td>
-                  <td className="px-4 py-3.5 text-xs text-[#64748B]">
-                    {c.assignments && c.assignments.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {c.assignments.map((a: any) => (
-                          <span
-                            key={a.id}
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${
-                              a.roleInClass === "TEACHER"
-                                ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                : "bg-purple-50 text-purple-700 border border-purple-200"
-                            }`}
-                          >
-                            {a.roleInClass === "TEACHER" ? "GV: " : "TA: "}
-                            {a.staff?.profile?.fullName || a.staff?.username}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[#94A3B8] italic">Chưa phân công</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5 font-semibold text-[#0F172A]">
-                    {c._count?.enrollments || 0}/{c.capacity}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <Status
-                      tone={
-                        c.status === "FINISHED" ? "neutral" : c.status === "UPCOMING" ? "warn" : "success"
-                      }
-                    >
-                      {c.status === "ACTIVE"
-                        ? "Đang diễn ra"
-                        : c.status === "UPCOMING"
-                        ? "Sắp khai giảng"
-                        : "Đã kết thúc"}
-                    </Status>
-                  </td>
-                  <td className="px-4 py-3.5 text-right">
-                    <div className="flex justify-end items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#EA580C]"
-                        onClick={() => onOpenDetail(c)}
-                        title="Xem chi tiết lớp học (Chỉ xem)"
-                      >
-                        <Eye className="size-4" />
-                      </Button>
-                      {canManageClass && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-[#64748B] hover:text-[#0F172A]"
-                            onClick={() => onEditClass(c)}
-                            title="Chỉnh sửa"
-                          >
-                            <Edit2 className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-[#64748B] hover:text-[#EF4444]"
-                            onClick={() => handleDeleteSingle(c)}
-                            title="Xóa lớp học"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </td>
+                  </th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Mã lớp</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Tên lớp</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường học</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Giáo viên / TA phụ trách</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Sĩ số</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase text-right">Thao tác</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={8} className="text-center py-12 text-sm">
-                  {selectedSchoolId !== "ALL" ? (
-                    <div className="flex flex-col items-center justify-center space-y-3">
-                      <div className="size-12 rounded-full bg-orange-100 flex items-center justify-center text-[#EA580C]">
-                        <Building2 className="size-6" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-bold text-[#0F172A]">
-                          Trường &quot;{schools.find((s: any) => s.id === selectedSchoolId)?.name}&quot; hiện chưa có lớp học nào
-                        </p>
-                        <p className="text-xs text-[#64748B]">
-                          Mỗi trường học quản lý các lớp học riêng biệt. Bạn hãy tạo lớp học mới để gán cho trường này.
-                        </p>
-                      </div>
-                      {canManageClass && onOpenAddClass && (
-                        <Button
-                          size="sm"
-                          onClick={() => onOpenAddClass(selectedSchoolId)}
-                          className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9] bg-white">
+                {filtered.length > 0 ? (
+                  filtered.map((c) => (
+                    <tr key={c.id} className="hover:bg-[#F8FAFC] transition">
+                      <td className="px-4 py-3.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(c.id)}
+                          onChange={() => toggleSelect(c.id)}
+                          className="rounded border-[#CBD5E1]"
+                        />
+                      </td>
+                      <td className="px-4 py-3.5 font-mono font-bold text-xs text-[#0F172A]">{c.code}</td>
+                      <td className="px-4 py-3.5 font-bold text-[#0F172A]">
+                        <button
+                          onClick={() => onOpenDetail(c)}
+                          className="hover:text-[#EA580C] text-left transition"
                         >
-                          <Plus className="size-3.5 mr-1" /> + Tạo lớp học cho trường này
-                        </Button>
+                          {c.name}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3.5 text-[#475569]">{c.school?.name || "—"}</td>
+                      <td className="px-4 py-3.5 text-xs text-[#64748B]">
+                        {c.assignments && c.assignments.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {c.assignments.map((a: any) => (
+                              <span
+                                key={a.id}
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${
+                                  a.roleInClass === "TEACHER"
+                                    ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                    : "bg-purple-50 text-purple-700 border border-purple-200"
+                                }`}
+                              >
+                                {a.roleInClass === "TEACHER" ? "GV: " : "TA: "}
+                                {a.staff?.profile?.fullName || a.staff?.username}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[#94A3B8] italic">Chưa phân công</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 font-semibold text-[#0F172A]">
+                        {c._count?.enrollments || 0}/{c.capacity}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <Status
+                          tone={
+                            c.status === "FINISHED" ? "neutral" : c.status === "UPCOMING" ? "warn" : "success"
+                          }
+                        >
+                          {c.status === "ACTIVE"
+                            ? "Đang diễn ra"
+                            : c.status === "UPCOMING"
+                            ? "Sắp khai giảng"
+                            : "Đã kết thúc"}
+                        </Status>
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex justify-end items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-[#64748B] hover:text-[#EA580C]"
+                            onClick={() => onOpenDetail(c)}
+                            title="Xem chi tiết lớp học"
+                          >
+                            <Eye className="size-4" />
+                          </Button>
+                          {canManageClass && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-[#64748B] hover:text-[#0F172A]"
+                                onClick={() => onEditClass(c)}
+                                title="Chỉnh sửa"
+                              >
+                                <Edit2 className="size-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-[#64748B] hover:text-[#EF4444]"
+                                onClick={() => handleDeleteSingle(c)}
+                                title="Xóa lớp học"
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="text-center py-12 text-sm">
+                      {selectedSchoolId !== "ALL" ? (
+                        <div className="flex flex-col items-center justify-center space-y-3">
+                          <div className="size-12 rounded-full bg-orange-100 flex items-center justify-center text-[#EA580C]">
+                            <Building2 className="size-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="font-bold text-[#0F172A]">
+                              Trường &quot;{schools.find((s: any) => s.id === selectedSchoolId)?.name}&quot; hiện chưa có lớp học nào
+                            </p>
+                            <p className="text-xs text-[#64748B]">
+                              Mỗi trường học quản lý các lớp học riêng biệt. Bạn hãy tạo lớp học mới để gán cho trường này.
+                            </p>
+                          </div>
+                          {canManageClass && onOpenAddClass && (
+                            <Button
+                              size="sm"
+                              onClick={() => onOpenAddClass(selectedSchoolId)}
+                              className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
+                            >
+                              <Plus className="size-3.5 mr-1" /> + Tạo lớp học cho trường này
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[#94A3B8] italic">Không tìm thấy lớp học nào.</span>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* CHẾ ĐỘ 2: THỜI KHÓA BIỂU TUẦN (GRID VIEW) */}
+      {viewMode === "TIMETABLE" && (
+        scheduleClasses.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#CBD5E1] bg-white p-10 text-center flex flex-col items-center justify-center space-y-3 shadow-xs">
+            <div className="size-12 rounded-full bg-orange-100 flex items-center justify-center text-[#EA580C]">
+              <Building2 className="size-6" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-bold text-[#0F172A]">
+                {selectedSchoolId !== "ALL"
+                  ? `Trường "${schools.find((s: any) => s.id === selectedSchoolId)?.name}" hiện chưa có lịch học nào`
+                  : "Chưa có lịch học nào trong hệ thống"}
+              </p>
+              <p className="text-xs text-[#64748B]">
+                Tạo lớp học mới và chọn các thứ trong tuần để lịch học tự động hiển thị trên bảng thời khóa biểu.
+              </p>
+            </div>
+            {canManageClass && onOpenAddClass && (
+              <Button
+                size="sm"
+                onClick={() => onOpenAddClass(selectedSchoolId !== "ALL" ? selectedSchoolId : undefined)}
+                className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
+              >
+                <Plus className="size-3.5 mr-1" /> + Tạo lớp học mới
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid gap-3.5 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+              {daysOfWeek.map((day) => {
+                const classesForDay = scheduleClasses.filter((c) => {
+                  if (!c.description) return false;
+                  return c.description.toLowerCase().includes(day.toLowerCase());
+                });
+
+                return (
+                  <div
+                    key={day}
+                    className="rounded-2xl border border-[#E2E8F0] bg-white p-3.5 shadow-sm flex flex-col min-h-[220px]"
+                  >
+                    <div className="flex items-center justify-between pb-2.5 border-b border-[#F1F5F9]">
+                      <span className="font-bold text-sm text-[#0F172A]">{day}</span>
+                      <span
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                          classesForDay.length > 0
+                            ? "bg-orange-100 text-[#EA580C] border border-orange-200"
+                            : "bg-slate-100 text-[#94A3B8]"
+                        }`}
+                      >
+                        {classesForDay.length > 0 ? `${classesForDay.length} ca học` : "Nghỉ"}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 space-y-2.5 flex-1">
+                      {classesForDay.length > 0 ? (
+                        classesForDay.map((cls) => {
+                          const teacherName =
+                            cls.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff
+                              ?.profile?.fullName || "Chưa phân công";
+                          const taName = cls.assignments?.find(
+                            (a: any) => a.roleInClass === "TEACHING_ASSISTANT"
+                          )?.staff?.profile?.fullName;
+
+                          return (
+                            <div
+                              key={cls.id}
+                              onClick={() => onOpenDetail(cls)}
+                              className="rounded-xl border border-orange-200/80 bg-[#FFF7ED]/40 p-3 hover:border-[#EA580C] hover:shadow-md transition group cursor-pointer"
+                              title="Bấm để xem chi tiết lớp học này"
+                            >
+                              <div className="flex items-center justify-between gap-1 mb-1.5">
+                                <span className="font-mono text-[11px] font-bold text-[#EA580C] bg-orange-100/70 px-1.5 py-0.5 rounded">
+                                  {cls.code}
+                                </span>
+                                <span className="text-[10px] uppercase font-bold text-slate-500">
+                                  {cls.program || "IELTS"}
+                                </span>
+                              </div>
+
+                              <b className="block text-xs font-bold text-[#0F172A] group-hover:text-[#EA580C] transition leading-snug">
+                                {cls.name}
+                              </b>
+
+                              <div className="mt-2 space-y-1 text-[11px] text-[#475569]">
+                                <div className="flex items-center gap-1.5 font-semibold text-[#EA580C]">
+                                  <Clock className="size-3 shrink-0" />
+                                  <span>{cls.description}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[#64748B]">
+                                  <Building2 className="size-3 shrink-0" />
+                                  <span className="truncate">{cls.school?.name}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[#64748B]">
+                                  <GraduationCap className="size-3 shrink-0" />
+                                  <span className="truncate">GV: {teacherName}</span>
+                                </div>
+                                {taName && (
+                                  <div className="text-[10px] text-[#94A3B8] pl-4">TA: {taName}</div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="grid place-items-center h-full py-8 text-center text-xs text-[#94A3B8] italic">
+                          Không có ca học
+                        </div>
                       )}
                     </div>
-                  ) : (
-                    <span className="text-[#94A3B8] italic">Không tìm thấy lớp học nào.</span>
-                  )}
-                </td>
-              </tr>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Hiển thị các lớp học có lịch đặc thù / chưa gán cố định thứ */}
+            {scheduleClasses.some((c) => !daysOfWeek.some((d) => c.description?.includes(d))) && (
+              <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+                <h4 className="font-bold text-xs uppercase tracking-wider text-[#64748B] mb-3">
+                  Các lớp học đang diễn ra (Lịch học linh hoạt):
+                </h4>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {scheduleClasses
+                    .filter((c) => !daysOfWeek.some((d) => c.description?.includes(d)))
+                    .map((cls) => (
+                      <div
+                        key={cls.id}
+                        onClick={() => onOpenDetail(cls)}
+                        className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs hover:border-[#EA580C] transition cursor-pointer"
+                        title="Bấm để xem chi tiết lớp học này"
+                      >
+                        <b className="text-[#0F172A] block font-bold hover:text-[#EA580C] transition">
+                          {cls.name} ({cls.code})
+                        </b>
+                        <p className="text-[#64748B] mt-1">Trường: {cls.school?.name}</p>
+                        <p className="text-[#EA580C] font-semibold mt-1">
+                          Lịch: {cls.description || "Chưa xếp lịch cụ thể"}
+                        </p>
+                      </div>
+                    ))}
+                </div>
+              </div>
             )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        )
+      )}
 
       <ConfirmDialog
         open={confirmModal.open}
@@ -2615,16 +2795,29 @@ function ClassDetailView({
   tas,
   onBack,
   onRefreshDetail,
+  onEditClass,
 }: {
   classItem: any;
   teachers: any[];
   tas: any[];
   onBack: () => void;
   onRefreshDetail: () => void;
+  onEditClass?: (c: any) => void;
 }) {
   const [assignRole, setAssignRole] = useState<"TEACHER" | "TEACHING_ASSISTANT" | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  // State quản lý thêm / bớt học viên
+  const [addStudentOpen, setAddStudentOpen] = useState(false);
+  const [availableStudents, setAvailableStudents] = useState<any[]>([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [removeStudentTarget, setRemoveStudentTarget] = useState<{
+    studentId: string;
+    studentName: string;
+  } | null>(null);
 
   if (!classItem) return null;
 
@@ -2657,6 +2850,49 @@ function ClassDetailView({
     });
   };
 
+  // Mở modal thêm học viên vào lớp
+  const handleOpenAddStudent = async () => {
+    setAddStudentOpen(true);
+    setIsLoadingStudents(true);
+    setSelectedStudentId("");
+    setStudentSearch("");
+    const res = await getAvailableStudentsForClassAction(classItem.id);
+    if (res && res.success) {
+      setAvailableStudents(res.students);
+    }
+    setIsLoadingStudents(false);
+  };
+
+  // Xác nhận thêm học viên
+  const handleEnrollStudent = () => {
+    if (!selectedStudentId) return;
+    startTransition(async () => {
+      const res = await enrollStudentToClassAction(classItem.id, selectedStudentId);
+      if (res.success) {
+        setAddStudentOpen(false);
+        setSelectedStudentId("");
+        onRefreshDetail();
+      } else {
+        alert(res.error || "Không thể thêm học viên!");
+      }
+    });
+  };
+
+  // Rút học viên khỏi lớp
+  const handleRemoveStudent = (studentId: string, studentName: string) => {
+    setRemoveStudentTarget({ studentId, studentName });
+  };
+
+  const confirmRemoveStudent = () => {
+    if (!removeStudentTarget) return;
+    const target = removeStudentTarget;
+    setRemoveStudentTarget(null);
+    startTransition(async () => {
+      await removeStudentFromClassAction(classItem.id, target.studentId);
+      onRefreshDetail();
+    });
+  };
+
   const statusLabel =
     classItem.status === "ACTIVE"
       ? "Đang diễn ra"
@@ -2666,21 +2902,46 @@ function ClassDetailView({
 
   return (
     <>
-      <button
-        onClick={onBack}
-        className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-[#64748B] hover:text-[#EA580C] transition"
-      >
-        <ChevronLeft className="size-4" /> Quay lại danh sách lớp học
-      </button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm font-semibold text-[#64748B] hover:text-[#EA580C] transition"
+        >
+          <ChevronLeft className="size-4" /> Quay lại danh sách lớp học
+        </button>
+
+        {onEditClass && (
+          <Button
+            onClick={() => onEditClass(classItem)}
+            className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
+          >
+            <Edit2 className="size-3.5 mr-1.5" /> Chỉnh sửa thông tin lớp
+          </Button>
+        )}
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <InfoCard
-          title="Thông tin lớp học"
+          title="Thông tin lớp học & Thời khóa biểu"
           items={[
             `Mã lớp: ${classItem.code}`,
             `Khóa học: ${classItem.program || "IELTS"}`,
             `Trường học: ${classItem.school?.name || "Chưa gán"}`,
             `Sĩ số: ${classItem.enrollments?.length || 0}/${classItem.capacity} học viên`,
+            `Lịch học: ${classItem.description || "Chưa xếp lịch cụ thể"}`,
+            ...(classItem.startDate || classItem.endDate
+              ? [
+                  `Thời gian: ${
+                    classItem.startDate
+                      ? new Date(classItem.startDate).toLocaleDateString("vi-VN")
+                      : "---"
+                  } → ${
+                    classItem.endDate
+                      ? new Date(classItem.endDate).toLocaleDateString("vi-VN")
+                      : "---"
+                  }`,
+                ]
+              : []),
             `Trạng thái: ${statusLabel}`,
           ]}
         />
@@ -2789,9 +3050,24 @@ function ClassDetailView({
       </div>
 
       <section className="panel mt-6">
-        <h2 className="font-bold text-base text-[#0F172A] mb-4">
-          Danh sách học viên theo học ({classItem.enrollments?.length || 0})
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="font-bold text-base text-[#0F172A]">
+              Danh sách học viên theo học ({classItem.enrollments?.length || 0}/{classItem.capacity})
+            </h2>
+            <p className="text-xs text-[#64748B] mt-0.5">
+              Quản lý và cập nhật danh sách học sinh ghi danh trong lớp học này
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleOpenAddStudent}
+            className="text-xs rounded-xl text-[#EA580C] border-orange-200 hover:bg-orange-50 font-semibold shadow-xs"
+          >
+            <Plus className="size-3.5 mr-1" /> Thêm học viên vào lớp
+          </Button>
+        </div>
 
         <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
           <table className="w-full min-w-[700px] border-collapse text-left text-sm">
@@ -2802,6 +3078,7 @@ function ClassDetailView({
                 <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Mã học viên</th>
                 <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Ngày vào lớp</th>
                 <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
+                <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F1F5F9] bg-white">
@@ -2821,12 +3098,26 @@ function ClassDetailView({
                         {enr.status === "STUDYING" ? "Đang học" : enr.status}
                       </Status>
                     </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <button
+                        onClick={() =>
+                          handleRemoveStudent(
+                            enr.studentId,
+                            enr.student?.profile?.fullName || enr.student?.username
+                          )
+                        }
+                        className="text-xs font-semibold text-rose-600 hover:underline inline-flex items-center gap-1"
+                        title="Rút học viên khỏi lớp"
+                      >
+                        <Trash2 className="size-3.5" /> Gỡ
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-sm text-[#94A3B8] italic">
-                    Chưa có học viên trong lớp. Hãy sử dụng tính năng Import Excel để thêm học viên!
+                  <td colSpan={6} className="text-center py-8 text-sm text-[#94A3B8] italic">
+                    Chưa có học viên trong lớp. Bấm &quot;Thêm học viên vào lớp&quot; hoặc dùng tính năng Import Excel để thêm học viên!
                   </td>
                 </tr>
               )}
@@ -2882,6 +3173,97 @@ function ClassDetailView({
         </Dialog>
       )}
 
+      {/* MODAL THÊM HỌC VIÊN VÀO LỚP */}
+      {addStudentOpen && (
+        <Dialog open={true} onOpenChange={() => setAddStudentOpen(false)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Thêm học viên vào lớp</DialogTitle>
+              <DialogDescription>
+                Chọn học viên để ghi danh vào lớp {classItem.name} ({classItem.code}). Sĩ số: {classItem.enrollments?.length || 0}/{classItem.capacity}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-2 space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+                <input
+                  className="field field-search text-xs pl-9"
+                  placeholder="Tìm học viên theo họ tên, email, mã HV..."
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                />
+              </div>
+
+              {isLoadingStudents ? (
+                <div className="py-8 text-center text-xs text-[#94A3B8] flex items-center justify-center gap-2">
+                  <Loader2 className="size-4 animate-spin" /> Đang tải danh sách học viên...
+                </div>
+              ) : (
+                <div className="max-h-60 overflow-y-auto border border-[#E2E8F0] rounded-xl divide-y divide-[#F1F5F9]">
+                  {availableStudents
+                    .filter((st: any) => {
+                      if (!studentSearch.trim()) return true;
+                      const q = studentSearch.trim().toLowerCase();
+                      return (
+                        (st.profile?.fullName || "").toLowerCase().includes(q) ||
+                        st.username.toLowerCase().includes(q) ||
+                        st.email.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((st: any) => (
+                      <label
+                        key={st.id}
+                        className={`flex items-center justify-between p-3 cursor-pointer hover:bg-orange-50/50 transition ${
+                          selectedStudentId === st.id ? "bg-orange-50 border-l-4 border-l-[#EA580C]" : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="selectedStudent"
+                            checked={selectedStudentId === st.id}
+                            onChange={() => setSelectedStudentId(st.id)}
+                            className="text-[#EA580C] focus:ring-[#EA580C]"
+                          />
+                          <div>
+                            <b className="text-xs text-[#0F172A] block font-semibold">
+                              {st.profile?.fullName || st.username}
+                            </b>
+                            <span className="text-[11px] text-[#64748B] block">
+                              {st.email} • Mã: <span className="font-mono">{st.username}</span>
+                              {st.classEnrollments?.[0]?.class?.school?.name ? ` • Trường: ${st.classEnrollments[0].class.school.name}` : ""}
+                            </span>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  {availableStudents.length === 0 && (
+                    <div className="py-6 text-center text-xs text-[#94A3B8] italic">
+                      Không có học viên nào khả dụng để thêm.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-[#F1F5F9]">
+              <Button variant="outline" onClick={() => setAddStudentOpen(false)}>
+                Hủy
+              </Button>
+              <Button
+                onClick={handleEnrollStudent}
+                disabled={!selectedStudentId || isPending}
+                className="bg-[#EA580C] text-white"
+              >
+                {isPending ? <Loader2 className="size-4 animate-spin mr-1" /> : null} Xác nhận thêm vào lớp
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* DIALOG XÁC NHẬN HỦY PHÂN CÔNG NHÂN SỰ */}
       <ConfirmDialog
         open={!!unassignTarget}
         onOpenChange={(open) => !open && setUnassignTarget(null)}
@@ -2890,6 +3272,17 @@ function ClassDetailView({
         confirmText="Hủy phân công"
         isPending={isPending}
         onConfirm={confirmUnassign}
+      />
+
+      {/* DIALOG XÁC NHẬN RÚT HỌC VIÊN */}
+      <ConfirmDialog
+        open={!!removeStudentTarget}
+        onOpenChange={(open) => !open && setRemoveStudentTarget(null)}
+        title="Rút học viên khỏi lớp học"
+        description={`Bạn có chắc muốn rút học viên "${removeStudentTarget?.studentName}" khỏi lớp "${classItem.name}"? Thao tác này sẽ hủy ghi danh của học viên trong lớp.`}
+        confirmText="Rút khỏi lớp"
+        isPending={isPending}
+        onConfirm={confirmRemoveStudent}
       />
     </>
   );

@@ -373,3 +373,88 @@ export async function removeStaffFromClassAction(classId: string, userId: string
     return { success: false, error: error.message || "Không thể hủy phân công nhân sự!" };
   }
 }
+
+// Thêm học viên vào lớp học
+export async function enrollStudentToClassAction(classId: string, studentId: string) {
+  try {
+    const cls = await prisma.class.findUnique({
+      where: { id: classId },
+      include: { _count: { select: { enrollments: true } } },
+    });
+    if (!cls || !cls.isActive) {
+      return { success: false, error: "Lớp học không tồn tại hoặc đã ngừng hoạt động!" };
+    }
+    if (cls._count.enrollments >= cls.capacity) {
+      return { success: false, error: `Lớp học đã đạt sĩ số tối đa (${cls.capacity} học viên)!` };
+    }
+
+    await prisma.classEnrollment.upsert({
+      where: {
+        classId_studentId: { classId, studentId },
+      },
+      create: {
+        classId,
+        studentId,
+        status: "STUDYING",
+      },
+      update: {
+        status: "STUDYING",
+      },
+    });
+
+    safeRevalidate("/classes");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể thêm học viên vào lớp!" };
+  }
+}
+
+// Rút học viên khỏi lớp học
+export async function removeStudentFromClassAction(classId: string, studentId: string) {
+  try {
+    await prisma.classEnrollment.deleteMany({
+      where: {
+        classId,
+        studentId,
+      },
+    });
+
+    safeRevalidate("/classes");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể rút học viên khỏi lớp!" };
+  }
+}
+
+// Lấy danh sách học viên khả dụng để thêm vào lớp (chưa ghi danh vào lớp này)
+export async function getAvailableStudentsForClassAction(classId: string) {
+  try {
+    const students = await prisma.user.findMany({
+      where: {
+        role: { code: "STUDENT" },
+        isActive: true,
+        NOT: {
+          classEnrollments: {
+            some: { classId },
+          },
+        },
+      },
+      include: {
+        profile: true,
+        classEnrollments: {
+          include: {
+            class: {
+              include: { school: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return { success: true, students };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể tải danh sách học viên!", students: [] };
+  }
+}
+
