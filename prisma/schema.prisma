@@ -111,12 +111,15 @@ model UserProfile {
   dateOfBirth DateTime?
   gender      Gender?
   avatarUrl   String?
-  address     String?
-  extraInfo   Json?     // Mở rộng linh hoạt: Band IELTS, chứng chỉ đối với GV/TA
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  address         String?
+  entryIeltsScore Float?    // Điểm IELTS đầu vào
+  ieltsLevelId    String?   // Trình độ IELTS được xác định
+  extraInfo       Json?     // Mở rộng linh hoạt: Band IELTS, chứng chỉ đối với GV/TA
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ieltsLevel      IeltsLevel? @relation(fields: [ieltsLevelId], references: [id], onDelete: SetNull)
 
   @@map("user_profiles")
 }
@@ -171,6 +174,7 @@ model Class {
   name        String        // Tên lớp hiển thị (VD: IELTS Bứt Phá - 10A1)
   program     ClassProgram  @default(IELTS)
   level       String?       // Cấp độ mục tiêu (VD: 5.5 - 6.5, Foundation)
+  ieltsLevelId String?      // Trình độ IELTS liên kết
   capacity    Int           @default(30)
   startDate   DateTime?
   endDate     DateTime?
@@ -181,6 +185,7 @@ model Class {
   updatedAt   DateTime      @updatedAt
 
   school      School            @relation(fields: [schoolId], references: [id])
+  ieltsLevel  IeltsLevel?       @relation(fields: [ieltsLevelId], references: [id], onDelete: SetNull)
   assignments ClassAssignment[] // Phân công Giáo viên, Trợ giảng
   enrollments ClassEnrollment[] // Danh sách Học sinh theo học
 
@@ -253,4 +258,29 @@ model SystemPermission {
 
   @@map("system_permissions")
 }
+
+// ==========================================
+// 7. CẤU HÌNH TRÌNH ĐỘ & PHÂN LỚP IELTS
+// ==========================================
+
+model IeltsLevel {
+  id               String   @id @default(uuid())
+  code             String   @unique // Mã trình độ (VD: BASIC, INTERMEDIATE, ADVANCED)
+  name             String   // Tên hiển thị (VD: Cơ bản, Trung bình, Nâng cao)
+  minScore         Float    // Điểm IELTS tối thiểu (VD: 0.0, 4.5, 6.5)
+  maxScore         Float    // Điểm IELTS tối đa (VD: 4.0, 6.0, 9.0)
+  description      String?  // Mô tả trình độ
+  targetClassCount Int      @default(1) // Số lớp cấu hình phân bổ khi nhập hàng loạt
+  isActive         Boolean  @default(true) // Trạng thái hoạt động
+  sortOrder        Int      @default(0) // Thứ tự hiển thị
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  students         UserProfile[]
+  classes          Class[]
+
+  @@index([minScore, maxScore])
+  @@map("ielts_levels")
+}
+
 

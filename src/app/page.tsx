@@ -5,6 +5,7 @@ import { getSchoolsAction, getSchoolManagersAction } from "@/actions/schools";
 import { getClassesAction } from "@/actions/classes";
 import { getUsersAction, getTeachersAction, getTAsAction } from "@/actions/users";
 import { getSystemPermissionsAction } from "@/actions/permissions";
+import { getIeltsLevelsAction } from "@/actions/ielts-levels";
 import { SimpaceApp } from "@/components/simpace-app";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +45,7 @@ export default async function HomePage() {
     }
   }
 
-  const [schools, classes, users, managers, teachers, tas, permissions] = await Promise.all([
+  const [schools, classes, users, managers, teachers, tas, permissions, ieltsLevelsRes] = await Promise.all([
     getSchoolsAction(),
     getClassesAction(),
     getUsersAction(),
@@ -52,6 +53,7 @@ export default async function HomePage() {
     getTeachersAction(),
     getTAsAction(),
     getSystemPermissionsAction(),
+    getIeltsLevelsAction(),
   ]);
 
   return (
@@ -64,6 +66,7 @@ export default async function HomePage() {
       initialTeachers={teachers}
       initialTAs={tas}
       initialPermissions={permissions}
+      initialIeltsLevels={ieltsLevelsRes.levels || []}
     />
   );
 }

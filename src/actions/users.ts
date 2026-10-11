@@ -148,7 +148,9 @@ export async function getUsersAction(
     where: whereClause,
     include: {
       role: true,
-      profile: true,
+      profile: {
+        include: { ieltsLevel: true },
+      },
       managedSchools: true,
       classAssignments: {
         include: { class: { include: { school: true } } },
@@ -189,6 +191,8 @@ export async function createUserAction(data: {
   schoolIds?: string[]; // Dành cho Quản nhiệm (1 QN quản lý nhiều trường)
   classIds?: string[]; // Dành cho GV, TA hoặc Học sinh (gán nhiều lớp)
   extraInfo?: any;
+  entryIeltsScore?: number;
+  ieltsLevelId?: string;
 }) {
   try {
     const cleanEmail = data.email.trim().toLowerCase();
@@ -258,23 +262,27 @@ export async function createUserAction(data: {
               create: {
                 fullName: data.fullName.trim(),
                 phoneNumber: data.phoneNumber || null,
-                address: data.address || null,
+                address: data.roleCode === "STUDENT" ? null : (data.address || null),
                 dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
                 gender: data.gender || null,
                 extraInfo: data.extraInfo || null,
+                entryIeltsScore: data.entryIeltsScore !== undefined ? Number(data.entryIeltsScore) : null,
+                ieltsLevelId: data.ieltsLevelId || null,
               },
               update: {
                 fullName: data.fullName.trim(),
                 phoneNumber: data.phoneNumber || null,
-                address: data.address || null,
+                address: data.roleCode === "STUDENT" ? null : (data.address || null),
                 dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
                 gender: data.gender || null,
                 extraInfo: data.extraInfo || null,
+                entryIeltsScore: data.entryIeltsScore !== undefined ? Number(data.entryIeltsScore) : null,
+                ieltsLevelId: data.ieltsLevelId || null,
               },
             },
           },
         },
-        include: { profile: true, role: true },
+        include: { profile: { include: { ieltsLevel: true } }, role: true },
       });
 
       // Gán đa nhiệm theo vai trò
@@ -309,14 +317,16 @@ export async function createUserAction(data: {
           create: {
             fullName: data.fullName.trim(),
             phoneNumber: data.phoneNumber || null,
-            address: data.address || null,
+            address: data.roleCode === "STUDENT" ? null : (data.address || null),
             dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
             gender: data.gender || null,
             extraInfo: data.extraInfo || null,
+            entryIeltsScore: data.entryIeltsScore !== undefined ? Number(data.entryIeltsScore) : null,
+            ieltsLevelId: data.ieltsLevelId || null,
           },
         },
       },
-      include: { profile: true, role: true },
+      include: { profile: { include: { ieltsLevel: true } }, role: true },
     });
 
     // Xử lý gán đa nhiệm
