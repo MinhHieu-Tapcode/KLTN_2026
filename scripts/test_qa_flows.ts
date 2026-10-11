@@ -151,7 +151,7 @@ async function runAllTests() {
         capacity: 25,
         teacherIds: teacher ? [teacher.id] : [],
         taIds: ta ? [ta.id] : [],
-        schedule: "Thứ 2, Thứ 4, Thứ 6 • 18:00 - 20:00",
+        schedule: "Thứ 3, Thứ 5 • 14:00 - 16:00",
         startDate: "2026-10-15",
         endDate: "2026-12-30",
       });

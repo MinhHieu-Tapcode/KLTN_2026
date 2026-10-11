@@ -40,6 +40,7 @@ import {
   Clock,
   List,
   ArrowRightLeft,
+  AlertTriangle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Sheet,
@@ -77,6 +79,8 @@ import {
   getSchoolDetailAction,
   getNextSchoolCodeAction,
   getSchoolManagersAction,
+  checkSchoolManagerScheduleConflictAction,
+  changeSchoolManagerAction,
 } from "@/actions/schools";
 import {
   createClassAction,
@@ -546,6 +550,8 @@ export function SimpaceApp({
             {view === "schools" && hasPerm("VIEW_SCHOOLS") && (
               <SchoolsPageView
                 schools={schools}
+                managers={managers}
+                currentUser={currentUser}
                 onRefresh={refreshSchools}
                 onAdd={() => setAddSchoolOpen(true)}
                 onEditSchool={(s) => setEditingSchool(s)}
@@ -577,6 +583,7 @@ export function SimpaceApp({
             {view === "class-detail" && (hasPerm("VIEW_CLASSES") || hasPerm("VIEW_SCHEDULE")) && (
               <ClassDetailView
                 classItem={selectedClass}
+                classes={classes}
                 teachers={teachers}
                 tas={tas}
                 onBack={() => navigate("classes")}
@@ -1871,6 +1878,8 @@ function UsersPageView({
 
 function SchoolsPageView({
   schools,
+  managers = [],
+  currentUser,
   onRefresh,
   onAdd,
   onEditSchool,
@@ -1878,6 +1887,8 @@ function SchoolsPageView({
   onOpenAddClass,
 }: {
   schools: any[];
+  managers?: any[];
+  currentUser?: any;
   onRefresh: () => void;
   onAdd: () => void;
   onEditSchool: (s: any) => void;
@@ -1891,10 +1902,90 @@ function SchoolsPageView({
   const [localSchools, setLocalSchools] = useState(schools);
   const [selectedSchoolDetail, setSelectedSchoolDetail] = useState<any>(null);
   const [selectedSchoolForClasses, setSelectedSchoolForClasses] = useState<any>(null);
+  const [managersList, setManagersList] = useState<any[]>(managers);
+
+  const [managerChangeModal, setManagerChangeModal] = useState<{
+    school: any;
+    newManager: any;
+    otherSchools: any[];
+    selectedSwapSchoolId: string;
+  } | null>(null);
+
+  const [conflictErrorModal, setConflictErrorModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+  } | null>(null);
+
+  const [isChangingManager, setIsChangingManager] = useState(false);
 
   useEffect(() => {
     setLocalSchools(schools);
   }, [schools]);
+
+  useEffect(() => {
+    if (managers && managers.length > 0) {
+      setManagersList(managers);
+    } else {
+      getSchoolManagersAction().then((m) => {
+        if (m) setManagersList(m);
+      });
+    }
+  }, [managers]);
+
+  const handleManagerChangeRequest = async (school: any, newManagerId: string) => {
+    if (!newManagerId || newManagerId === school.managerId) return;
+
+    // 1. Kiểm tra xung đột lịch học của quản nhiệm mới với các trường đang phụ trách
+    const checkRes = await checkSchoolManagerScheduleConflictAction(school.id, newManagerId);
+    if (checkRes.hasConflict) {
+      setConflictErrorModal({
+        open: true,
+        title: "Không thể đổi quản nhiệm (Xung đột lịch học)",
+        message:
+          checkRes.error ||
+          "Phát hiện xung đột lịch học giữa các trường mà quản nhiệm đang phụ trách!",
+      });
+      return;
+    }
+
+    const newMgr = managersList.find((m: any) => m.id === newManagerId);
+    const otherSchools = checkRes.otherSchools || newMgr?.managedSchools || [];
+
+    setManagerChangeModal({
+      school,
+      newManager: newMgr || { id: newManagerId, username: checkRes.managerName },
+      otherSchools,
+      selectedSwapSchoolId: otherSchools.length > 0 ? otherSchools[0].id : "",
+    });
+  };
+
+  const executeChangeManager = async (actionType: "SWAP" | "OVERWRITE") => {
+    if (!managerChangeModal) return;
+    setIsChangingManager(true);
+    try {
+      const res = await changeSchoolManagerAction({
+        schoolId: managerChangeModal.school.id,
+        newManagerId: managerChangeModal.newManager.id,
+        actionType,
+        swapWithSchoolId:
+          actionType === "SWAP" ? managerChangeModal.selectedSwapSchoolId : undefined,
+      });
+
+      if (res.success) {
+        setManagerChangeModal(null);
+        onRefresh();
+      } else {
+        setConflictErrorModal({
+          open: true,
+          title: "Không thể đổi quản nhiệm",
+          message: res.error || "Đã xảy ra lỗi khi thay đổi quản nhiệm!",
+        });
+      }
+    } finally {
+      setIsChangingManager(false);
+    }
+  };
 
   const filtered = localSchools.filter((s) => {
     if (statusFilter === "ACTIVE" && !s.isActive) return false;
@@ -2026,27 +2117,28 @@ function SchoolsPageView({
                     />
                   </td>
                   <td className="px-4 py-3.5 font-bold text-[#0F172A]">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <span>{s.name}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedSchoolForClasses(s);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#EA580C] bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 hover:border-orange-300 transition shadow-xs"
-                        title={`Xem danh sách các lớp thuộc ${s.name}`}
-                      >
-                        <BookOpen className="size-3.5" /> Xem danh sách lớp
-                      </button>
-                    </div>
+                    <span>{s.name}</span>
                   </td>
                   <td className="px-4 py-3.5 font-mono text-xs text-[#64748B]">{s.code}</td>
                   <td className="px-4 py-3.5 text-[#475569]">{s.type}</td>
-                  <td className="px-4 py-3.5 text-[#0F172A] font-medium">
-                    {s.manager?.profile?.fullName || s.manager?.username || (
-                      <span className="text-[#94A3B8] italic">Chưa phân công</span>
-                    )}
+                  <td className="px-4 py-3.5 text-[#0F172A] font-medium" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={s.managerId || ""}
+                      onChange={(e) => handleManagerChangeRequest(s, e.target.value)}
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-orange-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-slate-800 transition max-w-[210px] truncate shadow-xs cursor-pointer"
+                      title="Nhấp để thay đổi Quản nhiệm phụ trách trường"
+                    >
+                      {!s.managerId && <option value="">-- Chưa phân công --</option>}
+                      {managersList.map((m: any) => {
+                        const mName = m.profile?.fullName || m.username;
+                        const schoolCount = m.managedSchools?.length || 0;
+                        return (
+                          <option key={m.id} value={m.id}>
+                            {mName} {schoolCount > 0 ? `(${schoolCount} trường)` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
                   </td>
                   <td className="px-4 py-3.5 font-semibold text-[#EA580C]">
                     <button
@@ -2138,6 +2230,159 @@ function SchoolsPageView({
           });
         }}
       />
+
+      {/* MODAL XÁC NHẬN ĐỔI QUẢN NHIỆM (HỦY ĐỔI / HOÁN ĐỔI / GHI ĐÈ) */}
+      {managerChangeModal && (
+        <Dialog
+          open={true}
+          onOpenChange={(op) => !isChangingManager && !op && setManagerChangeModal(null)}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <UserCheck className="size-5 text-[#EA580C]" /> Thay đổi Quản nhiệm phụ trách trường
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-600">
+                Xác nhận phân công, hoán đổi hoặc ghi đè quản nhiệm cho trường học.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-sm">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">Trường học:</span>
+                  <span className="font-bold text-slate-800">{managerChangeModal.school.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">Quản nhiệm hiện tại:</span>
+                  <span className="font-semibold text-slate-700">
+                    {managerChangeModal.school.manager?.profile?.fullName ||
+                      managerChangeModal.school.manager?.username ||
+                      "Chưa phân công"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">Quản nhiệm mới:</span>
+                  <span className="font-bold text-[#EA580C]">
+                    {managerChangeModal.newManager.profile?.fullName ||
+                      managerChangeModal.newManager.username}
+                  </span>
+                </div>
+              </div>
+
+              {managerChangeModal.otherSchools.length > 0 && (
+                <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200 text-xs text-blue-800 space-y-2">
+                  <div className="font-medium">
+                    Quản nhiệm này hiện đang phụ trách:{" "}
+                    <b>{managerChangeModal.otherSchools.map((s: any) => s.name).join(", ")}</b>.
+                  </div>
+                  {managerChangeModal.school.managerId && (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-blue-900 mb-1">
+                        Chọn trường để hoán đổi quản nhiệm (nếu chọn Hoán đổi):
+                      </label>
+                      <select
+                        value={managerChangeModal.selectedSwapSchoolId}
+                        onChange={(e) =>
+                          setManagerChangeModal((prev) =>
+                            prev ? { ...prev, selectedSwapSchoolId: e.target.value } : null
+                          )
+                        }
+                        className="w-full text-xs font-medium px-2 py-1.5 rounded-lg border border-blue-300 bg-white text-slate-800"
+                      >
+                        {managerChangeModal.otherSchools.map((s: any) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-800 leading-relaxed">
+                💡 <b>Các lựa chọn xử lý:</b>
+                <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                  <li>
+                    <b>Ghi đè:</b> Quản nhiệm mới sẽ tiếp quản trường {managerChangeModal.school.name}. Quản nhiệm cũ sẽ được gỡ khỏi trường này.
+                  </li>
+                  {managerChangeModal.otherSchools.length > 0 && managerChangeModal.school.managerId && (
+                    <li>
+                      <b>Hoán đổi 2 quản nhiệm:</b> Quản nhiệm mới nhận trường này, và Quản nhiệm cũ chuyển sang phụ trách trường đối tác tương ứng.
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isChangingManager}
+                onClick={() => setManagerChangeModal(null)}
+                className="text-xs"
+              >
+                Hủy đổi
+              </Button>
+
+              {managerChangeModal.otherSchools.length > 0 && managerChangeModal.school.managerId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={isChangingManager}
+                  onClick={() => executeChangeManager("SWAP")}
+                  className="text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                >
+                  {isChangingManager ? <Loader2 className="size-3.5 animate-spin mr-1" /> : null}
+                  Hoán đổi 2 quản nhiệm
+                </Button>
+              )}
+
+              <Button
+                size="sm"
+                disabled={isChangingManager}
+                onClick={() => executeChangeManager("OVERWRITE")}
+                className="text-xs font-semibold bg-[#EA580C] hover:bg-[#C2410C] text-white"
+              >
+                {isChangingManager ? <Loader2 className="size-3.5 animate-spin mr-1" /> : null}
+                Ghi đè
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* MODAL CẢNH BÁO XUNG ĐỘT LỊCH HỌC */}
+      {conflictErrorModal && (
+        <Dialog open={true} onOpenChange={() => setConflictErrorModal(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-2">
+                <AlertTriangle className="size-5 text-rose-600" /> {conflictErrorModal.title}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-2 text-xs text-slate-700 leading-relaxed">
+              <div className="p-3.5 bg-rose-50 rounded-xl border border-rose-200 text-rose-800 space-y-2">
+                <p className="font-medium">{conflictErrorModal.message}</p>
+                <p className="text-[11px] text-rose-900 italic pt-1 border-t border-rose-200">
+                  Ràng buộc hệ thống: Một quản nhiệm có thể phụ trách nhiều lớp trong cùng 1 trường, nhưng không thể quản nhiệm 2 trường khác nhau nếu có các lớp diễn ra trùng khung giờ và ngày học.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                size="sm"
+                onClick={() => setConflictErrorModal(null)}
+                className="text-xs bg-slate-800 text-white hover:bg-slate-900"
+              >
+                Đã hiểu
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </section>
   );
 }
@@ -3359,15 +3604,16 @@ function ClassesPageView({
                         </Status>
                       </td>
                       <td className="px-4 py-3.5 text-right">
-                        <div className="flex justify-end items-center gap-1">
+                        <div className="flex justify-end items-center gap-1.5">
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-[#64748B] hover:text-[#EA580C]"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs font-semibold text-[#EA580C] bg-orange-50 border-orange-200 hover:bg-orange-100 hover:border-orange-300 rounded-lg inline-flex items-center gap-1.5 transition shadow-xs"
                             onClick={() => onOpenDetail(c)}
-                            title="Xem chi tiết lớp học"
+                            title="Xem danh sách lớp"
                           >
-                            <Eye className="size-4" />
+                            <Eye className="size-3.5" />
+                            <span>Xem danh sách lớp</span>
                           </Button>
                           {canManageClass && (
                             <>
@@ -3600,6 +3846,7 @@ function ClassesPageView({
 
 function ClassDetailView({
   classItem,
+  classes = [],
   teachers,
   tas,
   onBack,
@@ -3607,6 +3854,7 @@ function ClassDetailView({
   onEditClass,
 }: {
   classItem: any;
+  classes?: any[];
   teachers: any[];
   tas: any[];
   onBack: () => void;
@@ -3628,7 +3876,20 @@ function ClassDetailView({
     studentName: string;
   } | null>(null);
 
+  // State chuyển lớp cho học viên
+  const [transferTarget, setTransferTarget] = useState<{
+    studentId: string;
+    studentName: string;
+  } | null>(null);
+  const [targetClassId, setTargetClassId] = useState("");
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [isTransferring, setIsTransferring] = useState(false);
+
   if (!classItem) return null;
+
+  const sameSchoolClasses = (classes || []).filter(
+    (c: any) => c.schoolId === classItem.schoolId && c.id !== classItem.id && c.isActive
+  );
 
   const assignedTeachers = classItem.assignments?.filter((a: any) => a.roleInClass === "TEACHER") || [];
   const assignedTAs = classItem.assignments?.filter((a: any) => a.roleInClass === "TEACHING_ASSISTANT") || [];
@@ -3636,11 +3897,36 @@ function ClassDetailView({
   const handleAssign = () => {
     if (!assignRole || !selectedStaffId) return;
     startTransition(async () => {
-      await assignStaffToClassAction(classItem.id, selectedStaffId, assignRole);
-      setAssignRole(null);
-      setSelectedStaffId("");
-      onRefreshDetail();
+      const res = await assignStaffToClassAction(classItem.id, selectedStaffId, assignRole);
+      if (res.success) {
+        setAssignRole(null);
+        setSelectedStaffId("");
+        onRefreshDetail();
+      } else {
+        alert(res.error || "Không thể gán nhân sự vào lớp!");
+      }
     });
+  };
+
+  const handleConfirmTransfer = async () => {
+    if (!transferTarget || !targetClassId) return;
+    setTransferError(null);
+    setIsTransferring(true);
+    try {
+      const res = await transferStudentClassAction(
+        classItem.id,
+        targetClassId,
+        transferTarget.studentId
+      );
+      if (res.success) {
+        setTransferTarget(null);
+        onRefreshDetail();
+      } else {
+        setTransferError(res.error || "Không thể chuyển lớp cho học viên!");
+      }
+    } finally {
+      setIsTransferring(false);
+    }
   };
 
   const [unassignTarget, setUnassignTarget] = useState<{ userId: string; roleName: string } | null>(null);
@@ -3908,18 +4194,37 @@ function ClassDetailView({
                       </Status>
                     </td>
                     <td className="px-4 py-3.5 text-right">
-                      <button
-                        onClick={() =>
-                          handleRemoveStudent(
-                            enr.studentId,
-                            enr.student?.profile?.fullName || enr.student?.username
-                          )
-                        }
-                        className="text-xs font-semibold text-rose-600 hover:underline inline-flex items-center gap-1"
-                        title="Rút học viên khỏi lớp"
-                      >
-                        <Trash2 className="size-3.5" /> Gỡ
-                      </button>
+                      <div className="flex justify-end items-center gap-3">
+                        {sameSchoolClasses.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTransferTarget({
+                                studentId: enr.studentId,
+                                studentName: enr.student?.profile?.fullName || enr.student?.username,
+                              });
+                              setTransferError(null);
+                              setTargetClassId(sameSchoolClasses[0].id);
+                            }}
+                            className="text-xs font-semibold text-blue-600 hover:underline inline-flex items-center gap-1"
+                            title={`Chuyển học viên sang lớp khác thuộc cùng trường ${classItem.school?.name || ""}`}
+                          >
+                            <ArrowRightLeft className="size-3.5" /> Chuyển lớp
+                          </button>
+                        )}
+                        <button
+                          onClick={() =>
+                            handleRemoveStudent(
+                              enr.studentId,
+                              enr.student?.profile?.fullName || enr.student?.username
+                            )
+                          }
+                          className="text-xs font-semibold text-rose-600 hover:underline inline-flex items-center gap-1"
+                          title="Rút học viên khỏi lớp"
+                        >
+                          <Trash2 className="size-3.5" /> Gỡ
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -4093,6 +4398,93 @@ function ClassDetailView({
         isPending={isPending}
         onConfirm={confirmRemoveStudent}
       />
+
+      {/* DIALOG CHUYỂN LỚP HỌC VIÊN CÙNG TRƯỜNG */}
+      {transferTarget && (
+        <Dialog open={true} onOpenChange={() => !isTransferring && setTransferTarget(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ArrowRightLeft className="size-5 text-[#EA580C]" /> Chuyển học viên sang lớp khác
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-600">
+                Chuyển học viên sang lớp khác trong cùng trường <b>{classItem.school?.name}</b>.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-sm">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1 text-xs">
+                <div>
+                  <span className="text-slate-500">Học viên:</span>{" "}
+                  <b className="text-slate-800">{transferTarget.studentName}</b>
+                </div>
+                <div>
+                  <span className="text-slate-500">Lớp hiện tại:</span>{" "}
+                  <b className="text-slate-800">{classItem.name} ({classItem.code})</b>
+                </div>
+                <div>
+                  <span className="text-slate-500">Trường học:</span>{" "}
+                  <b className="text-[#EA580C]">{classItem.school?.name}</b>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Chọn lớp chuyển đến (Cùng trường {classItem.school?.name}):
+                </label>
+                {sameSchoolClasses.length > 0 ? (
+                  <select
+                    value={targetClassId}
+                    onChange={(e) => setTargetClassId(e.target.value)}
+                    className="w-full text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-800 focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                  >
+                    {sameSchoolClasses.map((cls: any) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.name} ({cls.code}) • {cls.description || "Chưa có lịch"}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg border border-amber-200 italic">
+                    Trường này hiện không có lớp học nào khác đang hoạt động để chuyển học sinh.
+                  </p>
+                )}
+              </div>
+
+              {transferError && (
+                <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
+                  <AlertTriangle className="size-4 shrink-0 text-rose-600 mt-0.5" />
+                  <div>
+                    <b className="block">Không thể chuyển lớp:</b>
+                    <p className="mt-0.5">{transferError}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isTransferring}
+                onClick={() => setTransferTarget(null)}
+                className="text-xs"
+              >
+                Hủy
+              </Button>
+              <Button
+                size="sm"
+                disabled={!targetClassId || isTransferring || sameSchoolClasses.length === 0}
+                onClick={handleConfirmTransfer}
+                className="text-xs font-semibold bg-[#EA580C] hover:bg-[#C2410C] text-white"
+              >
+                {isTransferring ? <Loader2 className="size-3.5 animate-spin mr-1" /> : null}
+                Xác nhận chuyển lớp
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

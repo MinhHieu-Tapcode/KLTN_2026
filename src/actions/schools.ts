@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { areSchedulesConflicting } from "@/lib/schedule";
 
 function safeRevalidate(path: string) {
   try {
@@ -137,7 +138,13 @@ export async function getSchoolManagersAction() {
       role: { code: "SCHOOL_MANAGER" },
       isActive: true,
     },
-    include: { profile: true },
+    include: {
+      profile: true,
+      managedSchools: {
+        where: { isActive: true },
+        select: { id: true, name: true, code: true },
+      },
+    },
     orderBy: { username: "asc" },
   });
 }
@@ -226,6 +233,16 @@ export async function updateSchoolAction(
       return { success: false, error: "Trường học bắt buộc phải có Quản nhiệm phụ trách!" };
     }
 
+    if (data.managerId) {
+      const conflictCheck = await checkSchoolManagerScheduleConflictAction(id, data.managerId);
+      if (conflictCheck.hasConflict) {
+        return {
+          success: false,
+          error: conflictCheck.error || "Phát hiện xung đột lịch học giữa các trường mà quản nhiệm phụ trách!",
+        };
+      }
+    }
+
     await prisma.school.update({
       where: { id },
       data: {
@@ -286,3 +303,167 @@ export async function deleteMultipleSchoolsAction(ids: string[]) {
     return { success: false, error: error.message || "Không thể xóa các trường đã chọn!" };
   }
 }
+
+// Kiểm tra xung đột lịch học giữa các trường mà Quản nhiệm phụ trách
+export async function checkSchoolManagerScheduleConflictAction(
+  targetSchoolId: string,
+  managerId: string
+) {
+  try {
+    const [targetSchool, targetManager, otherSchools] = await Promise.all([
+      prisma.school.findUnique({
+        where: { id: targetSchoolId },
+        include: {
+          classes: {
+            where: { isActive: true },
+            select: { id: true, name: true, code: true, description: true, startDate: true, endDate: true },
+          },
+        },
+      }),
+      prisma.user.findUnique({
+        where: { id: managerId },
+        include: { profile: true },
+      }),
+      prisma.school.findMany({
+        where: {
+          managerId,
+          id: { not: targetSchoolId },
+          isActive: true,
+        },
+        include: {
+          classes: {
+            where: { isActive: true },
+            select: { id: true, name: true, code: true, description: true, startDate: true, endDate: true },
+          },
+        },
+      }),
+    ]);
+
+    if (!targetSchool) {
+      return { success: false, error: "Không tìm thấy trường học!" };
+    }
+
+    const managerName = targetManager?.profile?.fullName || targetManager?.username || "Quản nhiệm";
+
+    // Kiểm tra từng cặp lớp học giữa targetSchool và các otherSchools
+    for (const targetCls of targetSchool.classes) {
+      if (!targetCls.description) continue;
+
+      for (const otherSch of otherSchools) {
+        for (const otherCls of otherSch.classes) {
+          if (!otherCls.description) continue;
+
+          const isConflict = areSchedulesConflicting(
+            targetCls.description,
+            otherCls.description,
+            { start: targetCls.startDate, end: targetCls.endDate },
+            { start: otherCls.startDate, end: otherCls.endDate }
+          );
+
+          if (isConflict) {
+            return {
+              success: true,
+              hasConflict: true,
+              managerName,
+              otherSchoolName: otherSch.name,
+              targetSchoolName: targetSchool.name,
+              targetClassName: targetCls.name,
+              targetClassCode: targetCls.code,
+              targetClassSchedule: targetCls.description,
+              otherClassName: otherCls.name,
+              otherClassCode: otherCls.code,
+              otherClassSchedule: otherCls.description,
+              error: `Xung đột lịch học: Trường "${targetSchool.name}" có lớp "${targetCls.name}" (${targetCls.description}) bị trùng khung giờ với lớp "${otherCls.name}" (${otherCls.description}) tại trường "${otherSch.name}" mà quản nhiệm "${managerName}" đang phụ trách! Không thể phân công quản nhiệm.`,
+            };
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      hasConflict: false,
+      managerName,
+      otherSchools: otherSchools.map((s) => ({ id: s.id, name: s.name, code: s.code })),
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Lỗi kiểm tra trùng lịch quản nhiệm!" };
+  }
+}
+
+// Thay đổi quản nhiệm phụ trách trường: Hỗ trợ GHI ĐÈ hoặc HOÁN ĐỔI 2 QUẢN NHIỆM
+export async function changeSchoolManagerAction(data: {
+  schoolId: string;
+  newManagerId: string;
+  actionType: "ASSIGN" | "SWAP" | "OVERWRITE";
+  swapWithSchoolId?: string;
+}) {
+  try {
+    const { schoolId, newManagerId, actionType, swapWithSchoolId } = data;
+
+    // 1. Kiểm tra xung đột lịch học của newManagerId với schoolId
+    const conflictCheck = await checkSchoolManagerScheduleConflictAction(schoolId, newManagerId);
+    if (conflictCheck.hasConflict) {
+      return {
+        success: false,
+        error: conflictCheck.error || "Phát hiện xung đột lịch học giữa các trường mà quản nhiệm phụ trách!",
+      };
+    }
+
+    const currentSchool = await prisma.school.findUnique({
+      where: { id: schoolId },
+      include: { manager: true },
+    });
+    if (!currentSchool) {
+      return { success: false, error: "Không tìm thấy trường học!" };
+    }
+
+    const oldManagerId = currentSchool.managerId;
+
+    if (actionType === "SWAP") {
+      if (!swapWithSchoolId) {
+        return { success: false, error: "Vui lòng chọn trường học cần hoán đổi quản nhiệm!" };
+      }
+
+      // Kiểm tra xung đột lịch học cho oldManagerId khi sang swapWithSchoolId
+      if (oldManagerId) {
+        const oldManagerConflict = await checkSchoolManagerScheduleConflictAction(
+          swapWithSchoolId,
+          oldManagerId
+        );
+        if (oldManagerConflict.hasConflict) {
+          return {
+            success: false,
+            error: `Không thể hoán đổi: ${oldManagerConflict.error}`,
+          };
+        }
+      }
+
+      await prisma.$transaction([
+        prisma.school.update({
+          where: { id: schoolId },
+          data: { managerId: newManagerId },
+        }),
+        prisma.school.update({
+          where: { id: swapWithSchoolId },
+          data: { managerId: oldManagerId || null },
+        }),
+      ]);
+
+      safeRevalidate("/schools");
+      return { success: true, message: "Hoán đổi quản nhiệm giữa 2 trường thành công!" };
+    } else {
+      // OVERWRITE hoặc ASSIGN
+      await prisma.school.update({
+        where: { id: schoolId },
+        data: { managerId: newManagerId },
+      });
+
+      safeRevalidate("/schools");
+      return { success: true, message: "Cập nhật quản nhiệm phụ trách trường thành công!" };
+    }
+  } catch (error: any) {
+    return { success: false, error: error.message || "Không thể thay đổi quản nhiệm!" };
+  }
+}
+

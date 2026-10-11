@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
+import { areSchedulesConflicting } from "@/lib/schedule";
 
 function safeRevalidate(path: string) {
   try {
@@ -168,6 +169,95 @@ export async function createClassAction(data: {
       return { success: false, error: `Mã lớp '${code}' đã tồn tại!` };
     }
 
+    // Kiểm tra trùng lịch giảng dạy của Giáo viên & Trợ giảng
+    if (data.schedule) {
+      const allStaffToAssign = [
+        ...teachersToAssign.map((id) => ({ id, role: "TEACHER" })),
+        ...tasToAssign.map((id) => ({ id, role: "TEACHING_ASSISTANT" })),
+      ];
+
+      for (const item of allStaffToAssign) {
+        const existingAssignments = await prisma.classAssignment.findMany({
+          where: {
+            userId: item.id,
+            class: { isActive: true },
+          },
+          include: {
+            class: { include: { school: true } },
+            staff: { include: { profile: true } },
+          },
+        });
+
+        for (const ass of existingAssignments) {
+          if (ass.class.description) {
+            const isConflict = areSchedulesConflicting(
+              data.schedule,
+              ass.class.description,
+              {
+                start: data.startDate ? new Date(data.startDate) : null,
+                end: data.endDate ? new Date(data.endDate) : null,
+              },
+              { start: ass.class.startDate, end: ass.class.endDate }
+            );
+
+            if (isConflict) {
+              const staffName = ass.staff?.profile?.fullName || ass.staff?.username || "Nhân sự";
+              const roleName = item.role === "TEACHER" ? "Giáo viên" : "Trợ giảng";
+              return {
+                success: false,
+                error: `Xung đột lịch học: ${roleName} "${staffName}" đã có lịch tại lớp "${ass.class.name}" (${ass.class.description}) thuộc trường "${ass.class.school.name}", bị trùng với khung giờ lớp này (${data.schedule})!`,
+              };
+            }
+          }
+        }
+      }
+
+      // Kiểm tra trùng lịch của Quản nhiệm trường này với các trường khác mà Quản nhiệm đang phụ trách
+      const targetSchool = await prisma.school.findUnique({
+        where: { id: data.schoolId },
+        include: { manager: { include: { profile: true } } },
+      });
+      if (targetSchool?.managerId) {
+        const otherManagedSchools = await prisma.school.findMany({
+          where: {
+            managerId: targetSchool.managerId,
+            id: { not: data.schoolId },
+            isActive: true,
+          },
+          include: {
+            classes: {
+              where: { isActive: true },
+              select: { id: true, name: true, code: true, description: true, startDate: true, endDate: true },
+            },
+          },
+        });
+
+        for (const otherSch of otherManagedSchools) {
+          for (const otherCls of otherSch.classes) {
+            if (otherCls.description) {
+              const isConflict = areSchedulesConflicting(
+                data.schedule,
+                otherCls.description,
+                {
+                  start: data.startDate ? new Date(data.startDate) : null,
+                  end: data.endDate ? new Date(data.endDate) : null,
+                },
+                { start: otherCls.startDate, end: otherCls.endDate }
+              );
+              if (isConflict) {
+                const managerName =
+                  targetSchool.manager?.profile?.fullName || targetSchool.manager?.username || "Quản nhiệm";
+                return {
+                  success: false,
+                  error: `Xung đột lịch quản nhiệm: Quản nhiệm "${managerName}" của trường này đang quản lý trường "${otherSch.name}" có lớp "${otherCls.name}" (${otherCls.description}) trùng khung giờ với lớp mới (${data.schedule})! Một quản nhiệm không thể phụ trách 2 trường có lịch học trùng nhau.`,
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
     const newClass = await prisma.class.create({
       data: {
         code,
@@ -239,6 +329,137 @@ export async function updateClassAction(
     if (data.taIds !== undefined && data.taIds.filter(Boolean).length === 0) {
       return { success: false, error: "Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!" };
     }
+
+    const currentClass = await prisma.class.findUnique({
+      where: { id },
+      include: {
+        school: {
+          include: { manager: { include: { profile: true } } },
+        },
+        assignments: true,
+      },
+    });
+
+    if (!currentClass) {
+      return { success: false, error: "Không tìm thấy lớp học!" };
+    }
+
+    const newSchedule = data.schedule !== undefined ? data.schedule : currentClass.description;
+    const newStartDate =
+      data.startDate !== undefined
+        ? data.startDate
+          ? new Date(data.startDate)
+          : null
+        : currentClass.startDate;
+    const newEndDate =
+      data.endDate !== undefined
+        ? data.endDate
+          ? new Date(data.endDate)
+          : null
+        : currentClass.endDate;
+
+    const teacherIdsToCheck =
+      data.teacherIds !== undefined
+        ? data.teacherIds.filter(Boolean)
+        : data.teacherId !== undefined
+        ? data.teacherId
+          ? [data.teacherId]
+          : []
+        : currentClass.assignments.filter((a) => a.roleInClass === "TEACHER").map((a) => a.userId);
+
+    const taIdsToCheck =
+      data.taIds !== undefined
+        ? data.taIds.filter(Boolean)
+        : data.taId !== undefined
+        ? data.taId
+          ? [data.taId]
+          : []
+        : currentClass.assignments
+            .filter((a) => a.roleInClass === "TEACHING_ASSISTANT")
+            .map((a) => a.userId);
+
+    // Kiểm tra trùng lịch của Giáo viên & Trợ giảng với các lớp khác
+    if (newSchedule) {
+      const allStaff = [
+        ...teacherIdsToCheck.map((tid) => ({ id: tid, role: "TEACHER" })),
+        ...taIdsToCheck.map((taId) => ({ id: taId, role: "TEACHING_ASSISTANT" })),
+      ];
+
+      for (const item of allStaff) {
+        const otherAssignments = await prisma.classAssignment.findMany({
+          where: {
+            userId: item.id,
+            classId: { not: id },
+            class: { isActive: true },
+          },
+          include: {
+            class: { include: { school: true } },
+            staff: { include: { profile: true } },
+          },
+        });
+
+        for (const ass of otherAssignments) {
+          if (ass.class.description) {
+            const isConflict = areSchedulesConflicting(
+              newSchedule,
+              ass.class.description,
+              { start: newStartDate, end: newEndDate },
+              { start: ass.class.startDate, end: ass.class.endDate }
+            );
+
+            if (isConflict) {
+              const staffName = ass.staff?.profile?.fullName || ass.staff?.username || "Nhân sự";
+              const roleName = item.role === "TEACHER" ? "Giáo viên" : "Trợ giảng";
+              return {
+                success: false,
+                error: `Xung đột lịch học: ${roleName} "${staffName}" đã có lịch tại lớp "${ass.class.name}" (${ass.class.description}) thuộc trường "${ass.class.school.name}", bị trùng với khung giờ lớp này (${newSchedule})!`,
+              };
+            }
+          }
+        }
+      }
+
+      // Kiểm tra trùng lịch của Quản nhiệm trường với các trường khác
+      if (currentClass.school?.managerId) {
+        const otherManagedSchools = await prisma.school.findMany({
+          where: {
+            managerId: currentClass.school.managerId,
+            id: { not: currentClass.schoolId },
+            isActive: true,
+          },
+          include: {
+            classes: {
+              where: { isActive: true },
+              select: { id: true, name: true, code: true, description: true, startDate: true, endDate: true },
+            },
+          },
+        });
+
+        for (const otherSch of otherManagedSchools) {
+          for (const otherCls of otherSch.classes) {
+            if (otherCls.description) {
+              const isConflict = areSchedulesConflicting(
+                newSchedule,
+                otherCls.description,
+                { start: newStartDate, end: newEndDate },
+                { start: otherCls.startDate, end: otherCls.endDate }
+              );
+              if (isConflict) {
+                const managerName =
+                  currentClass.school.manager?.profile?.fullName ||
+                  currentClass.school.manager?.username ||
+                  "Quản nhiệm";
+                return {
+                  success: false,
+                  error: `Xung đột lịch quản nhiệm: Quản nhiệm "${managerName}" đang quản lý trường "${otherSch.name}" có lớp "${otherCls.name}" (${otherCls.description}) trùng khung giờ với lớp này (${newSchedule})! Một quản nhiệm không thể phụ trách 2 trường có lịch học trùng nhau.`,
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
     const updateData: any = {
       name: data.name?.trim(),
       program: data.program,
@@ -344,6 +565,48 @@ export async function assignStaffToClassAction(
   roleInClass: StaffClassRole
 ) {
   try {
+    const cls = await prisma.class.findUnique({
+      where: { id: classId },
+      include: { school: true },
+    });
+    if (!cls || !cls.isActive) {
+      return { success: false, error: "Lớp học không tồn tại hoặc đã ngừng hoạt động!" };
+    }
+
+    // Kiểm tra trùng lịch giảng dạy của nhân sự với các lớp khác
+    if (cls.description) {
+      const otherAssignments = await prisma.classAssignment.findMany({
+        where: {
+          userId,
+          classId: { not: classId },
+          class: { isActive: true },
+        },
+        include: {
+          class: { include: { school: true } },
+          staff: { include: { profile: true } },
+        },
+      });
+
+      for (const ass of otherAssignments) {
+        if (ass.class.description) {
+          const isConflict = areSchedulesConflicting(
+            cls.description,
+            ass.class.description,
+            { start: cls.startDate, end: cls.endDate },
+            { start: ass.class.startDate, end: ass.class.endDate }
+          );
+          if (isConflict) {
+            const roleName = roleInClass === "TEACHER" ? "Giáo viên" : "Trợ giảng";
+            const staffName = ass.staff?.profile?.fullName || ass.staff?.username || "Nhân sự";
+            return {
+              success: false,
+              error: `Xung đột lịch học: ${roleName} "${staffName}" đã có lịch tại lớp "${ass.class.name}" (${ass.class.description}) thuộc trường "${ass.class.school.name}", bị trùng với lớp này (${cls.description})!`,
+            };
+          }
+        }
+      }
+    }
+
     await prisma.classAssignment.upsert({
       where: {
         classId_userId: { classId, userId },
@@ -379,13 +642,49 @@ export async function enrollStudentToClassAction(classId: string, studentId: str
   try {
     const cls = await prisma.class.findUnique({
       where: { id: classId },
-      include: { _count: { select: { enrollments: true } } },
+      include: {
+        school: true,
+        _count: { select: { enrollments: true } },
+      },
     });
     if (!cls || !cls.isActive) {
       return { success: false, error: "Lớp học không tồn tại hoặc đã ngừng hoạt động!" };
     }
     if (cls._count.enrollments >= cls.capacity) {
       return { success: false, error: `Lớp học đã đạt sĩ số tối đa (${cls.capacity} học viên)!` };
+    }
+
+    // Kiểm tra trùng lịch học của Học sinh với các lớp đang theo học
+    if (cls.description) {
+      const otherEnrollments = await prisma.classEnrollment.findMany({
+        where: {
+          studentId,
+          classId: { not: classId },
+          class: { isActive: true },
+        },
+        include: {
+          class: { include: { school: true } },
+          student: { include: { profile: true } },
+        },
+      });
+
+      for (const enr of otherEnrollments) {
+        if (enr.class.description) {
+          const isConflict = areSchedulesConflicting(
+            cls.description,
+            enr.class.description,
+            { start: cls.startDate, end: cls.endDate },
+            { start: enr.class.startDate, end: enr.class.endDate }
+          );
+          if (isConflict) {
+            const studentName = enr.student?.profile?.fullName || enr.student?.username || "Học viên";
+            return {
+              success: false,
+              error: `Xung đột lịch học: Học viên "${studentName}" đã đăng ký học tại lớp "${enr.class.name}" (${enr.class.description}) thuộc trường "${enr.class.school.name}", bị trùng khung giờ với lớp này (${cls.description})!`,
+            };
+          }
+        }
+      }
     }
 
     await prisma.classEnrollment.upsert({
@@ -508,6 +807,39 @@ export async function transferStudentClassAction(
         success: false,
         error: `Lớp "${targetClass.name}" đã đạt sĩ số tối đa (${targetClass.capacity} học viên)! Vui lòng chọn lớp khác.`,
       };
+    }
+
+    // Kiểm tra trùng lịch học của Học sinh khi sang targetClass (với các lớp khác ngoài currentClassId)
+    if (targetClass.description) {
+      const otherEnrollments = await prisma.classEnrollment.findMany({
+        where: {
+          studentId,
+          classId: { notIn: [currentClassId, targetClassId] },
+          class: { isActive: true },
+        },
+        include: {
+          class: { include: { school: true } },
+          student: { include: { profile: true } },
+        },
+      });
+
+      for (const enr of otherEnrollments) {
+        if (enr.class.description) {
+          const isConflict = areSchedulesConflicting(
+            targetClass.description,
+            enr.class.description,
+            { start: targetClass.startDate, end: targetClass.endDate },
+            { start: enr.class.startDate, end: enr.class.endDate }
+          );
+          if (isConflict) {
+            const studentName = enr.student?.profile?.fullName || enr.student?.username || "Học viên";
+            return {
+              success: false,
+              error: `Xung đột lịch học: Học viên "${studentName}" đã có lớp "${enr.class.name}" (${enr.class.description}) thuộc trường "${enr.class.school.name}", bị trùng khung giờ với lớp chuyển đến (${targetClass.description})!`,
+            };
+          }
+        }
+      }
     }
 
     // Thực hiện chuyển lớp an toàn bằng transaction
