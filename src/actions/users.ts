@@ -1,7 +1,13 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { hashPassword, verifyPassword, getSession } from "@/lib/auth";
+import {
+  hashPassword,
+  verifyPassword,
+  getSession,
+  createSessionToken,
+  setSessionCookie,
+} from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import * as XLSX from "xlsx";
 import { RoleCode, Gender, StaffClassRole } from "@prisma/client";
@@ -589,11 +595,12 @@ export async function deleteMultipleUsersAction(ids: string[]) {
   }
 }
 
-// Cập nhật hồ sơ cá nhân (Chỉ cho phép cập nhật thông tin profile cá nhân, KHÔNG cho sửa username) (BUG_12)
+// Cập nhật hồ sơ cá nhân (Hỗ trợ đổi Email, cập nhật thông tin profile; cố định username)
 export async function updateProfileAction(
   userId: string,
   data: {
     fullName: string;
+    email?: string;
     phoneNumber?: string;
     address?: string;
     dateOfBirth?: string;
@@ -602,6 +609,36 @@ export async function updateProfileAction(
   }
 ) {
   try {
+    let cleanEmail: string | undefined = undefined;
+
+    // 1. Kiểm tra và cập nhật email nếu có thay đổi
+    if (data.email && data.email.trim()) {
+      cleanEmail = data.email.trim().toLowerCase();
+      if (!RFC5322_EMAIL_REGEX.test(cleanEmail)) {
+        return {
+          success: false,
+          error: "Email không đúng định dạng chuẩn có tên miền (VD: name@simpace.edu.vn)!",
+        };
+      }
+
+      // Kiểm tra xem email này đã thuộc về user khác chưa
+      const existingEmail = await prisma.user.findFirst({
+        where: { email: cleanEmail, id: { not: userId } },
+      });
+      if (existingEmail) {
+        return {
+          success: false,
+          error: `Email '${cleanEmail}' đã được sử dụng bởi một tài khoản khác trong hệ thống!`,
+        };
+      }
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { email: cleanEmail },
+      });
+    }
+
+    // 2. Cập nhật thông tin hồ sơ cá nhân
     await prisma.userProfile.upsert({
       where: { userId },
       create: {
@@ -623,7 +660,19 @@ export async function updateProfileAction(
       },
     });
 
+    // 3. Nếu là chính user đang đăng nhập, đồng bộ lại session cookie với email & họ tên mới
+    const currentSession = await getSession();
+    if (currentSession && currentSession.userId === userId) {
+      const newToken = await createSessionToken({
+        ...currentSession,
+        email: cleanEmail || currentSession.email,
+        fullName: data.fullName.trim(),
+      });
+      await setSessionCookie(newToken);
+    }
+
     safeRevalidate("/");
+    safeRevalidate("/users");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể cập nhật hồ sơ cá nhân!" };

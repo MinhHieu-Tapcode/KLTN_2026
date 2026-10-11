@@ -5234,12 +5234,14 @@ function SettingsPageView({
     setProfileError("");
     const formData = new FormData(e.currentTarget);
     const fullName = formData.get("fullName")?.toString() || "";
+    const email = formData.get("email")?.toString()?.trim() || "";
     const address = formData.get("address")?.toString() || "";
 
     const targetUserId = currentUser?.userId || currentUser?.id || activeUser?.id;
     startTransition(async () => {
       const res = await updateProfileAction(targetUserId, {
         fullName,
+        email,
         address,
         phoneNumber: formData.get("phoneNumber")?.toString(),
         dateOfBirth: formData.get("dateOfBirth")?.toString(),
@@ -5251,9 +5253,10 @@ function SettingsPageView({
         return;
       }
 
-      setProfileMsg("Đã cập nhật thông tin hồ sơ thành công!");
+      setProfileMsg("Đã cập nhật thông tin hồ sơ và địa chỉ Email thành công!");
       onProfileUpdated({
         fullName,
+        email,
         address,
       });
     });
@@ -5513,12 +5516,19 @@ function SettingsPageView({
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                  name="email"
-                  label="Email đăng ký (Cố định, không thể thay đổi)"
-                  defaultValue={activeUser?.email || currentUser?.email || ""}
-                  disabled
-                />
+                <div>
+                  <Field
+                    name="email"
+                    type="email"
+                    label="Địa chỉ Email *"
+                    defaultValue={activeUser?.email || currentUser?.email || ""}
+                    placeholder="name@simpace.edu.vn"
+                    required
+                  />
+                  <p className="text-[11px] text-[#64748B] mt-1">
+                    Hệ thống hỗ trợ cập nhật Email khi bạn cần đổi hòm thư nhận thông báo &amp; bảo mật.
+                  </p>
+                </div>
                 <Field
                   name="phoneNumber"
                   label="Số điện thoại"

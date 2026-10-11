@@ -60,6 +60,31 @@ async function main() {
   const checkUser = await prisma.user.findUnique({ where: { id: userId } });
   assert("Email mới đã được cập nhật chính xác trong CSDL", checkUser?.email === updatedEmail);
 
+  // 4. Test Người dùng tự đổi EMAIL qua updateProfileAction (Hồ sơ cá nhân)
+  console.log("\n4. Test Người dùng tự đổi EMAIL trong Hồ sơ cá nhân (updateProfileAction)");
+  const selfNewEmail = `test_self_profile_${Date.now()}@simpace.edu.vn`;
+  const { updateProfileAction } = await import("../src/actions/users");
+  
+  const updateProfileRes = await updateProfileAction(userId, {
+    fullName: "Nguyễn Chính Sách Đã Đổi Tên",
+    email: selfNewEmail,
+  });
+
+  assert("Người dùng tự đổi email trong hồ sơ thành công", updateProfileRes.success === true);
+
+  const checkUserAfterSelfUpdate = await prisma.user.findUnique({ where: { id: userId } });
+  assert(
+    "Email cá nhân đã được cập nhật thành công trong CSDL",
+    checkUserAfterSelfUpdate?.email === selfNewEmail
+  );
+
+  // Test đổi sang email sai định dạng -> Từ chối
+  const badFormatRes = await updateProfileAction(userId, {
+    fullName: "Nguyễn Văn Sai",
+    email: "email-sai-dinh-dang",
+  });
+  assert("Chặn đổi sang email sai định dạng", badFormatRes.success === false);
+
   // Cleanup
   await deleteUserAction(userId);
   await prisma.userProfile.deleteMany({ where: { userId } });
