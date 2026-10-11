@@ -6713,74 +6713,81 @@ function UserDialog({
             </DialogDescription>
           </DialogHeader>
 
-          {/* Chuyển đổi giữa 2 chế độ: Thủ công & Excel */}
-          <div className="flex border-b border-[#E2E8F0] gap-4 text-sm font-semibold">
-            <button
-              type="button"
-              onClick={() => {
-                setModalMode("manual");
-                setExcelStep("upload");
-              }}
-              className={`pb-2.5 transition border-b-2 ${
-                modalMode === "manual"
-                  ? "border-[#EA580C] text-[#EA580C]"
-                  : "border-transparent text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              Thêm thủ công (Từng người)
-            </button>
-            <button
-              type="button"
-              onClick={() => setModalMode("excel")}
-              className={`pb-2.5 transition border-b-2 flex items-center gap-1.5 ${
-                modalMode === "excel"
-                  ? "border-[#EA580C] text-[#EA580C]"
-                  : "border-transparent text-[#64748B] hover:text-[#0F172A]"
-              }`}
-            >
-              <FileSpreadsheet className="size-4" /> Nhập hàng loạt & Phân lớp IELTS
-            </button>
+          {/* BƯỚC 1: CHỌN VAI TRÒ NGƯỜI DÙNG (ROLE-FIRST) */}
+          <div className="pt-1">
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                1. Chọn Vai trò người dùng *
+              </label>
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 bg-orange-50 text-[#EA580C] rounded-lg border border-orange-200">
+                Mã dự kiến: <b className="font-mono">{previewCode}</b>
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {roleOptions.map((r) => (
+                <button
+                  key={r.code}
+                  type="button"
+                  onClick={() => {
+                    setSelectedRole(r.code);
+                    if (r.code !== "STUDENT") {
+                      setModalMode("manual");
+                    }
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
+                    selectedRole === r.code
+                      ? "border-[#EA580C] bg-[#FFF1EB] text-[#EA580C] shadow-sm ring-1 ring-[#EA580C]"
+                      : "border-[#E2E8F0] bg-white text-[#475569] hover:border-[#CBD5E1]"
+                  }`}
+                >
+                  <span className="font-bold text-xs">{r.label}</span>
+                  <span className="text-[10px] text-[#64748B] mt-0.5 line-clamp-1">{r.desc}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
+          {/* CHỈ KHI CHỌN VAI TRÒ LÀ HỌC SINH MỚI HIỂN THỊ TAB NHẬP HÀNG LOẠT & PHÂN LỚP IELTS */}
+          {selectedRole === "STUDENT" && (
+            <div className="flex border-b border-[#E2E8F0] gap-4 text-sm font-semibold pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setModalMode("manual");
+                  setExcelStep("upload");
+                }}
+                className={`pb-2.5 transition border-b-2 ${
+                  modalMode === "manual"
+                    ? "border-[#EA580C] text-[#EA580C]"
+                    : "border-transparent text-[#64748B] hover:text-[#0F172A]"
+                }`}
+              >
+                Thêm thủ công (Từng người)
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalMode("excel")}
+                className={`pb-2.5 transition border-b-2 flex items-center gap-1.5 ${
+                  modalMode === "excel"
+                    ? "border-[#EA580C] text-[#EA580C]"
+                    : "border-transparent text-[#64748B] hover:text-[#0F172A]"
+                }`}
+              >
+                <FileSpreadsheet className="size-4" /> Nhập hàng loạt & Phân lớp IELTS
+              </button>
+            </div>
+          )}
+
           {/* ========================================================
-              CHẾ ĐỘ 1: THÊM THỦ CÔNG (ROLE-FIRST DYNAMIC FORM)
+              NỘI DUNG FORM: THỦ CÔNG HOẶC NHẬP HÀNG LOẠT (CHỈ HỌC SINH)
               ======================================================== */}
-          {modalMode === "manual" ? (
+          {!(selectedRole === "STUDENT" && modalMode === "excel") ? (
             <form onSubmit={handleManualSubmit} className="space-y-4 pt-2">
               {errorMsg && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
                   {errorMsg}
                 </div>
               )}
-
-              {/* BƯỚC 1: CHỌN VAI TRÒ TRƯỚC TIÊN (ROLE-FIRST) */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-[#475569]">
-                    1. Chọn Vai trò người dùng *
-                  </label>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 bg-orange-50 text-[#EA580C] rounded-lg border border-orange-200">
-                    Mã dự kiến: <b className="font-mono">{previewCode}</b>
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {roleOptions.map((r) => (
-                    <button
-                      key={r.code}
-                      type="button"
-                      onClick={() => setSelectedRole(r.code)}
-                      className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
-                        selectedRole === r.code
-                          ? "border-[#EA580C] bg-[#FFF1EB] text-[#EA580C] shadow-sm ring-1 ring-[#EA580C]"
-                          : "border-[#E2E8F0] bg-white text-[#475569] hover:border-[#CBD5E1]"
-                      }`}
-                    >
-                      <span className="font-bold text-xs">{r.label}</span>
-                      <span className="text-[10px] text-[#64748B] mt-0.5 line-clamp-1">{r.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               {/* BƯỚC 2: THÔNG TIN CÁ NHÂN CƠ BẢN */}
               <div>
