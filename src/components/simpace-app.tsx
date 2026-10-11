@@ -5776,7 +5776,7 @@ function UserDialog({
           username: "HV...",
           email: "Đã tạo tài khoản từ Excel",
           role: "Học sinh",
-          tempPassword: "Simpace@2026",
+          mailResult: { sent: false },
         });
       }
     } catch (err: any) {
@@ -5878,7 +5878,6 @@ function UserDialog({
         username: res.user.username,
         email: res.user.email,
         role: res.user.role?.name,
-        tempPassword: res.tempPassword,
         mailResult: res.mailResult,
       });
     });
@@ -6486,7 +6485,7 @@ function AccountCreatedEmailDialog({
 
   const copyText = () => {
     navigator.clipboard.writeText(
-      `Tài khoản SIMPACE LMS:\nEmail: ${info.email}\nTên đăng nhập: ${info.username}\nMật khẩu tạm thời: ${info.tempPassword}\nLink đăng nhập: http://localhost:3000`
+      `Tài khoản SIMPACE LMS:\nEmail: ${info.email}\nTên đăng nhập: ${info.username}\nMật khẩu khởi tạo: Đã gửi bảo mật đến email ${info.email}\nLink đăng nhập: http://localhost:3000`
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -6497,10 +6496,10 @@ function AccountCreatedEmailDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-emerald-600">
-            <Mail className="size-5" /> Thông tin Email kích hoạt tài khoản
+            <ShieldCheck className="size-5" /> Thông tin khởi tạo tài khoản
           </DialogTitle>
           <DialogDescription>
-            Hệ thống đã chuẩn bị email kích hoạt gửi đến người dùng mới.
+            Tài khoản đã được tạo thành công. Mật khẩu khởi tạo được gửi bảo mật trực tiếp đến email người dùng.
           </DialogDescription>
         </DialogHeader>
 
@@ -6508,17 +6507,17 @@ function AccountCreatedEmailDialog({
           <div className="flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 font-medium">
             <CircleCheck className="size-5 text-emerald-600 shrink-0" />
             <span>
-              <b>Email đã được gửi thành công:</b> Hệ thống đã gửi thư kích hoạt kèm thông tin đăng nhập trực tiếp đến hòm thư <b>{info.email}</b>.
+              <b>Email đã được gửi thành công:</b> Hệ thống đã gửi thư kèm mật khẩu khởi tạo và hướng dẫn đăng nhập trực tiếp đến hòm thư <b>{info.email}</b>.
             </span>
           </div>
         ) : (
-          <div className="flex flex-col gap-1.5 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
-            <div className="flex items-center gap-2 font-bold text-amber-800">
-              <Bell className="size-4 text-amber-600 shrink-0" />
-              <span>Chưa cấu hình tài khoản gửi Gmail (Môi trường phát triển)</span>
+          <div className="flex flex-col gap-1.5 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900">
+            <div className="flex items-center gap-2 font-bold text-blue-800">
+              <ShieldCheck className="size-4 text-blue-600 shrink-0" />
+              <span>Chính sách bảo mật mật khẩu khởi tạo</span>
             </div>
-            <p className="text-[11.5px] text-amber-700 leading-relaxed">
-              Hệ thống chưa gửi mail thực tế do file <code>.env</code> chưa điền <code>SMTP_USER</code> và <code>SMTP_PASS</code> (Mật khẩu ứng dụng 16 ký tự của Google). Bạn có thể bấm nút <b>"Sao chép thông tin"</b> bên dưới để bàn giao cho người dùng.
+            <p className="text-[11.5px] text-blue-700 leading-relaxed">
+              Mật khẩu khởi tạo được gửi bảo mật trực tiếp về hòm thư <b>{info.email}</b> của người dùng. Quản trị viên không thể xem mật khẩu này nhằm bảo vệ quyền riêng tư và an toàn thông tin theo chuẩn bảo mật.
             </p>
           </div>
         )}
@@ -6534,14 +6533,17 @@ function AccountCreatedEmailDialog({
             <p>
               Email đăng ký: <b className="font-mono text-[#0F172A]">{info.email}</b>
             </p>
-            <p>
-              Mật khẩu tạm thời:{" "}
-              <b className="font-mono bg-amber-100 px-2 py-0.5 rounded text-amber-800">
-                {info.tempPassword}
-              </b>
+            <p className="flex items-center gap-1.5 text-xs text-slate-700 pt-1">
+              <Lock className="size-3.5 text-amber-600 shrink-0" />
+              <span>
+                Mật khẩu khởi tạo:{" "}
+                <b className="font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                  Đã gửi bảo mật về email người nhận
+                </b>
+              </span>
             </p>
             <p className="text-xs text-[#64748B] italic pt-1">
-              * Người dùng sẽ được yêu cầu xác thực OTP và đổi mật khẩu mới trong lần đăng nhập đầu tiên.
+              * Người dùng sẽ sử dụng mật khẩu nhận trong email để đăng nhập lần đầu, sau đó hệ thống sẽ yêu cầu xác thực OTP và đổi mật khẩu mới.
             </p>
           </div>
         </div>
@@ -7986,7 +7988,6 @@ function EditUserModal({
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState<RoleCode>(user.role?.code || "STUDENT");
 
   // Khởi tạo danh sách gán trường / lớp ban đầu của user
@@ -8045,7 +8046,6 @@ function EditUserModal({
           selectedRole === "STUDENT"
             ? classIds
             : undefined,
-        newPassword: formData.get("newPassword")?.toString()?.trim() || undefined,
       });
 
       if (!res.success) {
@@ -8063,7 +8063,7 @@ function EditUserModal({
         <DialogHeader>
           <DialogTitle>Chỉnh sửa thông tin người dùng</DialogTitle>
           <DialogDescription>
-            Cập nhật hồ sơ, vai trò, phân công trường/lớp hoặc đặt lại mật khẩu.
+            Cập nhật thông tin hồ sơ, địa chỉ email, vai trò và phân công phụ trách.
           </DialogDescription>
         </DialogHeader>
 
@@ -8285,27 +8285,14 @@ function EditUserModal({
             </div>
           )}
 
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3.5 space-y-2">
-            <label className="block text-sm font-semibold text-[#0F172A]">
-              Đặt lại mật khẩu mới (Tùy chọn)
-            </label>
-            <div className="relative">
-              <input
-                name="newPassword"
-                type={showPassword ? "text" : "password"}
-                placeholder="Để trống nếu không muốn đổi mật khẩu"
-                className="field pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
+          {/* CHÍNH SÁCH BẢO MẬT: ADMIN CHỈ ĐƯỢC ĐỔI EMAIL, KHÔNG ĐƯỢC ĐỔI MẬT KHẨU NGƯỜI KHÁC */}
+          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 space-y-1.5 text-xs text-blue-900">
+            <div className="flex items-center gap-2 font-semibold text-blue-800">
+              <ShieldCheck className="size-4 text-blue-600 shrink-0" />
+              <span>Chính sách bảo mật tài khoản & Mật khẩu</span>
             </div>
-            <p className="text-[11.5px] text-[#64748B]">
-              * Nếu bạn điền mật khẩu mới (tối thiểu 6 ký tự), mật khẩu của tài khoản này sẽ được cập nhật trực tiếp ngay lập tức.
+            <p className="text-[12px] text-blue-700 leading-relaxed">
+              Quản trị viên chỉ có quyền chỉnh sửa Email và hồ sơ cá nhân của người dùng. Để bảo đảm an toàn dữ liệu, Quản trị viên <b>không được phép xem hoặc thay đổi mật khẩu</b> của tài khoản khác. Người dùng tự đổi mật khẩu qua trang Cá nhân hoặc thông qua luồng Xác thực Email.
             </p>
           </div>
 

@@ -41,7 +41,7 @@ async function testScheduleConflicts() {
     assert("Phát hiện đúng T3, T5, T7", JSON.stringify(s2?.days) === JSON.stringify([3, 5, 7]));
 
     const s3 = parseSchedule("Thứ 7, Chủ nhật • 08:30 - 10:30");
-    assert("Phát hiện đúng Thứ 7 và Chủ nhật (8)", s3?.days.includes(7) && s3?.days.includes(8));
+    assert("Phát hiện đúng Thứ 7 và Chủ nhật (8)", Boolean(s3?.days.includes(7) && s3?.days.includes(8)));
 
     // 2. Kiểm thử areSchedulesConflicting
     console.log("\n--- 2. SO SÁNH XUNG ĐỘT LỊCH HỌC (areSchedulesConflicting) ---");

@@ -287,7 +287,6 @@ export async function createUserAction(data: {
       return {
         success: true,
         user: updatedUser,
-        tempPassword: defaultPassword,
         mailResult,
       };
     }
@@ -330,7 +329,6 @@ export async function createUserAction(data: {
     return {
       success: true,
       user: newUser,
-      tempPassword: defaultPassword,
       mailResult,
     };
   } catch (error: any) {
@@ -436,16 +434,13 @@ export async function updateUserAction(
       if (role) updateUserData.roleId = role.id;
     }
 
-    // 3. Đặt lại mật khẩu mới nếu có
+    // 3. Quy định bảo mật: Quản trị viên không được phép đổi mật khẩu của tài khoản khác
     if (data.newPassword && data.newPassword.trim()) {
-      if (data.newPassword.trim().length < 6) {
-        return {
-          success: false,
-          error: "Mật khẩu mới phải có tối thiểu 6 ký tự!",
-        };
-      }
-      updateUserData.passwordHash = await hashPassword(data.newPassword.trim());
-      updateUserData.mustChangePassword = false;
+      return {
+        success: false,
+        error:
+          "Quy định bảo mật: Quản trị viên không được phép đổi mật khẩu của tài khoản khác! Người dùng phải tự đổi mật khẩu qua trang Cá nhân hoặc kích hoạt lại qua Email.",
+      };
     }
 
     await prisma.user.update({
