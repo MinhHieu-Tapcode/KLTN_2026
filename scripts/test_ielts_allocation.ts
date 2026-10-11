@@ -85,7 +85,7 @@ async function runTests() {
 
   // 52 học sinh chia 2 lớp -> 26, 26
   const students52 = makeMockStudents(52, interLvl.code, interLvl.name, interLvl.id);
-  const classes52 = distributeStudentsBalanced(students52, 2, interLvl.code, interLvl.name, interLvl.id, "TD");
+  const classes52 = await distributeStudentsBalanced(students52, 2, interLvl.code, interLvl.name, interLvl.id, "TD");
   const sizes52 = classes52.map((c) => c.students.length);
   console.log("52 học sinh / 2 lớp:", sizes52);
   if (sizes52[0] !== 26 || sizes52[1] !== 26) {
@@ -94,7 +94,7 @@ async function runTests() {
 
   // 50 học sinh chia 3 lớp -> 17, 17, 16
   const students50 = makeMockStudents(50, interLvl.code, interLvl.name, interLvl.id);
-  const classes50 = distributeStudentsBalanced(students50, 3, interLvl.code, interLvl.name, interLvl.id, "TD");
+  const classes50 = await distributeStudentsBalanced(students50, 3, interLvl.code, interLvl.name, interLvl.id, "TD");
   const sizes50 = classes50.map((c) => c.students.length);
   console.log("50 học sinh / 3 lớp:", sizes50);
   if (sizes50[0] !== 17 || sizes50[1] !== 17 || sizes50[2] !== 16) {

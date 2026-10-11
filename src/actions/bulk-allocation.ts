@@ -265,14 +265,14 @@ export async function parseAndValidateBulkStudentsAction(fileBase64: string) {
 /**
  * 2. Thuật toán chia đều học sinh vào N lớp (chênh lệch sĩ số giữa các lớp <= 1)
  */
-export function distributeStudentsBalanced(
+export async function distributeStudentsBalanced(
   students: ValidatedStudentRow[],
   classCount: number,
   levelCode: string,
   levelName: string,
   levelId: string,
   schoolCode: string = "TD"
-): ProposedClass[] {
+): Promise<ProposedClass[]> {
   const S = students.length;
   const N = Math.max(1, classCount);
 
@@ -361,7 +361,7 @@ export async function generateBulkClassSuggestionAction(
         classCount = Math.max(1, classCountOverrides[lvl.id]);
       }
 
-      const proposedClasses = distributeStudentsBalanced(
+      const proposedClasses = await distributeStudentsBalanced(
         studentsInLevel,
         classCount,
         lvl.code,
@@ -435,7 +435,7 @@ export async function rebalanceOnStudentTransferAction(
     }
 
     // 2. Chạy lại thuật toán chia đều toàn bộ học sinh theo số lớp đang có
-    const rebalancedClasses = distributeStudentsBalanced(
+    const rebalancedClasses = await distributeStudentsBalanced(
       allStudents,
       currentPlan.classCount,
       currentPlan.levelCode,
@@ -481,7 +481,7 @@ export async function rebalanceOnClassCountChangeAction(
       }
     }
 
-    const rebalancedClasses = distributeStudentsBalanced(
+    const rebalancedClasses = await distributeStudentsBalanced(
       allStudents,
       N,
       currentPlan.levelCode,
