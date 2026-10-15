@@ -127,7 +127,7 @@ async function runAllTests() {
 
     // Tìm kiếm với khoảng trắng ở hai đầu
     const searchSchools = await getSchoolsAction(`   ${testSchoolName}   `);
-    assert("Tìm kiếm trường học tự động .trim() khoảng trắng thừa", searchSchools.some((s) => s.name === testSchoolName));
+    assert("Tìm kiếm trường học tự động .trim() khoảng trắng thừa", searchSchools.some((s: any) => s.name === testSchoolName));
 
     // Xem chi tiết trường học (BUG_13)
     if (createdSchoolId) {

@@ -45,6 +45,8 @@ import {
   Sliders,
   Layers,
   RefreshCw,
+  Folder,
+  FileText,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -146,6 +148,9 @@ import {
 } from "@/actions/bulk-allocation";
 import { DEFAULT_PERMISSIONS } from "@/lib/permissions";
 import { RoleCode } from "@prisma/client";
+import { ClassMaterialsTab } from "@/components/materials/class-materials-tab";
+import { ClassAssignmentsTab } from "@/components/assignments/class-assignments-tab";
+import { GlobalMaterialsView } from "@/components/materials/global-materials-view";
 
 export type View =
   | "dashboard"
@@ -156,7 +161,9 @@ export type View =
   | "schedule"
   | "import"
   | "settings"
-  | "custom-module";
+  | "custom-module"
+  | "materials-global"
+  | "assignments-global";
 
 interface SimpaceAppProps {
   initialSession: any;
@@ -197,6 +204,7 @@ export function SimpaceApp({
   const [permissions, setPermissions] = useState(initialPermissions);
   const [ieltsLevels, setIeltsLevels] = useState<any[]>(initialIeltsLevels);
   const [selectedClass, setSelectedClass] = useState<any>(null);
+  const [classDetailTab, setClassDetailTab] = useState<"info" | "materials" | "assignments">("info");
 
   // Modals & Drawers tạo mới
   const [addUserOpen, setAddUserOpen] = useState(false);
@@ -336,6 +344,16 @@ export function SimpaceApp({
     import: "Import / Export Excel",
     settings: canManageSettings ? "Cài đặt & Phân quyền" : "Hồ sơ cá nhân & Bảo mật",
     "custom-module": activeCustomPerm?.name || "Tính năng mở rộng",
+    "materials-global":
+      currentUser?.role === "ADMIN"
+        ? "Kho học liệu chung toàn hệ thống"
+        : currentUser?.role === "STUDENT"
+        ? "Kho học liệu của tôi"
+        : "Kho học liệu giảng dạy",
+    "assignments-global":
+      currentUser?.role === "STUDENT"
+        ? "Bài tập & Đề thi cần hoàn thành"
+        : "Trung tâm Quản lý Bài tập & Chấm điểm",
   };
 
   return (
@@ -398,6 +416,28 @@ export function SimpaceApp({
                 onClick={() => navigate("classes")}
               />
             )}
+            <NavItem
+              icon={Folder}
+              label={
+                currentUser.role === "ADMIN"
+                  ? "Kho học liệu chung"
+                  : currentUser.role === "STUDENT"
+                  ? "Học liệu của tôi"
+                  : "Kho học liệu"
+              }
+              active={view === "materials-global"}
+              onClick={() => navigate("materials-global")}
+            />
+            <NavItem
+              icon={FileText}
+              label={
+                currentUser.role === "STUDENT"
+                  ? "Bài tập cần làm"
+                  : "Quản lý bài tập"
+              }
+              active={view === "assignments-global"}
+              onClick={() => navigate("assignments-global")}
+            />
             <NavItem
               icon={canManageSettings ? Settings : UserRound}
               label={canManageSettings ? "Cài đặt & Phân quyền" : "Hồ sơ cá nhân"}
@@ -609,6 +649,7 @@ export function SimpaceApp({
                 onOpenDetail={async (cls) => {
                   const detail = await getClassDetailAction(cls.id);
                   setSelectedClass(detail || cls);
+                  setClassDetailTab("info");
                   navigate("class-detail");
                 }}
                 onEditClass={(c) => setEditingClass(c)}
@@ -624,6 +665,8 @@ export function SimpaceApp({
                 classes={classes}
                 teachers={teachers}
                 tas={tas}
+                currentUser={currentUser}
+                initialTab={classDetailTab}
                 onBack={() => navigate("classes")}
                 onEditClass={(c) => setEditingClass(c)}
                 onRefreshDetail={async () => {
@@ -634,6 +677,66 @@ export function SimpaceApp({
                   refreshAll();
                 }}
               />
+            )}
+            {view === "materials-global" && (
+              <GlobalMaterialsView
+                classes={classes}
+                currentUser={currentUser}
+                onOpenClassMaterials={async (cls) => {
+                  const detail = await getClassDetailAction(cls.id);
+                  setSelectedClass(detail || cls);
+                  setClassDetailTab("materials");
+                  navigate("class-detail");
+                }}
+                onRefreshAll={refreshAll}
+              />
+            )}
+            {view === "assignments-global" && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      {currentUser.role === "STUDENT"
+                        ? "Bài tập & Đề thi cần hoàn thành"
+                        : "Trung tâm Quản lý Bài tập & Chấm điểm"}
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Chọn lớp học để xem danh sách bài tập, hạn nộp, chấm bài và theo dõi vi phạm chuyển tab.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {classes.filter((c) => c.isActive).map((cls) => (
+                    <div
+                      key={cls.id}
+                      onClick={async () => {
+                        const detail = await getClassDetailAction(cls.id);
+                        setSelectedClass(detail || cls);
+                        setClassDetailTab("assignments");
+                        navigate("class-detail");
+                      }}
+                      className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-orange-300 hover:shadow-md cursor-pointer transition flex items-center justify-between group"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                            {cls.code}
+                          </span>
+                          <span className="text-xs text-[#EA580C] font-semibold">{cls.program}</span>
+                        </div>
+                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-[#EA580C] transition">
+                          {cls.name}
+                        </h4>
+                        <p className="text-xs text-slate-500">{cls.school?.name}</p>
+                      </div>
+                      <div className="size-10 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-[#EA580C] group-hover:text-white grid place-items-center transition">
+                        <FileText className="size-5" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {view === "import" && (
               <ImportPageView
@@ -679,7 +782,11 @@ export function SimpaceApp({
         classes={classes}
         ieltsLevels={ieltsLevels}
         onAddClassShortcut={() => setAddClassOpen(true)}
-        onAddSchoolShortcut={() => setAddSchoolOpen(true)}
+        onAddSchoolShortcut={() => {
+          setAddUserOpen(false);
+          setView("schools");
+          setAddSchoolOpen(true);
+        }}
         onCreatedSuccess={(acc) => {
           setAddUserOpen(false);
           refreshAll();
@@ -3890,6 +3997,8 @@ function ClassDetailView({
   classes = [],
   teachers,
   tas,
+  currentUser,
+  initialTab = "info",
   onBack,
   onRefreshDetail,
   onEditClass,
@@ -3898,10 +4007,20 @@ function ClassDetailView({
   classes?: any[];
   teachers: any[];
   tas: any[];
+  currentUser?: any;
+  initialTab?: "info" | "materials" | "assignments";
   onBack: () => void;
   onRefreshDetail: () => void;
   onEditClass?: (c: any) => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"info" | "materials" | "assignments">(initialTab || "info");
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
   const [assignRole, setAssignRole] = useState<"TEACHER" | "TEACHING_ASSISTANT" | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -4056,7 +4175,66 @@ function ClassDetailView({
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/* ========================================================
+          THANH 3 SUB-TABS TRỌNG TÂM TRONG CHI TIẾT LỚP HỌC (VỊ TRÍ 1)
+          ======================================================== */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 mb-6 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab("info")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            activeTab === "info"
+              ? "bg-[#EA580C] text-white shadow-sm"
+              : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+          }`}
+        >
+          <GraduationCap className="size-4" />
+          <span>Thông tin lớp & Học viên</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("materials")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            activeTab === "materials"
+              ? "bg-[#EA580C] text-white shadow-sm"
+              : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+          }`}
+        >
+          <Folder className="size-4" />
+          <span>Quản lý học liệu</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("assignments")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            activeTab === "assignments"
+              ? "bg-[#EA580C] text-white shadow-sm"
+              : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+          }`}
+        >
+          <FileText className="size-4" />
+          <span>Quản lý bài tập</span>
+        </button>
+      </div>
+
+      {activeTab === "materials" && (
+        <ClassMaterialsTab
+          classId={classItem.id}
+          className={classItem.name}
+          currentUser={currentUser || { role: "ADMIN" }}
+        />
+      )}
+
+      {activeTab === "assignments" && (
+        <ClassAssignmentsTab
+          classId={classItem.id}
+          className={classItem.name}
+          currentUser={currentUser || { role: "ADMIN" }}
+        />
+      )}
+
+      {activeTab === "info" && (
+        <>
+          <div className="grid gap-4 lg:grid-cols-3">
         <InfoCard
           title="Thông tin lớp học & Thời khóa biểu"
           items={[
@@ -4525,6 +4703,8 @@ function ClassDetailView({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+        </>
       )}
     </>
   );
@@ -7267,17 +7447,34 @@ function UserDialog({
                       <label className="text-xs font-bold text-[#0F172A] block mb-1.5">
                         Trường học đối tác áp dụng *
                       </label>
-                      <select
-                        value={selectedSchoolId}
-                        onChange={(e) => setSelectedSchoolId(e.target.value)}
-                        className="field text-xs"
-                      >
-                        {schools.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ({s.code})
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          value={selectedSchoolId}
+                          onChange={(e) => setSelectedSchoolId(e.target.value)}
+                          className="field text-xs flex-1"
+                        >
+                          {schools.length === 0 && (
+                            <option value="">-- Chưa có trường học nào --</option>
+                          )}
+                          {schools.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.code})
+                            </option>
+                          ))}
+                        </select>
+                        {onAddSchoolShortcut && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={onAddSchoolShortcut}
+                            title="Tạo trường học mới (Điều hướng đến trang Quản lý trường học)"
+                            className="h-9 px-2.5 text-xs border-[#EA580C] text-[#EA580C] hover:bg-orange-50 shrink-0 font-medium"
+                          >
+                            <Plus className="size-3.5 mr-1" /> Thêm trường
+                          </Button>
+                        )}
+                      </div>
                       <p className="text-[11px] text-[#64748B] mt-1">
                         Các lớp học IELTS được đề xuất sẽ thuộc về trường đối tác này.
                       </p>
@@ -9900,7 +10097,7 @@ function Status({
 }
 
 function subtitle(view: View) {
-  return {
+  const map: Record<View, string> = {
     users: "Quản lý tài khoản, phân quyền và dữ liệu học viên/giáo viên trên toàn hệ thống.",
     schools: "Quản lý thông tin và phân công quản nhiệm tại các trường học đối tác.",
     classes: "Theo dõi lớp đang diễn ra, sắp khai giảng và lịch sử các khóa học đã bế giảng.",
@@ -9909,8 +10106,11 @@ function subtitle(view: View) {
     import: "Tải lên file Excel chuẩn 7 cột để thêm học viên và ghi danh vào lớp tự động.",
     settings: "Thiết lập cấu hình hệ thống, hồ sơ cá nhân và ma trận phân quyền RBAC.",
     "custom-module": "Màn hình chức năng mở rộng được phân quyền động từ cơ sở dữ liệu.",
+    "materials-global": "Quản lý kho tài liệu, giáo trình, slide bài giảng và file nghe IELTS.",
+    "assignments-global": "Danh sách bài tập, hạn nộp, chấm điểm tự luận và giám sát thi trực tuyến.",
     dashboard: "",
-  }[view];
+  };
+  return map[view] || "";
 }
 
 function AddPermissionModal({

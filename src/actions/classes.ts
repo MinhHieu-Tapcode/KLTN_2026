@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { prisma, isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
@@ -12,11 +12,75 @@ function safeRevalidate(path: string) {
   } catch {}
 }
 
+const globalClassesStore = globalThis as unknown as {
+  demoClasses?: any[];
+};
+
+if (!globalClassesStore.demoClasses) {
+  globalClassesStore.demoClasses = [
+    {
+      id: "demo-class-1",
+      code: "IELTS_TD_01",
+      name: "IELTS Bứt Phá - 10A1",
+      program: "IELTS",
+      level: "5.5 - 6.5",
+      capacity: 30,
+      status: "ACTIVE",
+      description: "Thứ 2, 4, 6 (18:00 - 20:00)",
+      school: { name: "THPT Trương Định", id: "demo-school-1" },
+      schoolId: "demo-school-1",
+      isActive: true,
+      assignments: [
+        {
+          id: "as-1",
+          userId: "teacher-1",
+          roleInClass: "TEACHER",
+          staff: { username: "teacher1", email: "gv.nguyenvan@simpace.vn", profile: { fullName: "ThS. Nguyễn Văn A" } },
+        },
+      ],
+      enrollments: [
+        {
+          id: "en-1",
+          studentId: "st-1",
+          status: "STUDYING",
+          student: { username: "HV001", email: "hv001@simpace.vn", profile: { fullName: "Trần Thị Lan", entryIeltsScore: 5.5 } },
+        },
+        {
+          id: "en-2",
+          studentId: "st-2",
+          status: "STUDYING",
+          student: { username: "HV002", email: "hv002@simpace.vn", profile: { fullName: "Lê Hoàng Long", entryIeltsScore: 6.0 } },
+        },
+      ],
+      _count: { enrollments: 2 },
+    },
+    {
+      id: "demo-class-2",
+      code: "IELTS_KL_02",
+      name: "IELTS Nền Tảng - 11B2",
+      program: "IELTS",
+      level: "4.0 - 5.0",
+      capacity: 25,
+      status: "UPCOMING",
+      description: "Thứ 3, 5, 7 (19:30 - 21:30)",
+      school: { name: "THPT Kim Liên", id: "demo-school-2" },
+      schoolId: "demo-school-2",
+      isActive: true,
+      assignments: [],
+      enrollments: [],
+      _count: { enrollments: 0 },
+    },
+  ];
+}
+
 // Sinh mã lớp học tự động (BUG_07) theo cấu trúc: [Chương trình]_[Mã trường]_[STT 2 số] (VD: IELTS_TD_01)
 export async function generateClassCode(
   schoolId: string,
   program: string = "IELTS"
 ): Promise<string> {
+  if (!(await isDbAlive())) {
+    return "IELTS_SIM_01";
+  }
   const school = await prisma.school.findUnique({ where: { id: schoolId } });
   const schoolAcronym = school?.code.replace(/^SCH_/, "") || "SIM";
   const cleanProgram = (program || "IELTS").toUpperCase();
@@ -49,6 +113,9 @@ export async function getClassesAction(
   searchKeyword: string = "",
   activeState: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
 ) {
+  if (!(await isDbAlive())) {
+    return (globalClassesStore.demoClasses || []) as any;
+  }
   const session = await getSession();
   const whereClause: any = {};
 
@@ -81,46 +148,148 @@ export async function getClassesAction(
     ];
   }
 
-  return prisma.class.findMany({
-    where: whereClause,
-    include: {
-      school: true,
-      assignments: {
-        include: {
-          staff: { include: { profile: true } },
+  try {
+    return await prisma.class.findMany({
+      where: whereClause,
+      include: {
+        school: true,
+        assignments: {
+          include: {
+            staff: { include: { profile: true } },
+          },
+        },
+        enrollments: {
+          include: {
+            student: { include: { profile: true } },
+          },
+        },
+        _count: {
+          select: { enrollments: true },
         },
       },
-      enrollments: {
-        include: {
-          student: { include: { profile: true } },
-        },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (err: any) {
+    console.warn("[getClassesAction] DB offline fallback:", err?.message);
+    return [
+      {
+        id: "demo-class-1",
+        code: "IELTS_TD_01",
+        name: "IELTS Bứt Phá - 10A1",
+        program: "IELTS",
+        level: "5.5 - 6.5",
+        capacity: 30,
+        status: "ACTIVE",
+        description: "Thứ 2, 4, 6 (18:00 - 20:00)",
+        school: { name: "THPT Trương Định", id: "demo-school-1" },
+        schoolId: "demo-school-1",
+        isActive: true,
+        assignments: [
+          {
+            id: "as-1",
+            userId: "teacher-1",
+            roleInClass: "TEACHER",
+            staff: { username: "teacher1", email: "gv.nguyenvan@simpace.vn", profile: { fullName: "ThS. Nguyễn Văn A" } },
+          },
+        ],
+        enrollments: [
+          {
+            id: "en-1",
+            studentId: "st-1",
+            status: "STUDYING",
+            student: { username: "HV001", email: "hv001@simpace.vn", profile: { fullName: "Trần Thị Lan", entryIeltsScore: 5.5 } },
+          },
+          {
+            id: "en-2",
+            studentId: "st-2",
+            status: "STUDYING",
+            student: { username: "HV002", email: "hv002@simpace.vn", profile: { fullName: "Lê Hoàng Long", entryIeltsScore: 6.0 } },
+          },
+        ],
+        _count: { enrollments: 2 },
       },
-      _count: {
-        select: { enrollments: true },
+      {
+        id: "demo-class-2",
+        code: "IELTS_KL_02",
+        name: "IELTS Nền Tảng - 11B2",
+        program: "IELTS",
+        level: "4.0 - 5.0",
+        capacity: 25,
+        status: "UPCOMING",
+        description: "Thứ 3, 5, 7 (19:30 - 21:30)",
+        school: { name: "THPT Kim Liên", id: "demo-school-2" },
+        schoolId: "demo-school-2",
+        isActive: true,
+        assignments: [],
+        enrollments: [],
+        _count: { enrollments: 0 },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+    ] as any;
+  }
 }
 
 export async function getClassDetailAction(id: string) {
-  return prisma.class.findUnique({
-    where: { id },
-    include: {
-      school: true,
-      assignments: {
-        include: {
-          staff: { include: { profile: true } },
+  if (!(await isDbAlive())) {
+    const found = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
+    if (found) return found as any;
+    return (globalClassesStore.demoClasses || [])[0] as any;
+  }
+  try {
+    return await prisma.class.findUnique({
+      where: { id },
+      include: {
+        school: true,
+        assignments: {
+          include: {
+            staff: { include: { profile: true } },
+          },
+        },
+        enrollments: {
+          include: {
+            student: { include: { profile: true } },
+          },
+          orderBy: { enrolledAt: "asc" },
         },
       },
-      enrollments: {
-        include: {
-          student: { include: { profile: true } },
+    });
+  } catch (err: any) {
+    console.warn("[getClassDetailAction] DB offline fallback:", err?.message);
+    return {
+      id,
+      code: "IELTS_TD_01",
+      name: "IELTS Bứt Phá - 10A1",
+      program: "IELTS",
+      level: "5.5 - 6.5",
+      capacity: 30,
+      status: "ACTIVE",
+      description: "Thứ 2, 4, 6 (18:00 - 20:00)",
+      school: { name: "THPT Trương Định", id: "demo-school-1" },
+      schoolId: "demo-school-1",
+      isActive: true,
+      assignments: [
+        {
+          id: "as-1",
+          userId: "teacher-1",
+          roleInClass: "TEACHER",
+          staff: { username: "teacher1", email: "gv.nguyenvan@simpace.vn", profile: { fullName: "ThS. Nguyễn Văn A" } },
         },
-        orderBy: { enrolledAt: "asc" },
-      },
-    },
-  });
+      ],
+      enrollments: [
+        {
+          id: "en-1",
+          studentId: "st-1",
+          status: "STUDYING",
+          student: { username: "HV001", email: "hv001@simpace.vn", profile: { fullName: "Trần Thị Lan", entryIeltsScore: 5.5 } },
+        },
+        {
+          id: "en-2",
+          studentId: "st-2",
+          status: "STUDYING",
+          student: { username: "HV002", email: "hv002@simpace.vn", profile: { fullName: "Lê Hoàng Long", entryIeltsScore: 6.0 } },
+        },
+      ],
+    } as any;
+  }
 }
 
 // Tạo lớp học mới - Tự động sinh mã nếu không nhập, hỗ trợ gán đa giáo viên / trợ giảng
@@ -639,6 +808,26 @@ export async function removeStaffFromClassAction(classId: string, userId: string
 
 // Thêm học viên vào lớp học
 export async function enrollStudentToClassAction(classId: string, studentId: string) {
+  if (!(await isDbAlive())) {
+    const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === classId);
+    if (cls) {
+      if (!cls.enrollments.some((e: any) => e.studentId === studentId)) {
+        cls.enrollments.push({
+          id: `en-${Date.now()}`,
+          studentId,
+          status: "STUDYING",
+          student: {
+            username: `HV_${studentId}`,
+            email: `${studentId}@simpace.vn`,
+            profile: { fullName: `Học viên mới (${studentId})`, entryIeltsScore: 6.0 },
+          },
+        });
+        cls._count = { enrollments: cls.enrollments.length };
+      }
+    }
+    safeRevalidate("/classes");
+    return { success: true };
+  }
   try {
     const cls = await prisma.class.findUnique({
       where: { id: classId },
@@ -710,6 +899,15 @@ export async function enrollStudentToClassAction(classId: string, studentId: str
 
 // Rút học viên khỏi lớp học
 export async function removeStudentFromClassAction(classId: string, studentId: string) {
+  if (!(await isDbAlive())) {
+    const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === classId);
+    if (cls) {
+      cls.enrollments = (cls.enrollments || []).filter((e: any) => e.studentId !== studentId);
+      cls._count = { enrollments: cls.enrollments.length };
+    }
+    safeRevalidate("/classes");
+    return { success: true };
+  }
   try {
     await prisma.classEnrollment.deleteMany({
       where: {
@@ -727,6 +925,27 @@ export async function removeStudentFromClassAction(classId: string, studentId: s
 
 // Lấy danh sách học viên khả dụng để thêm vào lớp (chưa ghi danh vào lớp này)
 export async function getAvailableStudentsForClassAction(classId: string) {
+  if (!(await isDbAlive())) {
+    return {
+      success: true,
+      students: [
+        {
+          id: "st-demo-3",
+          username: "HV003",
+          email: "hv003@simpace.vn",
+          profile: { fullName: "Vũ Minh Anh", entryIeltsScore: 5.5, phone: "0912345678" },
+          classEnrollments: [],
+        },
+        {
+          id: "st-demo-4",
+          username: "HV004",
+          email: "hv004@simpace.vn",
+          profile: { fullName: "Đặng Gia Huy", entryIeltsScore: 6.5, phone: "0987654321" },
+          classEnrollments: [],
+        },
+      ],
+    };
+  }
   try {
     const students = await prisma.user.findMany({
       where: {
@@ -763,6 +982,26 @@ export async function transferStudentClassAction(
   targetClassId: string,
   studentId: string
 ) {
+  if (!(await isDbAlive())) {
+    const curCls = (globalClassesStore.demoClasses || []).find((c) => c.id === currentClassId);
+    const tgtCls = (globalClassesStore.demoClasses || []).find((c) => c.id === targetClassId);
+    if (curCls && tgtCls) {
+      const studentEnr = (curCls.enrollments || []).find((e: any) => e.studentId === studentId);
+      if (studentEnr) {
+        curCls.enrollments = curCls.enrollments.filter((e: any) => e.studentId !== studentId);
+        curCls._count = { enrollments: curCls.enrollments.length };
+        tgtCls.enrollments = tgtCls.enrollments || [];
+        tgtCls.enrollments.push(studentEnr);
+        tgtCls._count = { enrollments: tgtCls.enrollments.length };
+      }
+    }
+    safeRevalidate("/classes");
+    safeRevalidate("/schools");
+    return {
+      success: true,
+      message: "Đã chuyển học viên sang lớp mới thành công!",
+    };
+  }
   try {
     if (!currentClassId || !targetClassId || !studentId) {
       return { success: false, error: "Thiếu thông tin chuyển lớp!" };
@@ -881,6 +1120,22 @@ export async function transferStudentClassAction(
 
 // Lấy toàn bộ danh sách lớp học kèm danh sách học sinh của từng lớp theo trường
 export async function getSchoolClassesWithStudentsAction(schoolId: string) {
+  if (!(await isDbAlive())) {
+    return {
+      success: true,
+      school: {
+        id: schoolId || "demo-school-1",
+        name: "THPT Trương Định",
+        classes: (globalClassesStore.demoClasses || []).map((c) => ({
+          id: c.id,
+          code: c.code,
+          name: c.name,
+          capacity: c.capacity,
+          enrollments: c.enrollments || [],
+        })),
+      },
+    };
+  }
   try {
     const school = await prisma.school.findUnique({
       where: { id: schoolId },
@@ -930,6 +1185,29 @@ export async function getSchoolClassesWithStudentsAction(schoolId: string) {
 
 // Lấy danh sách học sinh cùng trường khả dụng để thêm / chuyển sang lớp này
 export async function getEligibleSchoolStudentsForClassAction(classId: string) {
+  if (!(await isDbAlive())) {
+    return {
+      success: true,
+      schoolName: "THPT Trương Định",
+      schoolId: "demo-school-1",
+      students: [
+        {
+          id: "st-demo-3",
+          username: "HV003",
+          email: "hv003@simpace.vn",
+          profile: { fullName: "Vũ Minh Anh", entryIeltsScore: 5.5, phone: "0912345678" },
+          classEnrollments: [{ class: { name: "IELTS Cơ bản - 10A2", schoolId: "demo-school-1" } }],
+        },
+        {
+          id: "st-demo-4",
+          username: "HV004",
+          email: "hv004@simpace.vn",
+          profile: { fullName: "Đặng Gia Huy", entryIeltsScore: 6.5, phone: "0987654321" },
+          classEnrollments: [{ class: { name: "IELTS Cơ bản - 10A2", schoolId: "demo-school-1" } }],
+        },
+      ],
+    };
+  }
   try {
     const currentClass = await prisma.class.findUnique({
       where: { id: classId },

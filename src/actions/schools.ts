@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { prisma, isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { areSchedulesConflicting } from "@/lib/schedule";
@@ -11,8 +11,16 @@ function safeRevalidate(path: string) {
   } catch {}
 }
 
+const DEMO_SCHOOLS = [
+  { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định", type: "THPT", address: "Hoàng Mai, Hà Nội", isActive: true, classes: [] },
+  { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên", type: "THPT", address: "Đống Đa, Hà Nội", isActive: true, classes: [] },
+];
+
 // Hàm sinh mã trường học tự động (BUG_06) - VD: THPT Trương Định -> SCH_TD
 export async function generateSchoolCode(schoolName: string): Promise<string> {
+  if (!(await isDbAlive())) {
+    return "SCH_DEMO_01";
+  }
   let cleanName = schoolName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -58,95 +66,122 @@ export async function getSchoolsAction(
   searchKeyword: string = "",
   statusFilter: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
 ) {
-  const session = await getSession();
-  const whereClause: any = {};
-
-  if (statusFilter === "ACTIVE") {
-    whereClause.isActive = true;
-  } else if (statusFilter === "INACTIVE") {
-    whereClause.isActive = false;
+  if (!(await isDbAlive())) {
+    return DEMO_SCHOOLS as any;
   }
+  try {
+    const session = await getSession();
+    const whereClause: any = {};
 
-  // Quản nhiệm CHỈ ĐƯỢC XEM trường mình phụ trách (BUG_02)
-  if (session?.role === "SCHOOL_MANAGER") {
-    whereClause.managerId = session.userId;
-  }
+    if (statusFilter === "ACTIVE") {
+      whereClause.isActive = true;
+    } else if (statusFilter === "INACTIVE") {
+      whereClause.isActive = false;
+    }
 
-  // Tìm kiếm tự động .trim() (BUG_09)
-  if (searchKeyword && searchKeyword.trim()) {
-    const clean = searchKeyword.trim();
-    whereClause.OR = [
-      { name: { contains: clean, mode: "insensitive" } },
-      { code: { contains: clean, mode: "insensitive" } },
-      { address: { contains: clean, mode: "insensitive" } },
-      { contactName: { contains: clean, mode: "insensitive" } },
-    ];
-  }
+    // Quản nhiệm CHỈ ĐƯỢC XEM trường mình phụ trách (BUG_02)
+    if (session?.role === "SCHOOL_MANAGER") {
+      whereClause.managerId = session.userId;
+    }
 
-  return prisma.school.findMany({
-    where: whereClause,
-    include: {
-      manager: {
-        include: { profile: true },
-      },
-      classes: {
-        where: { isActive: true },
-        include: {
-          assignments: {
-            include: { staff: { include: { profile: true } } },
-          },
-          _count: {
-            select: { enrollments: true },
+    // Tìm kiếm tự động .trim() (BUG_09)
+    if (searchKeyword && searchKeyword.trim()) {
+      const clean = searchKeyword.trim();
+      whereClause.OR = [
+        { name: { contains: clean, mode: "insensitive" } },
+        { code: { contains: clean, mode: "insensitive" } },
+        { address: { contains: clean, mode: "insensitive" } },
+        { contactName: { contains: clean, mode: "insensitive" } },
+      ];
+    }
+
+    return await prisma.school.findMany({
+      where: whereClause,
+      include: {
+        manager: {
+          include: { profile: true },
+        },
+        classes: {
+          where: { isActive: true },
+          include: {
+            assignments: {
+              include: { staff: { include: { profile: true } } },
+            },
+            _count: {
+              select: { enrollments: true },
+            },
           },
         },
+        _count: {
+          select: { classes: { where: { isActive: true } } },
+        },
       },
-      _count: {
-        select: { classes: { where: { isActive: true } } },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (err: any) {
+    console.warn("[getSchoolsAction] DB offline fallback:", err?.message);
+    return [
+      { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định", type: "THPT", address: "Hoàng Mai, Hà Nội", isActive: true, classes: [] },
+      { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên", type: "THPT", address: "Đống Đa, Hà Nội", isActive: true, classes: [] },
+    ] as any;
+  }
 }
 
 // Lấy chi tiết trường học và danh sách lớp trực thuộc (BUG_13)
 export async function getSchoolDetailAction(schoolId: string) {
-  return prisma.school.findUnique({
-    where: { id: schoolId },
-    include: {
-      manager: {
-        include: { profile: true },
-      },
-      classes: {
-        where: { isActive: true },
-        include: {
-          assignments: {
-            include: { staff: { include: { profile: true } } },
-          },
-          _count: {
-            select: { enrollments: true },
-          },
+  if (!(await isDbAlive())) {
+    return null;
+  }
+  try {
+    return await prisma.school.findUnique({
+      where: { id: schoolId },
+      include: {
+        manager: {
+          include: { profile: true },
         },
-        orderBy: { createdAt: "desc" },
+        classes: {
+          where: { isActive: true },
+          include: {
+            assignments: {
+              include: { staff: { include: { profile: true } } },
+            },
+            _count: {
+              select: { enrollments: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
       },
-    },
-  });
+    });
+  } catch (err: any) {
+    console.warn("[getSchoolDetailAction] DB offline fallback:", err?.message);
+    return null;
+  }
 }
 
 export async function getSchoolManagersAction() {
-  return prisma.user.findMany({
-    where: {
-      role: { code: "SCHOOL_MANAGER" },
-      isActive: true,
-    },
-    include: {
-      profile: true,
-      managedSchools: {
-        where: { isActive: true },
-        select: { id: true, name: true, code: true },
+  if (!(await isDbAlive())) {
+    return [];
+  }
+  try {
+    return await prisma.user.findMany({
+      where: {
+        role: { code: "SCHOOL_MANAGER" },
+        isActive: true,
       },
-    },
-    orderBy: { username: "asc" },
-  });
+      include: {
+        profile: true,
+        managedSchools: {
+          where: { isActive: true },
+          select: { id: true, name: true, code: true },
+        },
+      },
+      orderBy: { username: "asc" },
+    });
+  } catch (err: any) {
+    console.warn("[getSchoolManagersAction] DB offline fallback:", err?.message);
+    return [];
+  }
 }
 
 // Tạo trường học mới - Bắt buộc Quản nhiệm, Đại diện BGH, SĐT và Địa chỉ

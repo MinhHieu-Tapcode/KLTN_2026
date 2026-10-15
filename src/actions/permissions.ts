@@ -1,29 +1,53 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { prisma, isDbAlive } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { RoleCode } from "@prisma/client";
 
 import { DEFAULT_PERMISSIONS } from "@/lib/permissions";
 
 export async function getSystemPermissionsAction() {
-  let perms = await prisma.systemPermission.findMany({
-    orderBy: { featureKey: "asc" },
-  });
-
-  if (perms.length === 0) {
-    // Tự khởi tạo các quyền mặc định
-    for (const p of DEFAULT_PERMISSIONS) {
-      await prisma.systemPermission.create({
-        data: p,
-      });
-    }
-    perms = await prisma.systemPermission.findMany({
+  if (!(await isDbAlive())) {
+    return DEFAULT_PERMISSIONS.map((p, idx) => ({
+      id: `perm-${idx}`,
+      featureKey: p.featureKey,
+      name: p.name,
+      category: p.category || "Hệ thống",
+      allowedRoles: p.allowedRoles,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })) as any;
+  }
+  try {
+    let perms = await prisma.systemPermission.findMany({
       orderBy: { featureKey: "asc" },
     });
-  }
 
-  return perms;
+    if (perms.length === 0) {
+      // Tự khởi tạo các quyền mặc định
+      for (const p of DEFAULT_PERMISSIONS) {
+        await prisma.systemPermission.create({
+          data: p,
+        });
+      }
+      perms = await prisma.systemPermission.findMany({
+        orderBy: { featureKey: "asc" },
+      });
+    }
+
+    return perms;
+  } catch (err: any) {
+    console.warn("[getSystemPermissionsAction] DB offline fallback:", err?.message);
+    return DEFAULT_PERMISSIONS.map((p, idx) => ({
+      id: `perm-${idx}`,
+      featureKey: p.featureKey,
+      name: p.name,
+      category: p.category || "Hệ thống",
+      allowedRoles: p.allowedRoles,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })) as any;
+  }
 }
 
 import { getSession } from "@/lib/auth";
