@@ -682,6 +682,14 @@ export async function distributeLearningMaterialsAction(data: {
     return { success: false, error: "Vui lòng đăng nhập để thực hiện phân phối học liệu!" };
   }
 
+  // KIỂM SOÁT PHÂN QUYỀN RBAC CHẶT CHẼ
+  if (session.role === "STUDENT") {
+    return { success: false, error: "Học viên không có quyền phân phối học liệu vào các lớp học!" };
+  }
+
+  const isTeacher = session.role === "TEACHER" || session.role === "TEACHING_ASSISTANT";
+  const isSchoolManager = session.role === "SCHOOL_MANAGER";
+
   if (!data.materials || data.materials.length === 0) {
     return { success: false, error: "Danh sách tài liệu phân phối không được để trống!" };
   }
@@ -691,8 +699,20 @@ export async function distributeLearningMaterialsAction(data: {
   // 1. Trường hợp Fallback In-Memory (Khi chưa kết nối Supabase)
   if (!(await isDbAlive())) {
     const globalClasses = (globalThis as any).demoClasses || [
-      { id: "demo-class-1", name: "IELTS Bứt Phá - 10A1", level: "5.5 - 6.5", isActive: true },
-      { id: "demo-class-2", name: "IELTS Nền Tảng - 11B2", level: "4.0 - 5.0", isActive: true },
+      {
+        id: "demo-class-1",
+        name: "IELTS Bứt Phá - 10A1",
+        level: "5.5 - 6.5",
+        isActive: true,
+        assignments: [
+          {
+            userId: "teacher-1",
+            roleInClass: "TEACHER",
+            staff: { username: "teacher1", email: "gv.nguyenvan@simpace.vn" },
+          },
+        ],
+      },
+      { id: "demo-class-2", name: "IELTS Nền Tảng - 11B2", level: "4.0 - 5.0", isActive: true, assignments: [] },
     ];
 
     let targetClasses: any[] = [];
@@ -706,9 +726,30 @@ export async function distributeLearningMaterialsAction(data: {
       targetClasses = globalClasses.filter((c: any) => c.isActive);
     }
 
+    // Áp dụng giới hạn phạm vi theo vai trò: Giáo viên chỉ được nạp lớp mình phụ trách
+    if (isTeacher) {
+      targetClasses = targetClasses.filter((c: any) =>
+        c.assignments?.some(
+          (a: any) =>
+            a.userId === session.userId ||
+            a.staff?.id === session.userId ||
+            a.staff?.username === session.username ||
+            (session.email && a.staff?.email === session.email)
+        )
+      );
+    } else if (isSchoolManager) {
+      targetClasses = targetClasses.filter(
+        (c: any) => c.school?.managerId === session.userId
+      );
+    }
+
     if (targetClasses.length === 0) {
-      // Fallback: nếu không tìm thấy lớp khớp thì áp dụng cho tất cả các lớp đang có
-      targetClasses = globalClasses.filter((c: any) => c.isActive);
+      return {
+        success: false,
+        error: isTeacher
+          ? "Bạn không có quyền phân phối học liệu ngoài các lớp bạn được phân công phụ trách!"
+          : "Không tìm thấy lớp học nào phù hợp với phạm vi phân quyền của bạn!",
+      };
     }
 
     let totalCreatedMaterials = 0;
@@ -768,10 +809,22 @@ export async function distributeLearningMaterialsAction(data: {
   try {
     let whereClause: any = { isActive: true };
 
+    // Phân quyền dữ liệu theo vai trò chặt chẽ
+    if (isTeacher) {
+      whereClause.assignments = { some: { userId: session.userId } };
+    } else if (isSchoolManager) {
+      whereClause.school = { managerId: session.userId };
+    }
+
     if (data.distributionMode === "BY_LEVEL" && data.targetLevels && data.targetLevels.length > 0) {
-      whereClause.OR = data.targetLevels.map((lvl) => ({
-        level: { contains: lvl, mode: "insensitive" },
-      }));
+      whereClause.AND = [
+        ...(whereClause.AND || []),
+        {
+          OR: data.targetLevels.map((lvl) => ({
+            level: { contains: lvl, mode: "insensitive" },
+          })),
+        },
+      ];
     } else if (data.distributionMode === "BY_CLASSES" && data.targetClassIds && data.targetClassIds.length > 0) {
       whereClause.id = { in: data.targetClassIds };
     }
@@ -784,7 +837,9 @@ export async function distributeLearningMaterialsAction(data: {
     if (targetClasses.length === 0) {
       return {
         success: false,
-        error: "Không tìm thấy lớp học nào phù hợp với điều kiện phân phối đã chọn!",
+        error: isTeacher
+          ? "Bạn không có quyền phân phối học liệu ngoài các lớp bạn được phân công phụ trách!"
+          : "Không tìm thấy lớp học nào phù hợp với phạm vi phân quyền của bạn!",
       };
     }
 
@@ -878,6 +933,19 @@ export async function uploadCoursebookPackageAction(data: {
   const session = await getSession();
   if (!session) {
     return { success: false, error: "Vui lòng đăng nhập để tải gói sách giáo khoa!" };
+  }
+
+  // Chỉ Quản trị viên mới được nạp giáo trình chuẩn vào Kho Trình độ dùng chung toàn trung tâm
+  if (data.targetType === "LEVEL" && session.role !== "ADMIN") {
+    return {
+      success: false,
+      error: "Chỉ Quản trị viên (ADMIN) mới có quyền nạp giáo trình chuẩn vào Kho Trình độ dùng chung toàn trung tâm!",
+    };
+  }
+
+  // Giáo viên chỉ được nạp gói sách vào các lớp mình phụ trách
+  if (session.role === "STUDENT") {
+    return { success: false, error: "Học viên không có quyền tải gói sách giáo khoa!" };
   }
 
   if (!data.packageTitle || !data.packageTitle.trim()) {

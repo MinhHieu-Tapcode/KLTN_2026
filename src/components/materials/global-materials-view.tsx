@@ -47,8 +47,12 @@ interface GlobalMaterialsViewProps {
   classes: any[];
   currentUser: {
     id?: string;
+    userId?: string;
     role: string;
     fullName?: string;
+    username?: string;
+    email?: string;
+    managedSchools?: any[];
   };
   onOpenClassMaterials: (cls: any) => void;
   onRefreshAll?: () => void;
@@ -121,10 +125,13 @@ export function GlobalMaterialsView({
     setAlertModal({ isOpen: true, title, message, type });
   };
 
-  const canManage =
-    currentUser.role === "ADMIN" ||
-    currentUser.role === "TEACHER" ||
-    currentUser.role === "SCHOOL_MANAGER";
+  const isAdmin = currentUser.role === "ADMIN";
+  const isSchoolManager = currentUser.role === "SCHOOL_MANAGER";
+  const isTeacher =
+    currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT";
+  const isStudent = currentUser.role === "STUDENT";
+
+  const canManage = isAdmin || isSchoolManager || isTeacher;
 
   // Danh sách các trình độ chuẩn
   const LEVEL_OPTIONS = [
@@ -317,13 +324,65 @@ export function GlobalMaterialsView({
     });
   };
 
-  // Tính toán danh sách lớp học mục tiêu được hưởng theo cấu hình hiện tại
-  const activeClasses = classes.filter((c) => c.isActive);
+  // Phân quyền dữ liệu phạm vi lớp học: Giáo viên chỉ thấy & phân phối cho lớp mình dạy
+  const accessibleClasses = React.useMemo(() => {
+    if (!currentUser || isAdmin) {
+      return classes.filter((c) => c.isActive);
+    }
+    const uid = currentUser.id || currentUser.userId;
+    const username = currentUser.username;
+    const email = currentUser.email;
+
+    if (isSchoolManager) {
+      const managedIds = (currentUser.managedSchools || []).map((s: any) => s.id);
+      return classes.filter(
+        (c) =>
+          c.isActive &&
+          (managedIds.includes(c.schoolId) ||
+            c.school?.managerId === uid ||
+            c.school?.manager?.id === uid ||
+            c.school?.manager?.username === username)
+      );
+    }
+
+    if (isTeacher) {
+      return classes.filter(
+        (c) =>
+          c.isActive &&
+          c.assignments?.some(
+            (a: any) =>
+              a.userId === uid ||
+              a.staff?.id === uid ||
+              (username && a.staff?.username === username) ||
+              (email && a.staff?.email === email)
+          )
+      );
+    }
+
+    if (isStudent) {
+      return classes.filter(
+        (c) =>
+          c.isActive &&
+          c.enrollments?.some(
+            (e: any) =>
+              e.studentId === uid ||
+              e.student?.id === uid ||
+              (username && e.student?.username === username) ||
+              (email && e.student?.email === email)
+          )
+      );
+    }
+
+    return [];
+  }, [classes, currentUser, isAdmin, isSchoolManager, isTeacher, isStudent]);
+
+  // Toàn bộ màn hình Học liệu sử dụng danh sách lớp đã được phân quyền
+  const activeClasses = accessibleClasses;
 
   const getTargetClassesCount = () => {
     if (distributionMode === "BY_LEVEL") {
       if (selectedLevels.length === 0) return 0;
-      return activeClasses.filter((c) =>
+      return accessibleClasses.filter((c) =>
         selectedLevels.some(
           (lvl) =>
             (c.level || "").toLowerCase().includes(lvl.toLowerCase()) ||
@@ -337,14 +396,14 @@ export function GlobalMaterialsView({
 
   const targetClassesList =
     distributionMode === "BY_LEVEL"
-      ? activeClasses.filter((c) =>
+      ? accessibleClasses.filter((c) =>
           selectedLevels.some(
             (lvl) =>
               (c.level || "").toLowerCase().includes(lvl.toLowerCase()) ||
               (c.name || "").toLowerCase().includes(lvl.toLowerCase())
           )
         )
-      : activeClasses.filter((c) => selectedClassIds.includes(c.id));
+      : accessibleClasses.filter((c) => selectedClassIds.includes(c.id));
 
   // Thực thi Phân phối Tài liệu hàng loạt
   const handleExecuteDistribution = () => {
@@ -517,14 +576,20 @@ export function GlobalMaterialsView({
           </div>
         </div>
 
-        {canManage && (
+        {canManage && !isStudent && (
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             <Button
               onClick={() => setIsDistributeModalOpen(true)}
               className="bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold rounded-xl text-xs gap-1.5 shadow-sm px-4 h-9.5 w-full sm:w-auto"
             >
               <Sparkles className="size-4" />
-              <span>Phân phối tài liệu hàng loạt (Đa lớp & Level)</span>
+              <span>
+                {isTeacher
+                  ? "Phân phối tài liệu cho các lớp bạn phụ trách"
+                  : isSchoolManager
+                  ? "Phân phối tài liệu cho các lớp trường quản nhiệm"
+                  : "Phân phối tài liệu hàng loạt (Đa lớp & Level)"}
+              </span>
             </Button>
           </div>
         )}
@@ -684,16 +749,18 @@ export function GlobalMaterialsView({
                 </p>
               </div>
 
-              <Button
-                onClick={() => {
-                  setTargetLevelForCb("lvl-advanced");
-                  setIsLevelCoursebookModalOpen(true);
-                }}
-                className="bg-white text-indigo-900 hover:bg-indigo-50 font-bold rounded-xl text-xs gap-1.5 shadow shrink-0"
-              >
-                <Plus className="size-4 text-indigo-600" />
-                <span>Nạp Bộ Giáo trình & Audio mới</span>
-              </Button>
+              {isAdmin && (
+                <Button
+                  onClick={() => {
+                    setTargetLevelForCb("lvl-advanced");
+                    setIsLevelCoursebookModalOpen(true);
+                  }}
+                  className="bg-white text-indigo-900 hover:bg-indigo-50 font-bold rounded-xl text-xs gap-1.5 shadow shrink-0"
+                >
+                  <Plus className="size-4 text-indigo-600" />
+                  <span>Nạp Bộ Giáo trình & Audio mới</span>
+                </Button>
+              )}
             </div>
           </div>
 
@@ -794,17 +861,19 @@ export function GlobalMaterialsView({
                     </div>
                   </div>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setTargetLevelForCb(lvlGroup.id);
-                      setIsLevelCoursebookModalOpen(true);
-                    }}
-                    className="w-full text-xs font-semibold rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1.5"
-                  >
-                    <Plus className="size-3.5" /> Nạp Bộ Sách & Audio cho Trình độ này
-                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setTargetLevelForCb(lvlGroup.id);
+                        setIsLevelCoursebookModalOpen(true);
+                      }}
+                      className="w-full text-xs font-semibold rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1.5"
+                    >
+                      <Plus className="size-3.5" /> Nạp Bộ Sách & Audio cho Trình độ này
+                    </Button>
+                  )}
                 </div>
               );
             })}
@@ -1155,13 +1224,23 @@ export function GlobalMaterialsView({
                       onClick={() => setDistributionMode("BY_LEVEL")}
                       className={`p-3 rounded-xl border text-xs font-semibold text-left transition ${
                         distributionMode === "BY_LEVEL"
-                          ? "border-emerald-500 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200"
+                          ? "border-[#EA580C] bg-orange-50 text-orange-950 ring-2 ring-orange-200"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                       }`}
                     >
-                      <b className="block text-slate-900">🌟 Theo Trình độ (Level)</b>
+                      <b className="block text-slate-900">
+                        {isTeacher
+                          ? "🌟 Theo Trình độ (Các lớp bạn dạy)"
+                          : isSchoolManager
+                          ? "🌟 Theo Trình độ (Trường quản nhiệm)"
+                          : "🌟 Theo Trình độ (Toàn trung tâm)"}
+                      </b>
                       <span className="text-[11px] text-slate-500 font-normal">
-                        VD: Sách giáo khoa cho toàn bộ lớp High-level
+                        {isTeacher
+                          ? "Chỉ nạp vào các lớp thuộc trình độ này mà bạn đang giảng dạy"
+                          : isSchoolManager
+                          ? "Nạp vào các lớp thuộc trình độ trong trường bạn phụ trách"
+                          : "Tự động nạp vào mọi lớp thuộc trình độ trên toàn hệ thống"}
                       </span>
                     </button>
 
@@ -1170,13 +1249,23 @@ export function GlobalMaterialsView({
                       onClick={() => setDistributionMode("BY_CLASSES")}
                       className={`p-3 rounded-xl border text-xs font-semibold text-left transition ${
                         distributionMode === "BY_CLASSES"
-                          ? "border-emerald-500 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200"
+                          ? "border-[#EA580C] bg-orange-50 text-orange-950 ring-2 ring-orange-200"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                       }`}
                     >
-                      <b className="block text-slate-900">👥 Chọn nhiều Lớp học cụ thể</b>
+                      <b className="block text-slate-900">
+                        {isTeacher
+                          ? "👥 Chọn nhiều Lớp bạn phụ trách"
+                          : isSchoolManager
+                          ? "👥 Chọn nhiều Lớp trường quản nhiệm"
+                          : "👥 Chọn nhiều Lớp học cụ thể"}
+                      </b>
                       <span className="text-[11px] text-slate-500 font-normal">
-                        VD: Giáo viên phân phối slide cho các lớp mình dạy
+                        {isTeacher
+                          ? "Tích chọn cụ thể các lớp bạn đang giảng dạy"
+                          : isSchoolManager
+                          ? "Tích chọn các lớp thuộc trường bạn phụ trách"
+                          : "Tích chọn các lớp học cụ thể cần nhận tài liệu"}
                       </span>
                     </button>
                   </div>
@@ -1331,10 +1420,19 @@ export function GlobalMaterialsView({
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Sparkles className="size-5 text-[#EA580C]" /> Phân phối Học liệu Hàng loạt theo Lớp / Trình độ
+              <Sparkles className="size-5 text-[#EA580C]" />{" "}
+              {isTeacher
+                ? "Phân phối Học liệu cho các Lớp bạn phụ trách"
+                : isSchoolManager
+                ? "Phân phối Học liệu cho các Lớp trường quản nhiệm"
+                : "Phân phối Học liệu Hàng loạt theo Lớp / Trình độ"}
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Tải lên Sách giáo khoa, Slide bài giảng, file Audio và phân phối tự động cho toàn bộ lớp High-level hoặc các lớp bạn phụ trách.
+              {isTeacher
+                ? "Tải lên Slide bài giảng, file Audio và phân phối tự động cho các lớp bạn đang giảng dạy theo Trình độ hoặc danh sách lớp chỉ định."
+                : isSchoolManager
+                ? "Tải lên tài liệu và phân phối cho các lớp thuộc trường học đối tác bạn đang quản nhiệm."
+                : "Tải lên Sách giáo khoa, Slide bài giảng, file Audio và phân phối tự động cho toàn bộ lớp High-level hoặc các lớp chỉ định."}
             </DialogDescription>
           </DialogHeader>
 
@@ -1507,7 +1605,7 @@ export function GlobalMaterialsView({
             )}
 
             {/* Chọn chế độ phân phối */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label className="text-xs font-bold text-slate-800">Phạm vi phân phối</Label>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -1519,8 +1617,20 @@ export function GlobalMaterialsView({
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  <b className="block">Theo Trình độ (VD: High Level)</b>
-                  <span className="text-[10px] text-slate-500 font-normal">Tự động nạp vào mọi lớp thuộc trình độ</span>
+                  <b className="block">
+                    {isTeacher
+                      ? "🌟 Theo Trình độ (Các lớp bạn dạy)"
+                      : isSchoolManager
+                      ? "🌟 Theo Trình độ (Trường quản nhiệm)"
+                      : "🌟 Theo Trình độ (Toàn trung tâm)"}
+                  </b>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    {isTeacher
+                      ? "Chỉ nạp vào các lớp thuộc trình độ này mà bạn đang giảng dạy"
+                      : isSchoolManager
+                      ? "Nạp vào các lớp thuộc trình độ trong trường bạn phụ trách"
+                      : "Tự động nạp vào mọi lớp thuộc trình độ trên toàn hệ thống"}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1531,24 +1641,151 @@ export function GlobalMaterialsView({
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  <b className="block">Chọn nhiều Lớp cụ thể</b>
-                  <span className="text-[10px] text-slate-500 font-normal">Tích chọn các lớp bạn đang phụ trách</span>
+                  <b className="block">
+                    {isTeacher
+                      ? "👥 Chọn nhiều Lớp bạn phụ trách"
+                      : isSchoolManager
+                      ? "👥 Chọn nhiều Lớp trường quản nhiệm"
+                      : "👥 Chọn nhiều Lớp học cụ thể"}
+                  </b>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    {isTeacher
+                      ? "Tích chọn cụ thể các lớp bạn đang giảng dạy"
+                      : isSchoolManager
+                      ? "Tích chọn các lớp thuộc trường bạn phụ trách"
+                      : "Tích chọn các lớp học cụ thể cần nhận tài liệu"}
+                  </span>
                 </button>
               </div>
+
+              {/* Tùy chọn các trình độ */}
+              {distributionMode === "BY_LEVEL" && (
+                <div className="space-y-1.5 p-3 rounded-xl border border-slate-200 bg-white">
+                  <Label className="text-[11px] font-bold text-slate-700">Tích chọn các Trình độ áp dụng:</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                    {LEVEL_OPTIONS.map((lvl) => {
+                      const isChecked = lvl.keywords.some((kw) => selectedLevels.includes(kw));
+                      return (
+                        <label
+                          key={lvl.code}
+                          className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition select-none ${
+                            isChecked
+                              ? "border-orange-300 bg-orange-50/60 font-semibold text-orange-950"
+                              : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              if (isChecked) {
+                                setSelectedLevels((prev) => prev.filter((k) => !lvl.keywords.includes(k)));
+                              } else {
+                                setSelectedLevels((prev) => [...prev, ...lvl.keywords]);
+                              }
+                            }}
+                            className="size-3.5 rounded accent-[#EA580C]"
+                          />
+                          <span className="truncate">{lvl.label.replace(/🌟 |📘 |📗 /g, "")}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Tùy chọn các lớp học cụ thể */}
+              {distributionMode === "BY_CLASSES" && (
+                <div className="space-y-1.5 p-3 rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] font-bold text-slate-700">
+                      {isTeacher
+                        ? "Tích chọn các lớp bạn đang phụ trách:"
+                        : isSchoolManager
+                        ? "Tích chọn các lớp trường quản nhiệm:"
+                        : "Tích chọn các lớp học nhận tài liệu:"}
+                    </Label>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClassIds(accessibleClasses.map((c) => c.id))}
+                        className="text-[#EA580C] font-semibold hover:underline"
+                      >
+                        Chọn tất cả ({accessibleClasses.length})
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClassIds([])}
+                        className="text-slate-500 font-semibold hover:underline"
+                      >
+                        Bỏ chọn
+                      </button>
+                    </div>
+                  </div>
+                  {accessibleClasses.length > 0 ? (
+                    <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg p-1">
+                      {accessibleClasses.map((cls) => {
+                        const isChecked = selectedClassIds.includes(cls.id);
+                        return (
+                          <label
+                            key={cls.id}
+                            className={`flex items-center justify-between p-2 rounded text-xs cursor-pointer select-none transition ${
+                              isChecked ? "bg-orange-50 font-semibold text-orange-950" : "hover:bg-slate-50 text-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  if (isChecked) {
+                                    setSelectedClassIds((prev) => prev.filter((id) => id !== cls.id));
+                                  } else {
+                                    setSelectedClassIds((prev) => [...prev, cls.id]);
+                                  }
+                                }}
+                                className="size-3.5 rounded accent-[#EA580C]"
+                              />
+                              <span>{cls.name}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">{cls.code}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-amber-600 p-2 bg-amber-50 rounded-lg">
+                      Bạn chưa được phân công phụ trách lớp học nào để phân phối.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Xem trước lớp nhận */}
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
               <span className="font-bold text-slate-800 block mb-1">
-                Lớp học sẽ nhận được tài liệu ({getTargetClassesCount()} lớp):
+                {isTeacher
+                  ? `Lớp học bạn phụ trách sẽ nhận được tài liệu (${getTargetClassesCount()} lớp):`
+                  : `Lớp học sẽ nhận được tài liệu (${getTargetClassesCount()} lớp):`}
               </span>
-              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                {targetClassesList.map((c) => (
-                  <span key={c.id} className="bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px] text-slate-700 font-medium">
-                    {c.name}
-                  </span>
-                ))}
-              </div>
+              {targetClassesList.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  {targetClassesList.map((c) => (
+                    <span key={c.id} className="bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px] text-slate-700 font-medium flex items-center gap-1">
+                      <Check className="size-3 text-emerald-600" />
+                      {c.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic">
+                  {isTeacher
+                    ? "Chưa có lớp nào bạn phụ trách phù hợp với điều kiện trên."
+                    : "Chưa có lớp học nào được chọn hoặc phù hợp với điều kiện trên."}
+                </p>
+              )}
             </div>
           </div>
 

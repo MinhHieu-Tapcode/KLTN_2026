@@ -691,53 +691,109 @@ export function SimpaceApp({
                 onRefreshAll={refreshAll}
               />
             )}
-            {view === "assignments-global" && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900">
-                      {currentUser.role === "STUDENT"
-                        ? "Bài tập & Đề thi cần hoàn thành"
-                        : "Trung tâm Quản lý Bài tập & Chấm điểm"}
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Chọn lớp học để xem danh sách bài tập, hạn nộp, chấm bài và theo dõi vi phạm chuyển tab.
-                    </p>
-                  </div>
-                </div>
+            {view === "assignments-global" && (() => {
+              const currentUid = currentUser?.id || currentUser?.userId;
+              const accessibleClassesForAssignments = classes.filter((c) => {
+                if (!c.isActive) return false;
+                if (!currentUser || currentUser.role === "ADMIN") return true;
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {classes.filter((c) => c.isActive).map((cls) => (
-                    <div
-                      key={cls.id}
-                      onClick={async () => {
-                        const detail = await getClassDetailAction(cls.id);
-                        setSelectedClass(detail || cls);
-                        setClassDetailTab("assignments");
-                        navigate("class-detail");
-                      }}
-                      className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-orange-300 hover:shadow-md cursor-pointer transition flex items-center justify-between group"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                            {cls.code}
-                          </span>
-                          <span className="text-xs text-[#EA580C] font-semibold">{cls.program}</span>
-                        </div>
-                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-[#EA580C] transition">
-                          {cls.name}
-                        </h4>
-                        <p className="text-xs text-slate-500">{cls.school?.name}</p>
-                      </div>
-                      <div className="size-10 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-[#EA580C] group-hover:text-white grid place-items-center transition">
-                        <FileText className="size-5" />
-                      </div>
+                if (currentUser.role === "SCHOOL_MANAGER") {
+                  return (
+                    c.school?.managerId === currentUid ||
+                    c.school?.manager?.id === currentUid ||
+                    c.school?.manager?.username === currentUser.username ||
+                    currentUser.managedSchools?.some((ms: any) => ms.id === c.schoolId)
+                  );
+                }
+
+                if (currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT") {
+                  return c.assignments?.some(
+                    (a: any) =>
+                      a.userId === currentUid ||
+                      a.staff?.id === currentUid ||
+                      (currentUser.username && a.staff?.username === currentUser.username) ||
+                      (currentUser.email && a.staff?.email === currentUser.email)
+                  );
+                }
+
+                if (currentUser.role === "STUDENT") {
+                  return c.enrollments?.some(
+                    (e: any) =>
+                      e.studentId === currentUid ||
+                      e.student?.id === currentUid ||
+                      (currentUser.username && e.student?.username === currentUser.username) ||
+                      (currentUser.email && e.student?.email === currentUser.email)
+                  );
+                }
+
+                return false;
+              });
+
+              return (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900">
+                        {currentUser.role === "STUDENT"
+                          ? "Bài tập & Đề thi cần hoàn thành"
+                          : currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT"
+                          ? "Quản lý Bài tập các Lớp bạn phụ trách"
+                          : "Trung tâm Quản lý Bài tập & Chấm điểm"}
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {currentUser.role === "STUDENT"
+                          ? "Chọn lớp học bạn đang theo học để làm bài trực tuyến, nộp bài tự luận và xem kết quả chấm điểm."
+                          : "Chọn lớp học để xem danh sách bài tập, hạn nộp, chấm bài và theo dõi vi phạm chuyển tab."}
+                      </p>
                     </div>
-                  ))}
+                  </div>
+
+                  {accessibleClassesForAssignments.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {accessibleClassesForAssignments.map((cls) => (
+                        <div
+                          key={cls.id}
+                          onClick={async () => {
+                            const detail = await getClassDetailAction(cls.id);
+                            setSelectedClass(detail || cls);
+                            setClassDetailTab("assignments");
+                            navigate("class-detail");
+                          }}
+                          className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-orange-300 hover:shadow-md cursor-pointer transition flex items-center justify-between group"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                                {cls.code}
+                              </span>
+                              <span className="text-xs text-[#EA580C] font-semibold">{cls.program}</span>
+                            </div>
+                            <h4 className="font-bold text-sm text-slate-900 group-hover:text-[#EA580C] transition">
+                              {cls.name}
+                            </h4>
+                            <p className="text-xs text-slate-500">{cls.school?.name}</p>
+                          </div>
+                          <div className="size-10 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-[#EA580C] group-hover:text-white grid place-items-center transition">
+                            <FileText className="size-5" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2">
+                      <p className="text-sm font-bold text-slate-700">
+                        {currentUser.role === "STUDENT"
+                          ? "Bạn chưa có bài tập trong lớp học nào."
+                          : "Bạn hiện chưa được phân công phụ trách lớp học nào."}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Vui lòng liên hệ Giáo vụ hoặc Quản trị viên để được phân quyền lớp học.
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
             {view === "import" && (
               <ImportPageView
                 onImportSuccess={() => {
