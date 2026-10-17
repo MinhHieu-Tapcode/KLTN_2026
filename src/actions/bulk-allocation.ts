@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { prisma, isDbAlive } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import * as XLSX from "xlsx";
 import { hashPassword } from "@/lib/auth";
@@ -14,6 +14,27 @@ function safeRevalidate(path: string) {
 }
 
 const RFC5322_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+const DEFAULT_IELTS_LEVELS = [
+  { id: "lvl-basic", code: "BASIC", name: "Cơ bản", minScore: 0.0, maxScore: 4.5, targetClassCount: 1, sortOrder: 1, isActive: true },
+  { id: "lvl-medium", code: "MEDIUM", name: "Trung bình", minScore: 4.5, maxScore: 6.5, targetClassCount: 2, sortOrder: 2, isActive: true },
+  { id: "lvl-advanced", code: "ADVANCED", name: "Nâng cao", minScore: 6.5, maxScore: 9.0, targetClassCount: 3, sortOrder: 3, isActive: true },
+];
+
+async function getAvailableIeltsLevels(): Promise<any[]> {
+  if (await isDbAlive()) {
+    try {
+      const levels = await prisma.ieltsLevel.findMany({
+        where: { isActive: true },
+        orderBy: { minScore: "asc" },
+      });
+      if (levels && levels.length > 0) return levels;
+    } catch (e) {
+      console.warn("[bulk-allocation] Failed to load levels from DB, using defaults:", e);
+    }
+  }
+  return DEFAULT_IELTS_LEVELS;
+}
 
 export interface ValidatedStudentRow {
   rowNumber: number;
@@ -86,18 +107,8 @@ export async function parseAndValidateBulkStudentsAction(fileBase64: string) {
       return { success: false, error: "Tệp Excel/CSV rỗng hoặc không có dòng dữ liệu hợp lệ!" };
     }
 
-    // Lấy cấu hình các trình độ IELTS hiện tại
-    const ieltsLevels = await prisma.ieltsLevel.findMany({
-      where: { isActive: true },
-      orderBy: { minScore: "asc" },
-    });
-
-    if (ieltsLevels.length === 0) {
-      return {
-        success: false,
-        error: "Hệ thống chưa có cấu hình Trình độ IELTS nào đang hoạt động! Vui lòng vào Cài đặt để thiết lập trước.",
-      };
-    }
+    // Lấy cấu hình các trình độ IELTS hiện tại (Hỗ trợ fallback an toàn)
+    const ieltsLevels = await getAvailableIeltsLevels();
 
     const header = rawRows[0].map((h: any) => (h ? String(h).trim().toLowerCase() : ""));
 
@@ -123,11 +134,23 @@ export async function parseAndValidateBulkStudentsAction(fileBase64: string) {
       };
     }
 
-    // Lấy danh sách email đã tồn tại trong DB để chống trùng lặp
-    const existingUsers = await prisma.user.findMany({
-      select: { email: true },
-    });
-    const existingEmailSet = new Set(existingUsers.map((u) => u.email.toLowerCase()));
+    // Lấy danh sách email đã tồn tại trong DB / Memory để chống trùng lặp
+    const existingEmailSet = new Set<string>();
+    if (await isDbAlive()) {
+      try {
+        const existingUsers = await prisma.user.findMany({
+          select: { email: true },
+        });
+        existingUsers.forEach((u) => existingEmailSet.add(u.email.toLowerCase()));
+      } catch (e) {
+        console.warn("[parseAndValidateBulkStudentsAction] Fallback to memory emails:", e);
+      }
+    } else {
+      const demoUsers = (globalThis as any).demoUsers || [];
+      demoUsers.forEach((u: any) => {
+        if (u.email) existingEmailSet.add(u.email.toLowerCase());
+      });
+    }
 
     const validRows: ValidatedStudentRow[] = [];
     const invalidRows: InvalidStudentRow[] = [];
@@ -321,15 +344,23 @@ export async function generateBulkClassSuggestionAction(
   classCountOverrides?: Record<string, number>
 ) {
   try {
-    const levels = await prisma.ieltsLevel.findMany({
-      where: { isActive: true },
-      orderBy: { minScore: "asc" },
-    });
+    const levels = await getAvailableIeltsLevels();
 
     let schoolCode = "TD";
     if (schoolId) {
-      const school = await prisma.school.findUnique({ where: { id: schoolId } });
-      if (school) schoolCode = school.code.replace(/[^a-zA-Z0-9]/g, "");
+      if (await isDbAlive()) {
+        try {
+          const school = await prisma.school.findUnique({ where: { id: schoolId } });
+          if (school) schoolCode = school.code.replace(/[^a-zA-Z0-9]/g, "");
+        } catch {}
+      } else {
+        const demoSchools = (globalThis as any).demoSchools || [
+          { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định" },
+          { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên" },
+        ];
+        const sch = demoSchools.find((s: any) => s.id === schoolId);
+        if (sch) schoolCode = sch.code.replace(/[^a-zA-Z0-9]/g, "");
+      }
     }
 
     // Nhóm học sinh theo level
@@ -516,6 +547,122 @@ export async function commitBulkAllocationAction(
   fileName: string = "import_ielts.xlsx"
 ) {
   try {
+    // 1. Nếu Database offline -> Lưu trực tiếp vào in-memory store nhất quán
+    if (!(await isDbAlive())) {
+      const globalStore = globalThis as any;
+      if (!globalStore.demoUsers) globalStore.demoUsers = [];
+      if (!globalStore.demoClasses) globalStore.demoClasses = [];
+      const demoSchools = globalStore.demoSchools || [
+        { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định" },
+        { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên" },
+      ];
+      const school = demoSchools.find((s: any) => s.id === schoolId) || demoSchools[0] || {
+        id: schoolId,
+        code: "SCH_TD",
+        name: "Trường đối tác",
+      };
+
+      const createdUsersSummary: { email: string; fullName: string; username: string; className: string }[] = [];
+      let currentStudentCount = globalStore.demoUsers.filter((u: any) => u.role?.code === "STUDENT").length;
+
+      for (const plan of plans) {
+        for (const propClass of plan.classes) {
+          if (propClass.students.length === 0) continue;
+
+          let classRecord = globalStore.demoClasses.find((c: any) => c.code === propClass.code);
+          if (!classRecord) {
+            classRecord = {
+              id: `class-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              schoolId: school.id,
+              code: propClass.code,
+              name: propClass.name,
+              program: "IELTS",
+              level: plan.levelName,
+              ieltsLevelId: plan.levelId,
+              capacity: propClass.capacity,
+              status: "ACTIVE",
+              isActive: true,
+              school: { id: school.id, name: school.name, code: school.code },
+              assignments: [],
+              enrollments: [],
+              _count: { enrollments: 0 },
+            };
+            globalStore.demoClasses.push(classRecord);
+          }
+
+          for (const student of propClass.students) {
+            currentStudentCount++;
+            let username = `HV${(1000 + currentStudentCount).toString()}`;
+            while (globalStore.demoUsers.some((u: any) => u.username === username)) {
+              currentStudentCount++;
+              username = `HV${(1000 + currentStudentCount).toString()}`;
+            }
+
+            const cleanEmail = student.email.trim().toLowerCase();
+            const enrollmentId = `en-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const newStudentUser: any = {
+              id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              username,
+              email: cleanEmail,
+              role: { code: "STUDENT", name: "Học viên" },
+              isActive: true,
+              profile: {
+                fullName: student.fullName.trim(),
+                phoneNumber: student.phoneNumber || null,
+                dateOfBirth: student.dateOfBirth ? new Date(student.dateOfBirth) : null,
+                gender: student.gender || null,
+                entryIeltsScore: student.ieltsScore,
+                ieltsLevel: { id: plan.levelId, name: plan.levelName, code: plan.levelCode },
+              },
+              classAssignments: [],
+              classEnrollments: [
+                {
+                  id: enrollmentId,
+                  classId: classRecord.id,
+                  class: {
+                    id: classRecord.id,
+                    name: classRecord.name,
+                    code: classRecord.code,
+                    school: { id: school.id, name: school.name, code: school.code },
+                  },
+                },
+              ],
+              managedSchools: [],
+            };
+
+            globalStore.demoUsers.unshift(newStudentUser);
+            if (!classRecord.enrollments) classRecord.enrollments = [];
+            classRecord.enrollments.push({
+              id: enrollmentId,
+              studentId: newStudentUser.id,
+              status: "STUDYING",
+              student: newStudentUser,
+            });
+            classRecord._count = { enrollments: classRecord.enrollments.length };
+
+            createdUsersSummary.push({
+              email: cleanEmail,
+              fullName: student.fullName,
+              username,
+              className: classRecord.name,
+            });
+          }
+        }
+      }
+
+      safeRevalidate("/users");
+      safeRevalidate("/classes");
+      safeRevalidate("/schools");
+
+      return {
+        success: true,
+        createdCount: createdUsersSummary.length,
+        createdClassesCount: plans.reduce((acc, p) => acc + p.classes.length, 0),
+        summary: createdUsersSummary,
+      };
+    }
+
+    // 2. Database online -> Lưu an toàn vào PostgreSQL Transaction
     const studentRole = await prisma.role.findUnique({ where: { code: "STUDENT" } });
     if (!studentRole) {
       return { success: false, error: "Không tìm thấy vai trò STUDENT trong hệ thống!" };
@@ -533,12 +680,23 @@ export async function commitBulkAllocationAction(
 
     // Chạy trong Transaction đảm bảo tính nguyên tử (Atomicity)
     await prisma.$transaction(async (tx) => {
-      // 1. Xác định số học sinh hiện tại để sinh mã tuần tự HV1001+
+      // Xác định số học sinh hiện tại để sinh mã tuần tự HV1001+
       let currentStudentCount = await tx.user.count({
         where: { role: { code: "STUDENT" } },
       });
 
       for (const plan of plans) {
+        // Tìm levelId hợp lệ trong DB để tránh Foreign Key Violation nếu id là fallback string
+        const matchedDbLevel = await tx.ieltsLevel.findFirst({
+          where: {
+            OR: [
+              { id: plan.levelId },
+              { code: plan.levelCode as any },
+            ],
+          },
+        }).catch(() => null);
+        const validDbLevelId = matchedDbLevel ? matchedDbLevel.id : null;
+
         for (const propClass of plan.classes) {
           if (propClass.students.length === 0) continue;
 
@@ -555,7 +713,7 @@ export async function commitBulkAllocationAction(
                 name: propClass.name,
                 program: "IELTS",
                 level: plan.levelName,
-                ieltsLevelId: plan.levelId,
+                ieltsLevelId: validDbLevelId,
                 capacity: propClass.capacity,
                 status: "ACTIVE",
                 isActive: true,
@@ -589,8 +747,7 @@ export async function commitBulkAllocationAction(
                     dateOfBirth: student.dateOfBirth ? new Date(student.dateOfBirth) : null,
                     gender: student.gender || null,
                     entryIeltsScore: student.ieltsScore,
-                    ieltsLevelId: plan.levelId,
-                    // BỎ trường address theo yêu cầu
+                    ieltsLevelId: validDbLevelId,
                   },
                 },
               },
@@ -617,15 +774,17 @@ export async function commitBulkAllocationAction(
 
       // Lưu nhật ký Import
       const adminUser = await tx.user.findFirst({ where: { role: { code: "ADMIN" } } });
-      await tx.importLog.create({
-        data: {
-          importedById: adminUser?.id || "",
-          fileName,
-          totalRows: createdUsersSummary.length,
-          successCount: createdUsersSummary.length,
-          errorCount: 0,
-        },
-      });
+      if (adminUser) {
+        await tx.importLog.create({
+          data: {
+            importedById: adminUser.id,
+            fileName,
+            totalRows: createdUsersSummary.length,
+            successCount: createdUsersSummary.length,
+            errorCount: 0,
+          },
+        }).catch(() => null);
+      }
     });
 
     // Gửi email thông báo tài khoản cho học sinh mới (không hiển thị pass cho admin)

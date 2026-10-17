@@ -2,6 +2,7 @@
 
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { isSchoolManager, isStudent, isTeacherOrTA } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
 import { areSchedulesConflicting } from "@/lib/schedule";
@@ -126,11 +127,11 @@ export async function getClassesAction(
   }
 
   // Quản nhiệm CHỈ ĐƯỢC XEM lớp thuộc trường mình phụ trách (BUG_03)
-  if (session?.role === "SCHOOL_MANAGER") {
+  if (isSchoolManager(session)) {
     whereClause.school = { managerId: session.userId };
-  } else if (session?.role === "TEACHER" || session?.role === "TEACHING_ASSISTANT") {
+  } else if (isTeacherOrTA(session)) {
     whereClause.assignments = { some: { userId: session.userId } };
-  } else if (session?.role === "STUDENT") {
+  } else if (isStudent(session)) {
     whereClause.enrollments = { some: { studentId: session.userId } };
   }
 

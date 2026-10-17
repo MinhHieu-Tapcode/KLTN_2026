@@ -2,6 +2,8 @@
 
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { checkAuth } from "@/lib/permissions";
+import { isAnswerCorrect, isObjectiveOnly as allObjective, isObjectiveType } from "@/lib/grading";
 import { revalidatePath } from "next/cache";
 import {
   AssignmentSkill,
@@ -143,9 +145,9 @@ export async function getClassAssignmentsAction(classId: string) {
     return { success: true, assignments: list };
   }
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Bạn chưa đăng nhập!", assignments: [] };
+    const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error, assignments: [] };
     }
 
     const assignments = await prisma.assignment.findMany({
@@ -216,10 +218,11 @@ export async function getAssignmentDetailAction(assignmentId: string) {
     return { success: true, assignment: found };
   }
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Bạn chưa đăng nhập!" };
+    const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { session } = auth;
 
     const assignment = await prisma.assignment.findUnique({
       where: { id: assignmentId },
@@ -335,10 +338,11 @@ export async function createAssignmentAction(data: {
   }>;
 }) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Vui lòng đăng nhập để thực hiện!" };
+    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { session } = auth;
 
     if (!data.title || !data.title.trim()) {
       return { success: false, error: "Tiêu đề bài tập không được để trống!" };
@@ -460,9 +464,9 @@ export async function createAssignmentAction(data: {
  * Xóa mềm Bài tập
  */
 export async function deleteAssignmentAction(assignmentId: string) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để thực hiện!" };
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
 
   if (!(await isDbAlive())) {
@@ -492,9 +496,9 @@ export async function deleteAssignmentAction(assignmentId: string) {
  */
 export async function parseIeltsExamAction(formData: FormData) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Vui lòng đăng nhập!" };
+    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
 
     const title = formData.get("title")?.toString().trim() || "Bài tập IELTS Bóc tách";
@@ -1292,10 +1296,11 @@ export async function submitAssignmentAction(data: {
   autoSubmittedReason?: string;
 }) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Vui lòng đăng nhập để nộp bài!" };
+    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để nộp bài!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { session } = auth;
 
     if (!(await isDbAlive())) {
       const assign = (globalAssignmentsStore.demoAssignments || []).find(
@@ -1315,14 +1320,8 @@ export async function submitAssignmentAction(data: {
         let isCorrect: boolean | null = null;
         let awardedPoints = 0;
 
-        if (
-          q?.type === "MULTIPLE_CHOICE" ||
-          q?.type === "TRUE_FALSE_NG" ||
-          q?.type === "FILL_IN_BLANK"
-        ) {
-          const cleanCorrect = (q.correctAnswer || "").trim().toLowerCase();
-          const cleanStudent = (ans.studentAnswer || "").trim().toLowerCase();
-          isCorrect = cleanCorrect === cleanStudent && cleanCorrect.length > 0;
+        if (isObjectiveType(q?.type)) {
+          isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
           awardedPoints = isCorrect ? pts : 0;
           totalScore += awardedPoints;
         }
@@ -1344,12 +1343,7 @@ export async function submitAssignmentAction(data: {
         };
       });
 
-      const isObjectiveOnly = (assign.questions || []).every(
-        (q: any) =>
-          q.type === "MULTIPLE_CHOICE" ||
-          q.type === "TRUE_FALSE_NG" ||
-          q.type === "FILL_IN_BLANK"
-      );
+      const isObjectiveOnly = allObjective(assign.questions || []);
 
       const isCheating = Boolean(
         data.isCheatingFlagged || (data.tabSwitchCount > (assign.maxTabSwitches || 3))
@@ -1421,14 +1415,8 @@ export async function submitAssignmentAction(data: {
       let awardedPoints = 0;
 
       // Trắc nghiệm & Điền từ: Tự động so sánh đáp án
-      if (
-        q.type === "MULTIPLE_CHOICE" ||
-        q.type === "TRUE_FALSE_NG" ||
-        q.type === "FILL_IN_BLANK"
-      ) {
-        const cleanCorrect = (q.correctAnswer || "").trim().toLowerCase();
-        const cleanStudent = (ans.studentAnswer || "").trim().toLowerCase();
-        isCorrect = cleanCorrect === cleanStudent && cleanCorrect.length > 0;
+      if (isObjectiveType(q.type)) {
+        isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
         awardedPoints = isCorrect ? q.points : 0;
         totalScore += awardedPoints;
       } else {
@@ -1454,12 +1442,7 @@ export async function submitAssignmentAction(data: {
       },
     });
 
-    const isObjectiveOnly = assignment.questions.every(
-      (q) =>
-        q.type === "MULTIPLE_CHOICE" ||
-        q.type === "TRUE_FALSE_NG" ||
-        q.type === "FILL_IN_BLANK"
-    );
+    const isObjectiveOnly = allObjective(assignment.questions);
 
     const submission = await prisma.assignmentSubmission.create({
       data: {
@@ -1498,9 +1481,9 @@ export async function submitAssignmentAction(data: {
  */
 export async function getSubmissionsForAssignmentAction(assignmentId: string) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Vui lòng đăng nhập!", submissions: [] };
+    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error, submissions: [] };
     }
 
     if (!(await isDbAlive())) {
@@ -1587,10 +1570,11 @@ export async function gradeSubmissionAction(data: {
   teacherFeedback?: string;
 }) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Vui lòng đăng nhập để chấm bài!" };
+    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để chấm bài!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { session } = auth;
 
     if (!(await isDbAlive())) {
       let calculatedTotalScore = 0;

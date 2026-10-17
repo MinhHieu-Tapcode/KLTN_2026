@@ -2,6 +2,7 @@
 
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { isSchoolManager } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { areSchedulesConflicting } from "@/lib/schedule";
 
@@ -80,7 +81,7 @@ export async function getSchoolsAction(
     }
 
     // Quản nhiệm CHỈ ĐƯỢC XEM trường mình phụ trách (BUG_02)
-    if (session?.role === "SCHOOL_MANAGER") {
+    if (isSchoolManager(session)) {
       whereClause.managerId = session.userId;
     }
 

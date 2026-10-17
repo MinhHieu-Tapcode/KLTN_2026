@@ -4,7 +4,8 @@ import { prisma, isDbAlive } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { RoleCode } from "@prisma/client";
 
-import { DEFAULT_PERMISSIONS } from "@/lib/permissions";
+import { DEFAULT_PERMISSIONS, hasFeatureAccess, isAdmin } from "@/lib/permissions";
+import { getSession } from "@/lib/auth";
 
 export async function getSystemPermissionsAction() {
   if (!(await isDbAlive())) {
@@ -50,16 +51,17 @@ export async function getSystemPermissionsAction() {
   }
 }
 
-import { getSession } from "@/lib/auth";
-
 async function verifySettingsAccess() {
   const session = await getSession();
   if (!session) return false;
-  if (session.role === "ADMIN") return true;
+  if (isAdmin(session)) return true;
+  if (!(await isDbAlive())) {
+    return hasFeatureAccess(session, "SYSTEM_SETTINGS");
+  }
   const perm = await prisma.systemPermission.findUnique({
     where: { featureKey: "SYSTEM_SETTINGS" },
   });
-  return !!perm?.allowedRoles.includes(session.role as RoleCode);
+  return hasFeatureAccess(session, "SYSTEM_SETTINGS", perm?.allowedRoles);
 }
 
 export async function updateSystemPermissionAction(

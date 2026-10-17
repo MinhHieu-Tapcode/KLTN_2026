@@ -8,6 +8,7 @@ import {
   createSessionToken,
   setSessionCookie,
 } from "@/lib/auth";
+import { isAdmin, isSchoolManager } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import * as XLSX from "xlsx";
 import { RoleCode, Gender, StaffClassRole } from "@prisma/client";
@@ -19,41 +20,130 @@ function safeRevalidate(path: string) {
   } catch {}
 }
 
-const DEMO_USERS_LIST = [
-  {
-    id: "admin-demo-id",
-    username: "admin",
-    email: "admin@simpace.vn",
-    role: { code: "ADMIN", name: "Quản trị viên" },
-    profile: { fullName: "Quản trị viên Hệ thống", phoneNumber: "0987654321" },
-    isActive: true,
-    classAssignments: [],
-    classEnrollments: [],
-    managedSchools: [],
-  },
-  {
-    id: "demo-staff-1",
-    username: "teacher_huong",
-    email: "teacher@simpace.vn",
-    role: { code: "TEACHER", name: "Giáo viên giảng dạy" },
-    profile: { fullName: "Cô Nguyễn Thu Hường", phoneNumber: "0912345678" },
-    isActive: true,
-    classAssignments: [],
-    classEnrollments: [],
-    managedSchools: [],
-  },
-  {
-    id: "demo-student-1",
-    username: "student_an",
-    email: "student@simpace.vn",
-    role: { code: "STUDENT", name: "Học viên" },
-    profile: { fullName: "Nguyễn Văn An", phoneNumber: "0934567890", entryIeltsScore: 6.0 },
-    isActive: true,
-    classAssignments: [],
-    classEnrollments: [],
-    managedSchools: [],
-  },
-];
+const globalUsersStore = globalThis as unknown as {
+  demoUsers?: any[];
+};
+
+if (!globalUsersStore.demoUsers) {
+  globalUsersStore.demoUsers = [
+    {
+      id: "admin-demo-id",
+      username: "admin",
+      email: "admin@simpace.vn",
+      role: { code: "ADMIN", name: "Quản trị viên" },
+      profile: { fullName: "Quản trị viên Hệ thống", phoneNumber: "0987654321" },
+      isActive: true,
+      classAssignments: [],
+      classEnrollments: [],
+      managedSchools: [],
+    },
+    {
+      id: "demo-staff-1",
+      username: "teacher_huong",
+      email: "teacher@simpace.vn",
+      role: { code: "TEACHER", name: "Giáo viên giảng dạy" },
+      profile: { fullName: "Cô Nguyễn Thu Hường", phoneNumber: "0912345678" },
+      isActive: true,
+      classAssignments: [
+        {
+          id: "as-1",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      classEnrollments: [],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-1",
+      username: "HV1001",
+      email: "student@simpace.vn",
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Nguyễn Văn An",
+        phoneNumber: "0934567890",
+        entryIeltsScore: 6.0,
+        ieltsLevel: { id: "lvl-medium", name: "Trung bình", code: "MEDIUM" },
+      },
+      isActive: true,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-0",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "st-1",
+      username: "HV1002",
+      email: "lan.tran@gmail.com",
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Trần Thị Lan",
+        phoneNumber: "0912345671",
+        entryIeltsScore: 5.5,
+        ieltsLevel: { id: "lvl-medium", name: "Trung bình", code: "MEDIUM" },
+      },
+      isActive: true,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-1",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "st-2",
+      username: "HV1003",
+      email: "long.le@gmail.com",
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Lê Hoàng Long",
+        phoneNumber: "0912345672",
+        entryIeltsScore: 6.5,
+        ieltsLevel: { id: "lvl-advanced", name: "Nâng cao", code: "ADVANCED" },
+      },
+      isActive: true,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-2",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_KL_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-2", name: "THPT Kim Liên", code: "SCH_KL" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+  ];
+}
+
+const DEMO_USERS_LIST = globalUsersStore.demoUsers;
 
 // Chuẩn Regex RFC 5322 kiểm tra email hợp lệ bắt buộc có TLD
 const RFC5322_EMAIL_REGEX =
@@ -71,7 +161,15 @@ const ROLE_PREFIX_MAP: Record<RoleCode, string> = {
 export async function generateUserCode(roleCode: RoleCode): Promise<string> {
   if (!(await isDbAlive())) {
     const prefix = ROLE_PREFIX_MAP[roleCode] || "ND";
-    return `${prefix}1001`;
+    const store = globalUsersStore.demoUsers || [];
+    const count = store.filter((u: any) => u.role?.code === roleCode).length;
+    let nextNum = 1001 + count;
+    let candidate = `${prefix}${nextNum}`;
+    while (store.some((u: any) => u.username === candidate)) {
+      nextNum++;
+      candidate = `${prefix}${nextNum}`;
+    }
+    return candidate;
   }
   const prefix = ROLE_PREFIX_MAP[roleCode] || "ND";
   const count = await prisma.user.count({
@@ -100,7 +198,33 @@ export async function getUsersAction(
   statusFilter: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
 ) {
   if (!(await isDbAlive())) {
-    return DEMO_USERS_LIST as any;
+    let list = (globalUsersStore.demoUsers || []) as any[];
+    if (statusFilter === "ACTIVE") list = list.filter((u) => u.isActive);
+    else if (statusFilter === "INACTIVE") list = list.filter((u) => !u.isActive);
+
+    const roleMap: Record<string, RoleCode> = {
+      "Quản trị viên": "ADMIN",
+      "Quản nhiệm": "SCHOOL_MANAGER",
+      "Giáo viên": "TEACHER",
+      "Trợ giảng": "TEACHING_ASSISTANT",
+      "Học sinh": "STUDENT",
+    };
+    if (roleFilter !== "Tất cả" && roleMap[roleFilter]) {
+      const targetRole = roleMap[roleFilter];
+      list = list.filter((u) => u.role?.code === targetRole);
+    }
+
+    if (searchKeyword && searchKeyword.trim()) {
+      const q = searchKeyword.trim().toLowerCase();
+      list = list.filter(
+        (u) =>
+          u.username?.toLowerCase().includes(q) ||
+          u.email?.toLowerCase().includes(q) ||
+          u.profile?.fullName?.toLowerCase().includes(q) ||
+          u.profile?.phoneNumber?.toLowerCase().includes(q)
+      );
+    }
+    return list;
   }
   const session = await getSession();
   const whereClause: any = {};
@@ -113,7 +237,7 @@ export async function getUsersAction(
   }
 
   // 1. Kiểm soát phân quyền Quản nhiệm (Strict Scoping - BUG_01)
-  if (session?.role === "SCHOOL_MANAGER") {
+  if (isSchoolManager(session)) {
     const managedSchools = await prisma.school.findMany({
       where: { managerId: session.userId, isActive: true },
       select: { id: true },
@@ -302,14 +426,6 @@ export async function createUserAction(data: {
       };
     }
 
-    const role = await prisma.role.findUnique({
-      where: { code: data.roleCode },
-    });
-
-    if (!role) {
-      return { success: false, error: `Vai trò ${data.roleCode} không hợp lệ!` };
-    }
-
     if (data.roleCode === "SCHOOL_MANAGER" && (!data.schoolIds || data.schoolIds.filter(Boolean).length === 0)) {
       return { success: false, error: "Quản nhiệm bắt buộc phải được phân công ít nhất 1 trường học phụ trách!" };
     }
@@ -319,8 +435,110 @@ export async function createUserAction(data: {
     if (data.roleCode === "TEACHING_ASSISTANT" && (!data.classIds || data.classIds.filter(Boolean).length === 0)) {
       return { success: false, error: "Trợ giảng bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!" };
     }
-    if (data.roleCode === "STUDENT" && (!data.classIds || data.classIds.filter(Boolean).length === 0)) {
-      return { success: false, error: "Học sinh bắt buộc phải được ghi danh vào ít nhất 1 lớp học!" };
+
+    // Nếu DB offline -> Tạo người dùng vào in-memory store an toàn
+    if (!(await isDbAlive())) {
+      const globalStore = globalThis as any;
+      if (!globalStore.demoUsers) globalStore.demoUsers = [];
+      const roleMap: Record<string, string> = {
+        ADMIN: "Quản trị viên",
+        SCHOOL_MANAGER: "Quản nhiệm",
+        TEACHER: "Giáo viên",
+        TEACHING_ASSISTANT: "Trợ giảng",
+        STUDENT: "Học sinh",
+      };
+
+      const existing = globalStore.demoUsers.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+      if (existing && existing.isActive) {
+        return { success: false, error: `Email '${data.email}' đã tồn tại và đang hoạt động trong hệ thống!` };
+      }
+
+      const nextCount = globalStore.demoUsers.filter((u: any) => u.role?.code === data.roleCode).length + 1;
+      const prefix = ROLE_PREFIX_MAP[data.roleCode] || "ND";
+      let username = `${prefix}${(1000 + nextCount).toString()}`;
+      while (globalStore.demoUsers.some((u: any) => u.username === username)) {
+        username = `${prefix}${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      const demoClasses = globalStore.demoClasses || [];
+      const assignedEnrollments: any[] = [];
+      const assignedStaffClasses: any[] = [];
+      if (data.classIds && data.classIds.length > 0) {
+        for (const cId of data.classIds) {
+          const cls = demoClasses.find((c: any) => c.id === cId);
+          if (cls) {
+            if (data.roleCode === "STUDENT") {
+              assignedEnrollments.push({
+                id: `en-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                classId: cls.id,
+                class: {
+                  id: cls.id,
+                  name: cls.name,
+                  code: cls.code,
+                  school: cls.school || { name: "Trường đối tác" },
+                },
+              });
+            } else {
+              assignedStaffClasses.push({
+                id: `as-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                classId: cls.id,
+                class: {
+                  id: cls.id,
+                  name: cls.name,
+                  code: cls.code,
+                  school: cls.school || { name: "Trường đối tác" },
+                },
+              });
+            }
+          }
+        }
+      }
+
+      const demoSchools = globalStore.demoSchools || [];
+      const managedSchools: any[] = [];
+      if (data.schoolIds && data.schoolIds.length > 0) {
+        for (const sId of data.schoolIds) {
+          const sch = demoSchools.find((s: any) => s.id === sId);
+          if (sch) managedSchools.push(sch);
+        }
+      }
+
+      const newUser: any = {
+        id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        username,
+        email: cleanEmail,
+        role: { code: data.roleCode, name: roleMap[data.roleCode] || data.roleCode },
+        isActive: true,
+        profile: {
+          fullName: data.fullName.trim(),
+          phoneNumber: data.phoneNumber || null,
+          address: data.roleCode === "STUDENT" ? null : (data.address || null),
+          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+          gender: data.gender || null,
+          entryIeltsScore: data.entryIeltsScore !== undefined ? Number(data.entryIeltsScore) : null,
+          ieltsLevelId: data.ieltsLevelId || null,
+        },
+        classAssignments: assignedStaffClasses,
+        classEnrollments: assignedEnrollments,
+        managedSchools,
+      };
+
+      globalStore.demoUsers.unshift(newUser);
+      safeRevalidate("/users");
+
+      return {
+        success: true,
+        user: newUser,
+        mailResult: { sent: true },
+      };
+    }
+
+    const role = await prisma.role.findUnique({
+      where: { code: data.roleCode },
+    });
+
+    if (!role) {
+      return { success: false, error: `Vai trò ${data.roleCode} không hợp lệ!` };
     }
 
     const defaultPassword = "Simpace@2026";
@@ -652,7 +870,7 @@ export async function deleteUserAction(id: string) {
       return { success: false, error: "Tài khoản không tồn tại!" };
     }
 
-    if (targetUser.role?.code === "ADMIN" && session?.role !== "ADMIN") {
+    if (targetUser.role?.code === "ADMIN" && !isAdmin(session)) {
       return { success: false, error: "Bạn không có quyền xóa tài khoản Quản trị viên!" };
     }
 

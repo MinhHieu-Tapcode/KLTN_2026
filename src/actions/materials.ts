@@ -2,6 +2,13 @@
 
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import {
+  checkAuth,
+  checkNotStudent,
+  isAdmin,
+  isSchoolManager,
+  isTeacherOrTA,
+} from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { MaterialType } from "@prisma/client";
 
@@ -184,9 +191,9 @@ export async function getMaterialFoldersAction(params: {
     return { success: true, folders };
   }
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Bạn chưa đăng nhập!", folders: [] };
+    const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error, folders: [] };
     }
 
     const whereClause: any = {
@@ -287,10 +294,11 @@ export async function createMaterialFolderAction(data: {
   ieltsLevelId?: string;
   parentId?: string | null;
 }) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để thực hiện!" };
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
+  const { session } = auth;
 
   if (!data.name || !data.name.trim()) {
     return { success: false, error: "Tên thư mục không được để trống!" };
@@ -340,9 +348,9 @@ export async function createMaterialFolderAction(data: {
  * Xóa mềm Thư mục học liệu
  */
 export async function deleteMaterialFolderAction(folderId: string) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để thực hiện!" };
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
 
   if (!(await isDbAlive())) {
@@ -387,9 +395,9 @@ export async function getLearningMaterialsAction(folderId: string) {
     return { success: true, materials };
   }
   try {
-    const session = await getSession();
-    if (!session) {
-      return { success: false, error: "Bạn chưa đăng nhập!", materials: [] };
+    const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error, materials: [] };
     }
 
     const materials = await prisma.learningMaterial.findMany({
@@ -434,10 +442,11 @@ export async function uploadLearningMaterialAction(data: {
   fileUrl: string;
   mimeType?: string;
 }) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để tải lên tài liệu!" };
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để tải lên tài liệu!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
+  const { session } = auth;
 
   if (!data.folderId || !data.title || !data.fileUrl) {
     return { success: false, error: "Thông tin tài liệu không hợp lệ!" };
@@ -493,9 +502,9 @@ export async function uploadLearningMaterialAction(data: {
  * Xóa mềm Tài liệu
  */
 export async function deleteLearningMaterialAction(materialId: string) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để thực hiện!" };
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
 
   if (!(await isDbAlive())) {
@@ -534,10 +543,11 @@ export async function uploadMultipleLearningMaterialsAction(data: {
     mimeType?: string;
   }>;
 }) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để tải lên tài liệu!" };
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để tải lên tài liệu!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
+  const { session } = auth;
 
   if (!data.folderId || !data.materials || data.materials.length === 0) {
     return { success: false, error: "Danh sách tài liệu tải lên không hợp lệ!" };
@@ -605,9 +615,9 @@ export async function updateLearningMaterialAction(data: {
   title: string;
   fileType?: "PDF" | "AUDIO" | "DOCUMENT" | "VIDEO" | "OTHER";
 }) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để thực hiện!" };
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
 
   if (!(await isDbAlive())) {
@@ -677,18 +687,18 @@ export async function distributeLearningMaterialsAction(data: {
     mimeType?: string;
   }>;
 }) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để thực hiện phân phối học liệu!" };
+  const auth = checkNotStudent(
+    await getSession(),
+    "Học viên không có quyền phân phối học liệu vào các lớp học!",
+    "Vui lòng đăng nhập để thực hiện phân phối học liệu!"
+  );
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
+  const { session } = auth;
 
-  // KIỂM SOÁT PHÂN QUYỀN RBAC CHẶT CHẼ
-  if (session.role === "STUDENT") {
-    return { success: false, error: "Học viên không có quyền phân phối học liệu vào các lớp học!" };
-  }
-
-  const isTeacher = session.role === "TEACHER" || session.role === "TEACHING_ASSISTANT";
-  const isSchoolManager = session.role === "SCHOOL_MANAGER";
+  const isTeacher = isTeacherOrTA(session);
+  const isManager = isSchoolManager(session);
 
   if (!data.materials || data.materials.length === 0) {
     return { success: false, error: "Danh sách tài liệu phân phối không được để trống!" };
@@ -737,7 +747,7 @@ export async function distributeLearningMaterialsAction(data: {
             (session.email && a.staff?.email === session.email)
         )
       );
-    } else if (isSchoolManager) {
+    } else if (isManager) {
       targetClasses = targetClasses.filter(
         (c: any) => c.school?.managerId === session.userId
       );
@@ -812,7 +822,7 @@ export async function distributeLearningMaterialsAction(data: {
     // Phân quyền dữ liệu theo vai trò chặt chẽ
     if (isTeacher) {
       whereClause.assignments = { some: { userId: session.userId } };
-    } else if (isSchoolManager) {
+    } else if (isManager) {
       whereClause.school = { managerId: session.userId };
     }
 
@@ -930,22 +940,22 @@ export async function uploadCoursebookPackageAction(data: {
   }>;
   audioFolderName?: string;
 }) {
-  const session = await getSession();
-  if (!session) {
-    return { success: false, error: "Vui lòng đăng nhập để tải gói sách giáo khoa!" };
+  const auth = checkNotStudent(
+    await getSession(),
+    "Học viên không có quyền tải gói sách giáo khoa!",
+    "Vui lòng đăng nhập để tải gói sách giáo khoa!"
+  );
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
+  const { session } = auth;
 
   // Chỉ Quản trị viên mới được nạp giáo trình chuẩn vào Kho Trình độ dùng chung toàn trung tâm
-  if (data.targetType === "LEVEL" && session.role !== "ADMIN") {
+  if (data.targetType === "LEVEL" && !isAdmin(session)) {
     return {
       success: false,
       error: "Chỉ Quản trị viên (ADMIN) mới có quyền nạp giáo trình chuẩn vào Kho Trình độ dùng chung toàn trung tâm!",
     };
-  }
-
-  // Giáo viên chỉ được nạp gói sách vào các lớp mình phụ trách
-  if (session.role === "STUDENT") {
-    return { success: false, error: "Học viên không có quyền tải gói sách giáo khoa!" };
   }
 
   if (!data.packageTitle || !data.packageTitle.trim()) {
