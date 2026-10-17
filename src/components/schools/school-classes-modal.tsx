@@ -1,11 +1,17 @@
 "use client";
 
 import React, { useState, useEffect, useTransition } from "react";
-import { BookOpen, Building2, Edit2, Plus, Search, Trash2, Users, X, Loader2, ArrowRightLeft } from "lucide-react";
+import { BookOpen, Building2, Edit2, Plus, Trash2, Users, Loader2, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { enrollStudentToClassAction, removeStudentFromClassAction, transferStudentClassAction, getSchoolClassesWithStudentsAction, getEligibleSchoolStudentsForClassAction } from "@/actions/classes";
-import { ConfirmDialog } from "@/components/shared/common-widgets";
+import {
+  enrollStudentToClassAction,
+  removeStudentFromClassAction,
+  transferStudentClassAction,
+  getSchoolClassesWithStudentsAction,
+  getEligibleSchoolStudentsForClassAction,
+} from "@/actions/classes";
+import { SchoolClassSubmodals } from "./school-class-submodals";
 
 export function SchoolClassesModal({
   school,
@@ -28,7 +34,6 @@ export function SchoolClassesModal({
   const [isPending, startTransition] = useTransition();
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Modal chuyển lớp
   const [transferModal, setTransferModal] = useState<{
     open: boolean;
     student: any;
@@ -36,21 +41,18 @@ export function SchoolClassesModal({
   } | null>(null);
   const [targetClassId, setTargetClassId] = useState<string>("");
 
-  // Modal rút học viên
   const [removeModal, setRemoveModal] = useState<{
     open: boolean;
     student: any;
     currentClass: any;
   } | null>(null);
 
-  // Modal thêm học viên cùng trường
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [eligibleStudents, setEligibleStudents] = useState<any[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [isLoadingEligible, setIsLoadingEligible] = useState(false);
 
-  // Tải chi tiết trường và danh sách học sinh theo lớp
   const loadSchoolClasses = React.useCallback(async () => {
     if (!school?.id) return;
     setIsLoading(true);
@@ -96,7 +98,6 @@ export function SchoolClassesModal({
   const capacity = currentClass?.capacity || 30;
   const enrollCount = enrollments.length;
 
-  // Thực hiện chuyển lớp học sinh
   const handleConfirmTransfer = () => {
     if (!transferModal || !targetClassId) return;
     startTransition(async () => {
@@ -117,7 +118,6 @@ export function SchoolClassesModal({
     });
   };
 
-  // Thực hiện rút học sinh khỏi lớp
   const handleConfirmRemove = () => {
     if (!removeModal) return;
     startTransition(async () => {
@@ -139,7 +139,6 @@ export function SchoolClassesModal({
     });
   };
 
-  // Mở modal thêm học sinh cùng trường
   const handleOpenAddStudent = async () => {
     if (!currentClass) return;
     setAddStudentOpen(true);
@@ -161,7 +160,6 @@ export function SchoolClassesModal({
     }
   };
 
-  // Xác nhận thêm / chuyển học sinh từ lớp khác cùng trường
   const handleConfirmAddStudent = () => {
     if (!selectedStudent || !currentClass) return;
     startTransition(async () => {
@@ -169,21 +167,13 @@ export function SchoolClassesModal({
         (e: any) => e.class?.schoolId === school.id
       );
 
-      let res;
-      if (studentClassInSameSchool?.classId) {
-        // Học sinh đã ở lớp khác trong cùng trường -> Chuyển lớp
-        res = await transferStudentClassAction(
-          studentClassInSameSchool.classId,
-          currentClass.id,
-          selectedStudent.id
-        );
-      } else {
-        // Ghi danh mới vào lớp
-        res = await enrollStudentToClassAction(
-          currentClass.id,
-          selectedStudent.id
-        );
-      }
+      const res = studentClassInSameSchool?.classId
+        ? await transferStudentClassAction(
+            studentClassInSameSchool.classId,
+            currentClass.id,
+            selectedStudent.id
+          )
+        : await enrollStudentToClassAction(currentClass.id, selectedStudent.id);
 
       if (res.success) {
         setNotice({
@@ -203,7 +193,6 @@ export function SchoolClassesModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-6 overflow-hidden">
-        {/* HEADER MODAL */}
         <DialogHeader className="border-b border-[#F1F5F9] pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -215,7 +204,10 @@ export function SchoolClassesModal({
                   {school.type}
                 </span>
                 <span className="text-xs text-[#64748B]">
-                  • Quản nhiệm: <b className="text-[#0F172A]">{school.manager?.profile?.fullName || school.manager?.username || "Chưa phân công"}</b>
+                  • Quản nhiệm:{" "}
+                  <b className="text-[#0F172A]">
+                    {school.manager?.profile?.fullName || school.manager?.username || "Chưa phân công"}
+                  </b>
                 </span>
               </div>
               <DialogTitle className="text-xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2">
@@ -242,7 +234,6 @@ export function SchoolClassesModal({
             )}
           </div>
 
-          {/* Thông báo Alert */}
           {notice && (
             <div
               className={`mt-3 p-3 rounded-xl text-xs flex items-center justify-between transition ${
@@ -268,7 +259,6 @@ export function SchoolClassesModal({
             <Loader2 className="size-5 animate-spin text-[#EA580C]" /> Đang tải dữ liệu lớp học và học sinh...
           </div>
         ) : classes.length === 0 ? (
-          /* TRƯỜNG HỢP CHƯA CÓ LỚP NÀO */
           <div className="py-16 text-center space-y-4">
             <div className="size-14 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center mx-auto text-[#EA580C]">
               <BookOpen className="size-7" />
@@ -294,7 +284,6 @@ export function SchoolClassesModal({
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto space-y-5 pr-1 py-3">
-            {/* THANH CHỌN LỚP (TABS / PILLS) */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-[#F1F5F9]">
               <span className="text-xs font-bold text-[#64748B] uppercase shrink-0 mr-1">
                 Các lớp ({classes.length}):
@@ -321,11 +310,7 @@ export function SchoolClassesModal({
                     >
                       {cls.code}
                     </span>
-                    <span
-                      className={`text-[11px] font-bold ${
-                        isActive ? "text-orange-100" : "text-[#EA580C]"
-                      }`}
-                    >
+                    <span className={`text-[11px] font-bold ${isActive ? "text-orange-100" : "text-[#EA580C]"}`}>
                       ({enrCount}/{cls.capacity})
                     </span>
                   </button>
@@ -333,7 +318,6 @@ export function SchoolClassesModal({
               })}
             </div>
 
-            {/* KHU VỰC 1: THÔNG TIN CẤU HÌNH LỚP (DẠNG VIEW) */}
             {currentClass && (
               <div className="rounded-2xl border border-orange-200 bg-orange-50/30 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-orange-100 pb-2.5">
@@ -375,7 +359,6 @@ export function SchoolClassesModal({
                   )}
                 </div>
 
-                {/* Grid chi tiết cấu hình lớp */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                   <div className="bg-white p-2.5 rounded-xl border border-orange-100">
                     <span className="text-slate-400 block mb-0.5 font-medium">Giáo viên phụ trách:</span>
@@ -414,7 +397,9 @@ export function SchoolClassesModal({
                       {currentClass.startDate && (
                         <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                           {new Date(currentClass.startDate).toLocaleDateString("vi-VN")}
-                          {currentClass.endDate ? ` → ${new Date(currentClass.endDate).toLocaleDateString("vi-VN")}` : ""}
+                          {currentClass.endDate
+                            ? ` → ${new Date(currentClass.endDate).toLocaleDateString("vi-VN")}`
+                            : ""}
                         </div>
                       )}
                     </div>
@@ -443,7 +428,6 @@ export function SchoolClassesModal({
               </div>
             )}
 
-            {/* KHU VỰC 2: DANH SÁCH HỌC SINH CỦA LỚP & ĐIỀU CHUYỂN */}
             {currentClass && (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -469,7 +453,6 @@ export function SchoolClassesModal({
                   </Button>
                 </div>
 
-                {/* BẢNG DANH SÁCH HỌC SINH */}
                 <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
                   <table className="w-full min-w-[680px] border-collapse text-left text-xs">
                     <thead>
@@ -504,15 +487,10 @@ export function SchoolClassesModal({
                               </td>
                               <td className="px-3.5 py-2.5 text-right">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {/* NÚT CHUYỂN LỚP TRONG CÙNG TRƯỜNG */}
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setTransferModal({
-                                        open: true,
-                                        student,
-                                        currentClass,
-                                      });
+                                      setTransferModal({ open: true, student, currentClass });
                                       setTargetClassId("");
                                     }}
                                     className="px-2 py-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition inline-flex items-center gap-1"
@@ -521,16 +499,9 @@ export function SchoolClassesModal({
                                     <ArrowRightLeft className="size-3" /> Chuyển lớp
                                   </button>
 
-                                  {/* NÚT GỠ KHỎI LỚP */}
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      setRemoveModal({
-                                        open: true,
-                                        student,
-                                        currentClass,
-                                      })
-                                    }
+                                    onClick={() => setRemoveModal({ open: true, student, currentClass })}
                                     className="px-2 py-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md transition inline-flex items-center gap-1"
                                     title="Rút học viên khỏi lớp"
                                   >
@@ -556,7 +527,6 @@ export function SchoolClassesModal({
           </div>
         )}
 
-        {/* FOOTER */}
         <div className="flex justify-end gap-2 pt-3 border-t border-[#F1F5F9] mt-auto">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Đóng
@@ -564,194 +534,31 @@ export function SchoolClassesModal({
         </div>
       </DialogContent>
 
-      {/* MODAL 1: CHUYỂN LỚP CHO HỌC VIÊN TRONG CÙNG TRƯỜNG */}
-      {transferModal && (
-        <Dialog open={true} onOpenChange={() => setTransferModal(null)}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-base font-bold text-[#0F172A]">
-                <ArrowRightLeft className="size-5 text-[#EA580C]" /> Chuyển lớp cho học sinh
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                Chuyển học viên <b>{transferModal.student.profile?.fullName || transferModal.student.username}</b> (Mã: {transferModal.student.username}) từ lớp <b>{transferModal.currentClass.name}</b> sang lớp khác thuộc trường <b>{school.name}</b>.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="py-2 space-y-3">
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                🔒 <b>Quy tắc hệ thống:</b> Học sinh chỉ được phép chuyển giữa các lớp trong cùng trường <b>{school.name}</b>. Không được chuyển sang lớp của trường khác.
-              </div>
-
-              <div>
-                <label className="label text-xs font-semibold block mb-1">
-                  Chọn lớp đích chuyển đến (Cùng trường {school.name}):
-                </label>
-                {otherClassesInSameSchool.length > 0 ? (
-                  <select
-                    className="field text-xs bg-white border-[#CBD5E1]"
-                    value={targetClassId}
-                    onChange={(e) => setTargetClassId(e.target.value)}
-                  >
-                    <option value="">-- Chọn lớp học đích ({otherClassesInSameSchool.length} lớp) --</option>
-                    {otherClassesInSameSchool.map((c: any) => {
-                      const count = c.enrollments?.length || c._count?.enrollments || 0;
-                      const isFull = count >= c.capacity;
-                      return (
-                        <option key={c.id} value={c.id} disabled={isFull}>
-                          {c.name} ({c.code}) - Sĩ số: {count}/{c.capacity} {isFull ? "(Đã đầy sĩ số)" : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                ) : (
-                  <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
-                    Trường hiện chỉ có 1 lớp duy nhất nên không có lớp nào khác để chuyển đến. Bạn cần tạo thêm lớp mới cho trường này trước.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-[#F1F5F9]">
-              <Button type="button" variant="outline" onClick={() => setTransferModal(null)}>
-                Hủy
-              </Button>
-              <Button
-                type="button"
-                onClick={handleConfirmTransfer}
-                disabled={!targetClassId || isPending}
-                className="bg-[#EA580C] text-white text-xs font-semibold"
-              >
-                {isPending ? <Loader2 className="size-3.5 animate-spin mr-1" /> : null} Xác nhận chuyển lớp
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* MODAL 2: THÊM HỌC VIÊN TỪ LỚP KHÁC CÙNG TRƯỜNG SANG */}
-      {addStudentOpen && currentClass && (
-        <Dialog open={true} onOpenChange={() => setAddStudentOpen(false)}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-                <Plus className="size-4 text-[#EA580C]" /> Thêm học sinh vào lớp {currentClass.name}
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                Chỉ hiển thị các học sinh thuộc trường <b>{school.name}</b>. Sĩ số lớp: {enrollCount}/{capacity}.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="py-2 space-y-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
-                <input
-                  className="field field-search text-xs pl-9"
-                  placeholder="Tìm học sinh theo tên, email, mã HV..."
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                />
-              </div>
-
-              {isLoadingEligible ? (
-                <div className="py-8 text-center text-xs text-[#94A3B8] flex items-center justify-center gap-2">
-                  <Loader2 className="size-4 animate-spin text-[#EA580C]" /> Đang tải danh sách học sinh cùng trường...
-                </div>
-              ) : (
-                <div className="max-h-60 overflow-y-auto border border-[#E2E8F0] rounded-xl divide-y divide-[#F1F5F9]">
-                  {eligibleStudents
-                    .filter((st: any) => {
-                      if (!studentSearch.trim()) return true;
-                      const q = studentSearch.trim().toLowerCase();
-                      return (
-                        (st.profile?.fullName || "").toLowerCase().includes(q) ||
-                        st.username.toLowerCase().includes(q) ||
-                        st.email.toLowerCase().includes(q)
-                      );
-                    })
-                    .map((st: any) => {
-                      const classInSchool = st.classEnrollments?.find(
-                        (e: any) => e.class?.schoolId === school.id
-                      );
-                      const isSelected = selectedStudent?.id === st.id;
-                      return (
-                        <label
-                          key={st.id}
-                          className={`flex items-center justify-between p-3 cursor-pointer hover:bg-orange-50/50 transition ${
-                            isSelected ? "bg-orange-50 border-l-4 border-l-[#EA580C]" : ""
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="radio"
-                              name="selectedEligibleStudent"
-                              checked={isSelected}
-                              onChange={() => setSelectedStudent(st)}
-                              className="text-[#EA580C] focus:ring-[#EA580C]"
-                            />
-                            <div>
-                              <b className="text-xs text-[#0F172A] block font-semibold">
-                                {st.profile?.fullName || st.username}
-                              </b>
-                              <span className="text-[11px] text-[#64748B] block">
-                                {st.email} • Mã: <span className="font-mono">{st.username}</span>
-                              </span>
-                              {classInSchool?.class?.name ? (
-                                <span className="inline-block mt-0.5 text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
-                                  Đang học tại: {classInSchool.class.name} ({classInSchool.class.code})
-                                </span>
-                              ) : (
-                                <span className="inline-block mt-0.5 text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded">
-                                  Học sinh trường {school.name}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  {eligibleStudents.length === 0 && (
-                    <div className="py-6 text-center text-xs text-[#94A3B8] italic">
-                      Không có học sinh nào khác trong trường {school.name} khả dụng để thêm.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {selectedStudent && (
-                <div className="p-2.5 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-900">
-                  ℹ️ Xác nhận điều chuyển học viên <b>{selectedStudent.profile?.fullName || selectedStudent.username}</b> vào lớp <b>{currentClass.name}</b>.
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-[#F1F5F9]">
-              <Button type="button" variant="outline" onClick={() => setAddStudentOpen(false)}>
-                Hủy
-              </Button>
-              <Button
-                type="button"
-                onClick={handleConfirmAddStudent}
-                disabled={!selectedStudent || isPending}
-                className="bg-[#EA580C] text-white text-xs font-semibold"
-              >
-                {isPending ? <Loader2 className="size-3.5 animate-spin mr-1" /> : null} Xác nhận thêm vào lớp
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* DIALOG XÁC NHẬN GỠ HỌC VIÊN */}
-      <ConfirmDialog
-        open={!!removeModal}
-        onOpenChange={(op) => !op && setRemoveModal(null)}
-        title="Rút học sinh khỏi lớp học"
-        description={`Bạn có chắc muốn rút học sinh "${removeModal?.student?.profile?.fullName || removeModal?.student?.username}" khỏi lớp "${removeModal?.currentClass?.name}"?`}
-        confirmText="Rút khỏi lớp"
+      <SchoolClassSubmodals
+        school={school}
+        currentClass={currentClass}
+        otherClassesInSameSchool={otherClassesInSameSchool}
+        enrollCount={enrollCount}
+        capacity={capacity}
         isPending={isPending}
-        onConfirm={handleConfirmRemove}
+        transferModal={transferModal}
+        setTransferModal={setTransferModal}
+        targetClassId={targetClassId}
+        setTargetClassId={setTargetClassId}
+        onConfirmTransfer={handleConfirmTransfer}
+        addStudentOpen={addStudentOpen}
+        setAddStudentOpen={setAddStudentOpen}
+        eligibleStudents={eligibleStudents}
+        isLoadingEligible={isLoadingEligible}
+        studentSearch={studentSearch}
+        setStudentSearch={setStudentSearch}
+        selectedStudent={selectedStudent}
+        setSelectedStudent={setSelectedStudent}
+        onConfirmAddStudent={handleConfirmAddStudent}
+        removeModal={removeModal}
+        setRemoveModal={setRemoveModal}
+        onConfirmRemove={handleConfirmRemove}
       />
     </Dialog>
   );
 }
-
