@@ -19,6 +19,8 @@ export interface BulkIeltsWizardProps {
   schools: any[];
   users?: any[];
   ieltsLevels?: any[];
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
   onAddSchoolShortcut?: () => void;
   onCommittedSuccess: (summaryPayload: any) => void;
 }
@@ -29,6 +31,8 @@ export function BulkIeltsWizard({
   schools,
   users = [],
   ieltsLevels = [],
+  isFullscreen = false,
+  onToggleFullscreen,
   onAddSchoolShortcut,
   onCommittedSuccess,
 }: BulkIeltsWizardProps) {
@@ -52,46 +56,46 @@ export function BulkIeltsWizard({
         STT: 1,
         "Họ và tên": "Nguyễn Văn An",
         Email: "an.nguyen@gmail.com",
-        "Điểm IELTS": 5.5,
         "Số điện thoại": "0987654321",
         "Ngày sinh": "15/08/2008",
         "Giới tính": "Nam",
+        "Điểm IELTS": 5.5,
       },
       {
         STT: 2,
         "Họ và tên": "Trần Thị Mai",
         Email: "mai.tran@gmail.com",
-        "Điểm IELTS": 7.0,
         "Số điện thoại": "0912345678",
         "Ngày sinh": "20/11/2008",
         "Giới tính": "Nữ",
+        "Điểm IELTS": 7.0,
       },
       {
         STT: 3,
         "Họ và tên": "Lê Hoàng Long",
         Email: "long.le@gmail.com",
-        "Điểm IELTS": 3.5,
         "Số điện thoại": "0901234567",
         "Ngày sinh": "10/05/2008",
         "Giới tính": "Nam",
+        "Điểm IELTS": 3.5,
       },
       {
         STT: 4,
         "Họ và tên": "Phạm Quỳnh Anh",
         Email: "quynhanh.pham@gmail.com",
-        "Điểm IELTS": 5.0,
         "Số điện thoại": "0934567890",
         "Ngày sinh": "12/03/2008",
         "Giới tính": "Nữ",
+        "Điểm IELTS": 5.0,
       },
       {
         STT: 5,
         "Họ và tên": "Hoàng Đức Minh",
         Email: "ducminh.hoang@gmail.com",
-        "Điểm IELTS": 6.5,
         "Số điện thoại": "0945678901",
         "Ngày sinh": "25/09/2008",
         "Giới tính": "Nam",
+        "Điểm IELTS": 6.5,
       },
     ];
     const ws = XLSX.utils.json_to_sheet(sampleData);
@@ -458,6 +462,8 @@ export function BulkIeltsWizard({
           schools={schools}
           allocationSuggestion={allocationSuggestion}
           invalidRowsList={invalidRowsList}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={onToggleFullscreen}
           onUpdateSuggestion={setAllocationSuggestion}
           onNotify={setActionNotification}
           onError={setExcelError}

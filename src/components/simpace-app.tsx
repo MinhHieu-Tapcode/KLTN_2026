@@ -35,7 +35,8 @@ import { getIeltsLevelsAction } from "@/actions/ielts-levels";
 import { RoleCode } from "@prisma/client";
 import { GlobalMaterialsView } from "@/components/materials/global-materials-view";
 import { ClassAssignmentsTab } from "@/components/assignments/class-assignments-tab";
-import { subtitle } from "@/components/shared/common-widgets";
+import { subtitle, roleLabel, roleBreadcrumbPrefix } from "@/components/shared/common-widgets";
+import { SimpaceLogo } from "@/components/logo";
 import { CustomModuleView } from "@/components/settings/permission-widgets";
 import {
   SchoolSheet,
@@ -273,10 +274,8 @@ export function SimpaceApp({
           } w-64 shrink-0 flex-col border-r border-[#E2E8F0] bg-white lg:flex`}
         >
           <div className="flex h-20 items-center justify-between border-b border-[#E2E8F0] px-5 py-3">
-            <img
-              src="/logo.png"
-              alt="SIMPACE"
-              className="h-11 w-auto max-w-[190px] object-contain cursor-pointer transition hover:opacity-90"
+            <SimpaceLogo
+              className="h-11 w-auto max-w-[190px]"
               onClick={() => navigate("dashboard")}
             />
             <Button
@@ -386,13 +385,13 @@ export function SimpaceApp({
               onClick={handleLogout}
               className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left text-sm hover:bg-[#F1F5F9] transition"
             >
-              <span className="grid size-9 place-items-center rounded-full bg-[#EA580C] text-white font-bold text-sm shadow-sm">
+              <span className="grid size-9 place-items-center rounded-full bg-primary text-white font-bold text-sm shadow-sm">
                 {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : "A"}
               </span>
               <span className="flex-1 overflow-hidden">
                 <b className="block truncate text-[#0F172A]">{currentUser.fullName}</b>
                 <small className="text-[#64748B] block truncate text-xs">
-                  {currentUser.role}
+                  {roleLabel(currentUser.role)}
                 </small>
               </span>
               <LogOut className="size-4 shrink-0 text-[#94A3B8] hover:text-[#EF4444]" />
@@ -410,7 +409,7 @@ export function SimpaceApp({
 
         {/* Main Content */}
         <main className="min-w-0 flex-1 flex flex-col">
-          <header className="sticky top-0 z-20 flex h-18 items-center gap-4 border-b border-[#E2E8F0] bg-white/95 px-4 py-3 backdrop-blur md:px-8">
+          <header className="sticky top-0 z-20 flex h-18 items-center gap-3 border-b border-[#E2E8F0] bg-white/95 px-4 py-3 backdrop-blur md:px-8">
             <Button
               variant="ghost"
               size="icon"
@@ -420,6 +419,11 @@ export function SimpaceApp({
             >
               <Menu className="size-5" />
             </Button>
+
+            <SimpaceLogo
+              className="h-8 w-auto max-w-[130px] lg:hidden"
+              onClick={() => navigate("dashboard")}
+            />
 
             <div className="flex-1 min-w-0">
               <h1 className="text-base sm:text-lg font-bold text-[#0F172A] truncate">
@@ -441,10 +445,9 @@ export function SimpaceApp({
                 <div className="absolute right-0 mt-2 w-72 rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl z-50 animate-in fade-in-50 zoom-in-95">
                   <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-2 mb-2">
                     <b className="text-xs text-[#0F172A]">Thông báo hệ thống</b>
-                    <span className="text-[10px] text-[#94A3B8]">Sprint 1</span>
                   </div>
                   <p className="text-xs text-[#64748B] py-2 text-center italic">
-                    Chưa có thông báo mới.<br />(Thông báo báo cáo & bài tập sẽ kích hoạt ở Sprint 2).
+                    Chưa có thông báo mới.
                   </p>
                 </div>
               )}
@@ -454,12 +457,12 @@ export function SimpaceApp({
               className="hidden items-center gap-2.5 sm:flex cursor-pointer hover:opacity-85 transition pl-2 border-l border-[#E2E8F0]"
               onClick={() => navigate("settings")}
             >
-              <span className="grid size-9 place-items-center rounded-full bg-[#EA580C] text-sm font-bold text-white shadow-sm">
+              <span className="grid size-9 place-items-center rounded-full bg-primary text-sm font-bold text-white shadow-sm">
                 {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : "U"}
               </span>
               <span className="text-sm">
                 <b className="block text-[#0F172A] leading-tight">{currentUser.fullName}</b>
-                <small className="text-[#64748B] text-xs">{currentUser.role}</small>
+                <small className="text-[#64748B] text-xs">{roleLabel(currentUser.role)}</small>
               </span>
               <ChevronDown className="size-3.5 text-[#94A3B8]" />
             </div>
@@ -469,15 +472,13 @@ export function SimpaceApp({
             <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="mb-1 text-xs font-medium text-[#64748B]">
-                  Quản trị hệ thống / {title[view]}
+                  {roleBreadcrumbPrefix(currentUser.role)} / {title[view]}
                 </p>
                 <h1 className="text-2xl font-bold text-[#0F172A]">
                   {view === "dashboard" ? `Xin chào, ${currentUser.fullName}` : title[view]}
                 </h1>
                 <p className="mt-1 text-sm text-[#64748B]">
-                  {view === "dashboard"
-                    ? "Chúc bạn một ngày làm việc hiệu quả và thành công!"
-                    : subtitle(view)}
+                  {subtitle(view)}
                 </p>
               </div>
 
@@ -485,7 +486,7 @@ export function SimpaceApp({
                 {view === "users" && (currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && (
                   <Button
                     onClick={() => setAddUserOpen(true)}
-                    className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm"
+                    className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
                   >
                     <Plus className="size-4 mr-1.5" /> Thêm người dùng
                   </Button>
@@ -493,7 +494,7 @@ export function SimpaceApp({
                 {view === "schools" && currentUser?.role === "ADMIN" && (
                   <Button
                     onClick={() => setAddSchoolOpen(true)}
-                    className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm"
+                    className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
                   >
                     <Plus className="size-4 mr-1.5" /> Thêm trường học
                   </Button>
@@ -501,7 +502,7 @@ export function SimpaceApp({
                 {view === "classes" && (currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && (
                   <Button
                     onClick={() => setAddClassOpen(true)}
-                    className="bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl shadow-sm"
+                    className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
                   >
                     <Plus className="size-4 mr-1.5" /> Tạo lớp học
                   </Button>

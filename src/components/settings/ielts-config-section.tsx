@@ -1,14 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { Edit2, Layers, Plus, Sliders, Trash2 } from "lucide-react";
+import { Edit2, Layers, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteIeltsLevelAction } from "@/actions/ielts-levels";
 import { ConfirmDialog } from "@/components/shared/common-widgets";
-import {
-  IeltsAllocationModal,
-  IeltsLevelModal,
-} from "@/components/import/ielts-modals";
+import { IeltsLevelModal } from "@/components/import/ielts-modals";
 
 export function IeltsLevelsSection({
   ieltsLevels,
@@ -166,91 +163,3 @@ export function IeltsLevelsSection({
   );
 }
 
-export function IeltsAllocationSection({
-  ieltsLevels,
-  onRefreshLevels,
-}: {
-  ieltsLevels: any[];
-  onRefreshLevels: () => void;
-}) {
-  const [allocationModalLevel, setAllocationModalLevel] = useState<any>(null);
-  const [allocationSuccess, setAllocationSuccess] = useState("");
-
-  return (
-    <section className="panel space-y-4">
-      <div className="flex flex-wrap justify-between items-center gap-3">
-        <div>
-          <h2 className="font-bold text-base text-[#0F172A] flex items-center gap-2">
-            <Sliders className="size-5 text-[#EA580C]" /> Cấu hình phân lớp IELTS
-          </h2>
-          <p className="text-xs text-[#64748B]">
-            Xác định số lớp được phân bổ cho từng trình độ IELTS khi nhập hàng loạt. Sĩ số thực tế của từng lớp được xác định từ tổng số học sinh thuộc trình độ chia đều cho số lớp.
-          </p>
-        </div>
-      </div>
-
-      {allocationSuccess && (
-        <div className="p-3 bg-emerald-50 text-emerald-700 text-xs rounded-xl font-medium border border-emerald-200">
-          {allocationSuccess}
-        </div>
-      )}
-
-      <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              <th className="px-4 py-3 text-xs font-bold text-[#64748B]">Tên trình độ</th>
-              <th className="px-4 py-3 text-xs font-bold text-[#64748B]">Thang điểm IELTS</th>
-              <th className="px-4 py-3 text-xs font-bold text-[#64748B] text-center">Số lớp cấu hình</th>
-              <th className="px-4 py-3 text-xs font-bold text-[#64748B] text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#F1F5F9] bg-white">
-            {ieltsLevels.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
-                  Chưa có trình độ IELTS nào. Vui lòng thiết lập tại tab &quot;Cấu hình trình độ IELTS&quot; trước.
-                </td>
-              </tr>
-            ) : (
-              ieltsLevels.map((lvl) => (
-                <tr key={lvl.id} className="hover:bg-slate-50/60">
-                  <td className="px-4 py-3.5 font-bold text-[#0F172A]">{lvl.name}</td>
-                  <td className="px-4 py-3.5 font-mono text-xs text-slate-600">
-                    {Number(lvl.minScore).toFixed(1)} - {Number(lvl.maxScore).toFixed(1)}
-                  </td>
-                  <td className="px-4 py-3.5 text-center">
-                    <span className="px-3 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg text-xs border border-blue-200 font-mono inline-block">
-                      {lvl.targetClassCount || 1} lớp
-                    </span>
-                  </td>
-                  <td className="px-4 py-3.5 text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAllocationModalLevel(lvl)}
-                      className="text-xs h-7 border-[#EA580C] text-[#EA580C] hover:bg-orange-50 gap-1"
-                    >
-                      <Edit2 className="size-3" /> Chỉnh sửa
-                    </Button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {allocationModalLevel && (
-        <IeltsAllocationModal
-          level={allocationModalLevel}
-          onClose={() => setAllocationModalLevel(null)}
-          onSaved={() => {
-            setAllocationSuccess("Đã cập nhật cấu hình số lớp phân bổ thành công!");
-            onRefreshLevels();
-          }}
-        />
-      )}
-    </section>
-  );
-}

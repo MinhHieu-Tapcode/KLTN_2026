@@ -87,6 +87,7 @@ export function UsersPageView({
     description: "",
     action: async () => {},
   });
+  const [actionError, setActionError] = useState("");
 
   const handleBatchDelete = () => {
     const idsToDelete = [...selectedIds];
@@ -95,10 +96,16 @@ export function UsersPageView({
       title: "Xác nhận xóa người dùng đã chọn",
       description: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} người dùng đã chọn khỏi hệ thống?`,
       action: async () => {
+        setActionError("");
         setLocalUsers((prev) => prev.filter((u) => !idsToDelete.includes(u.id)));
         setSelectedIds([]);
-        await deleteMultipleUsersAction(idsToDelete);
-        onRefresh();
+        const res = await deleteMultipleUsersAction(idsToDelete);
+        if (!res?.success) {
+          setLocalUsers(users);
+          setActionError(res?.error || "Không thể xóa các tài khoản đã chọn!");
+          return;
+        }
+        await onRefresh();
       },
     });
   };
@@ -109,15 +116,34 @@ export function UsersPageView({
       title: "Xác nhận xóa người dùng",
       description: `Bạn có chắc chắn muốn xóa tài khoản ${name ? `"${name}"` : "này"} khỏi hệ thống?`,
       action: async () => {
+        setActionError("");
         setLocalUsers((prev) => prev.filter((u) => u.id !== id));
-        await deleteUserAction(id);
-        onRefresh();
+        setSelectedIds((prev) => prev.filter((x) => x !== id));
+        const res = await deleteUserAction(id);
+        if (!res?.success) {
+          setLocalUsers(users);
+          setActionError(res?.error || "Không thể xóa tài khoản người dùng!");
+          return;
+        }
+        await onRefresh();
       },
     });
   };
 
   return (
     <section className="panel overflow-hidden">
+      {actionError && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError("")}
+            className="ml-3 text-xs font-bold text-red-600 hover:underline"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
       <div className="mb-4 flex gap-6 overflow-x-auto border-b border-[#E2E8F0]">
         {roleTabs.map((t) => (
           <button

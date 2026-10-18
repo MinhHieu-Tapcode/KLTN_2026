@@ -2,7 +2,7 @@
 
 import { isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { checkAuth } from "@/lib/permissions";
+import { checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import {
   createAssignmentService,
@@ -153,13 +153,23 @@ export async function deleteAssignmentAction(
 }
 
 /**
- * Bóc tách Đề thi IELTS Thông minh (AI OCR & Bulk Parsing)
+ * Bóc tách Đề thi IELTS từ tệp PDF / Word (.docx) sang cấu trúc Ebook 2 cột
  */
 export async function parseIeltsExamAction(
   formData: FormData
-): Promise<{ success: boolean; parsedData?: any; error?: string }> {
+): Promise<{
+  success: boolean;
+  parsedData?: any;
+  isScannedPdf?: boolean;
+  error?: string;
+}> {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập!");
+    const auth = checkRole(
+      await getSession(),
+      ROLE_GROUPS.EXAM_CREATORS,
+      "Chỉ Giáo viên và Quản trị viên mới có quyền bóc tách đề thi!",
+      "Vui lòng đăng nhập!"
+    );
     if (!auth.ok) {
       return { success: false, error: auth.error };
     }
@@ -170,21 +180,17 @@ export async function parseIeltsExamAction(
     const audioUrl = formData.get("audioUrl")?.toString() || null;
     const excelAnswersRaw = formData.get("excelAnswers")?.toString() || "";
     const pdfTextRaw = formData.get("pdfText")?.toString() || "";
+    const rawFile = formData.get("file");
+    const file = rawFile instanceof File ? rawFile : null;
 
-    if ((skill === "LISTENING" || skill === "ALL_SKILLS") && (!audioUrl || !audioUrl.trim())) {
-      return {
-        success: false,
-        error: "Đề thi có phần Nghe (Listening) bắt buộc phải đính kèm tệp Audio (.mp3) trước khi bóc tách!",
-      };
-    }
-
-    const parsedData = parseIeltsExamContent({
+    const parsedData = await parseIeltsExamContent({
       title,
       skill,
       durationMinutes,
       audioUrl,
       excelAnswersRaw,
       pdfTextRaw,
+      file,
     });
 
     return {
@@ -192,6 +198,13 @@ export async function parseIeltsExamAction(
       parsedData,
     };
   } catch (err: any) {
+    if (err?.isScannedPdf) {
+      return {
+        success: false,
+        isScannedPdf: true,
+        error: err.message,
+      };
+    }
     console.error("[parseIeltsExamAction] Lỗi:", err);
     return { success: false, error: err.message || "Bóc tách đề thi thất bại!" };
   }

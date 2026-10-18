@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useTransition } from "react";
-import { BookOpen, CircleCheck, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
+import { CircleCheck, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,6 +16,7 @@ import {
   resetPasswordWithOtpAction,
 } from "@/actions/auth";
 import { ActivateView } from "@/components/auth/activate-view";
+import { SimpaceLogo } from "@/components/logo";
 
 export function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -71,7 +72,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
   return (
     <div className="grid min-h-screen bg-[#F8F9FA] lg:grid-cols-[1fr_1.05fr]">
       <section className="flex flex-col justify-center px-7 py-10 sm:px-16 lg:px-[12vw]">
-        <img src="/logo.png" alt="SIMPACE" className="mb-10 h-12 w-auto max-w-[220px] object-contain" />
+        <SimpaceLogo className="mb-8 h-12 w-auto max-w-[220px]" />
         <div className="max-w-md w-full">
           <h1 className="text-3xl font-bold tracking-tight text-[#0F172A]">Chào mừng trở lại</h1>
           <p className="mt-2 text-sm text-[#64748B]">
@@ -119,7 +120,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
             </label>
 
             <Button
-              className="mt-6 w-full h-11 bg-[#EA580C] hover:bg-[#EA580C]/90 text-white rounded-xl text-sm font-bold shadow-md shadow-[#EA580C]/20"
+              className="mt-6 w-full h-11 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-bold shadow-md shadow-primary/20"
               size="lg"
               type="submit"
               disabled={isPending}
@@ -138,7 +139,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
             <button
               type="button"
               onClick={() => setForgotOpen(true)}
-              className="font-semibold text-[#EA580C] hover:underline"
+              className="font-semibold text-primary hover:underline"
             >
               Quên mật khẩu?
             </button>
@@ -154,9 +155,6 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: (user: any) => void }) {
 
       <section className="login-visual hidden min-h-screen overflow-hidden lg:flex">
         <div className="relative z-10 mt-auto p-16">
-          <div className="mb-8 grid size-20 place-items-center rounded-2xl bg-white/90 shadow-xl">
-            <BookOpen className="size-10 text-[#EA580C]" />
-          </div>
           <h2 className="max-w-sm text-3xl font-extrabold leading-snug text-[#0F172A]">
             Cùng SIMPACE
             <br />
@@ -200,7 +198,7 @@ export function ForgotPasswordDialog({
         setErr(res.error || "Lỗi gửi mã OTP!");
       } else {
         setStep(2);
-        setMsg(`Mã OTP đã được tạo (Demo code: ${res.demoOtp}). Vui lòng nhập mã để đổi mật khẩu.`);
+        setMsg("Mã OTP đã được gửi tới email của bạn. Vui lòng kiểm tra hộp thư và nhập mã để đổi mật khẩu.");
       }
     });
   };
@@ -223,7 +221,7 @@ export function ForgotPasswordDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <KeyRound className="size-5 text-[#EA580C]" /> Khôi phục mật khẩu
+            <KeyRound className="size-5 text-primary" /> Khôi phục mật khẩu
           </DialogTitle>
           <DialogDescription>
             {step === 1
@@ -253,9 +251,9 @@ export function ForgotPasswordDialog({
                 onOpenChange(false);
                 setStep(1);
               }}
-              className="w-full bg-[#EA580C] text-white"
+              className="w-full bg-primary hover:bg-primary/90 text-white"
             >
-              Đăng nhập ngay
+              Quay lại đăng nhập
             </Button>
           </div>
         ) : step === 1 ? (
@@ -275,7 +273,7 @@ export function ForgotPasswordDialog({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Hủy
               </Button>
-              <Button type="submit" disabled={isPending} className="bg-[#EA580C] text-white">
+              <Button type="submit" disabled={isPending} className="bg-primary hover:bg-primary/90 text-white">
                 {isPending ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Gửi mã OTP
               </Button>
             </div>
@@ -307,7 +305,7 @@ export function ForgotPasswordDialog({
               <Button type="button" variant="outline" onClick={() => setStep(1)}>
                 Quay lại
               </Button>
-              <Button type="submit" disabled={isPending} className="bg-[#EA580C] text-white">
+              <Button type="submit" disabled={isPending} className="bg-primary hover:bg-primary/90 text-white">
                 {isPending ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null} Xác nhận đổi
               </Button>
             </div>

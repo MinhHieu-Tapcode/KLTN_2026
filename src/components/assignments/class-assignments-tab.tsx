@@ -58,6 +58,8 @@ import {
   getSubmissionsForAssignmentAction,
   gradeSubmissionAction,
 } from "@/actions/assignments";
+import { FormattedPassageView } from "@/components/assignments/formatted-passage-view";
+import { extractTextFromScannedPdfClient } from "@/lib/exam-parser/client-ocr";
 
 interface ClassAssignmentsTabProps {
   classId: string;
@@ -161,7 +163,7 @@ export function ClassAssignmentsTab({
 
   // Form State: Bóc tách thông minh 4 bước (Smart Parser)
   const [parserStep, setParserStep] = useState<1 | 2 | 3 | 4>(1);
-  const [parserTitle, setParserTitle] = useState("Đề thi IELTS Cambridge 18 - Full Test 01");
+  const [parserTitle, setParserTitle] = useState("");
   const [parserSkill, setParserSkill] = useState<"READING" | "LISTENING" | "WRITING" | "SPEAKING" | "ALL_SKILLS">("ALL_SKILLS");
   const [parserDuration, setParserDuration] = useState(120);
   const [parserPdfFile, setParserPdfFile] = useState<File | null>(null);
@@ -406,30 +408,69 @@ export function ClassAssignmentsTab({
     setManualQuestions(updated);
   };
 
-  // Bóc tách file PDF đề thi IELTS và hiển thị ngay Ebook Viewer 2 cột
+  const [ocrStatusText, setOcrStatusText] = useState<string>("");
+
+  // Bóc tách file PDF / Word (.docx) đề thi IELTS và hiển thị ngay Ebook Viewer 2 cột
   const handlePdfUploadForParser = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setParserPdfFile(file);
+    e.target.value = "";
 
     // Tự động kích hoạt bóc tách nội dung đề thi ra Ebook ngay tức thì
     startTransition(async () => {
+      setOcrStatusText("");
+      const examTitle = parserTitle.trim() || file.name.replace(/\.[^/.]+$/, "");
       const formData = new FormData();
-      formData.append("title", parserTitle.trim() || file.name.replace(/\.[^/.]+$/, ""));
+      formData.append("title", examTitle);
       formData.append("skill", parserSkill);
       formData.append("durationMinutes", String(parserDuration));
+      formData.append("file", file);
       if (parserAudioUrl) formData.append("audioUrl", parserAudioUrl);
 
-      const res = await parseIeltsExamAction(formData);
+      let res = await parseIeltsExamAction(formData);
+
+      // Nếu tệp PDF là bản quét hình ảnh (Scan), tự động chạy OCR nhận diện chữ và gửi lại văn bản cho Groq AI
+      if (!res.success && res.isScannedPdf) {
+        try {
+          const ocrText = await extractTextFromScannedPdfClient(file, (msg) =>
+            setOcrStatusText(msg)
+          );
+          setOcrStatusText("Đang phân tích cấu trúc Ebook 2 cột bằng Groq AI...");
+          const ocrFormData = new FormData();
+          ocrFormData.append("title", examTitle);
+          ocrFormData.append("skill", parserSkill);
+          ocrFormData.append("durationMinutes", String(parserDuration));
+          ocrFormData.append("pdfText", ocrText);
+          if (parserAudioUrl) ocrFormData.append("audioUrl", parserAudioUrl);
+          res = await parseIeltsExamAction(ocrFormData);
+        } catch (ocrErr: any) {
+          setOcrStatusText("");
+          showAlert(
+            "Lỗi quét OCR tệp PDF Scan",
+            ocrErr.message || "Không thể nhận diện văn bản từ tệp PDF Scan này!",
+            "error"
+          );
+          return;
+        }
+      }
+
+      setOcrStatusText("");
+
       if (res.success && res.parsedData) {
         setParsedEbookData(res.parsedData);
+        if (res.parsedData.sections && res.parsedData.sections.length > 0) {
+          setActiveEbookSectionId(res.parsedData.sections[0].id);
+        } else {
+          setActiveEbookSectionId("");
+        }
         const allNums = (res.parsedData.questions || []).map((q: any, idx: number) => q.questionNumber || idx + 1);
         setSelectedQuestionNumbers(allNums);
         setIsQuestionsFinalized(false);
         setParserStep(4); // Mở ngay giao diện Ebook 2 Cột theo đúng yêu cầu!
         showAlert(
           "Nhận diện đề thi thành công!",
-          `Hệ thống đã trích xuất cấu trúc đề thi thành Ebook 2 cột tương tác (${allNums.length} câu hỏi). Hãy tích chọn các câu hỏi muốn sử dụng và bấm 'Chốt danh sách câu hỏi sử dụng' trước khi nạp file Excel đáp án!`,
+          `Hệ thống đã trích xuất cấu trúc đề thi từ tệp "${file.name}" thành Ebook 2 cột tương tác (${allNums.length} câu hỏi). Hãy tích chọn các câu hỏi muốn sử dụng và bấm 'Chốt danh sách câu hỏi sử dụng' trước khi nạp file Excel đáp án!`,
           "success"
         );
       } else {
@@ -777,9 +818,12 @@ export function ClassAssignmentsTab({
       if (parsedEbookData.skill === "ALL_SKILLS" && parsedEbookData.sections) {
         const multipleAssignments = parsedEbookData.sections
           .map((sec: any) => {
-            const filteredQuestions = (sec.questions || []).filter((q: any) =>
-              selectedQuestionNumbers.includes(q.questionNumber)
-            );
+            const filteredQuestions = (sec.questions || [])
+              .filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber))
+              .map((q: any) => ({
+                ...q,
+                passageText: sec.passageText || q.passageText || parsedEbookData.passageText,
+              }));
             return {
               classId,
               title: sec.title || `${parsedEbookData.title} - ${sec.skill}`,
@@ -822,16 +866,21 @@ export function ClassAssignmentsTab({
       // TRƯỜNG HỢP 2: ĐỀ THI 1 KỸ NĂNG ĐƠN LẺ (CHỈ LẤY CÂU ĐÃ CHỐT)
       const filteredQuestions = (parsedEbookData.questions || [])
         .filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber))
-        .map((q: any, idx: number) => ({
-          questionNumber: q.questionNumber || idx + 1,
-          passageText: q.passageText || parsedEbookData.passageText,
-          prompt: q.prompt,
-          type: q.type,
-          points: q.points,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
-          options: q.options,
-        }));
+        .map((q: any, idx: number) => {
+          const matchedSec = parsedEbookData.sections?.find((s: any) =>
+            (s.questions || []).some((sq: any) => sq.questionNumber === q.questionNumber)
+          );
+          return {
+            questionNumber: q.questionNumber || idx + 1,
+            passageText: matchedSec?.passageText || parsedEbookData.passageText || q.passageText,
+            prompt: q.prompt,
+            type: q.type,
+            points: q.points,
+            correctAnswer: q.correctAnswer,
+            explanation: q.explanation,
+            options: q.options,
+          };
+        });
 
       if (filteredQuestions.length === 0) {
         showAlert("Không có câu hỏi hợp lệ", "Vui lòng chọn ít nhất 1 câu hỏi để phát hành!", "warning");
@@ -1704,25 +1753,43 @@ export function ClassAssignmentsTab({
                   </div>
                 </div>
 
-                {/* VÙNG CHỌN FILE PDF */}
+                {/* VÙNG CHỌN FILE PDF / WORD */}
                 <div className="col-span-2 p-8 border-2 border-dashed border-orange-200 hover:border-orange-400 rounded-2xl bg-orange-50/20 text-center transition">
-                  <Upload className="size-8 mx-auto text-[#EA580C] mb-2" />
+                  {isPending ? (
+                    <Loader2 className="size-8 mx-auto text-[#EA580C] mb-2 animate-spin" />
+                  ) : (
+                    <Upload className="size-8 mx-auto text-[#EA580C] mb-2" />
+                  )}
                   <p className="text-sm font-bold text-slate-800">
-                    {parserPdfFile ? parserPdfFile.name : "Nhấn để chọn file PDF đề thi IELTS"}
+                    {isPending
+                      ? ocrStatusText ||
+                        `Đang đọc tệp "${parserPdfFile?.name || ""}" và bóc tách Ebook bằng AI...`
+                      : parserPdfFile
+                      ? parserPdfFile.name
+                      : "Nhấn để chọn tệp PDF (có chữ hoặc bản Scan) hoặc Word (.docx) đề thi IELTS"}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">Hỗ trợ tệp định dạng .pdf (Tối đa 25MB)</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Hỗ trợ .pdf (cả PDF văn bản lẫn PDF Scan tự động OCR) và .docx (Tối đa 25MB)
+                  </p>
                   <input
                     type="file"
-                    accept=".pdf"
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     id="parser-pdf-input"
                     className="hidden"
+                    disabled={isPending}
                     onChange={handlePdfUploadForParser}
                   />
                   <label
-                    htmlFor="parser-pdf-input"
-                    className="inline-block mt-3 px-4 py-2 text-xs bg-[#EA580C] text-white rounded-xl font-semibold hover:bg-[#C2410C] cursor-pointer transition shadow-sm"
+                    htmlFor={isPending ? undefined : "parser-pdf-input"}
+                    className={`inline-block mt-3 px-4 py-2 text-xs text-white rounded-xl font-semibold transition shadow-sm ${
+                      isPending
+                        ? "bg-slate-400 cursor-not-allowed"
+                        : "bg-[#EA580C] hover:bg-[#C2410C] cursor-pointer"
+                    }`}
                   >
-                    Duyệt tìm tệp PDF & Bóc tách ra Ebook ngay
+                    {isPending
+                      ? "Đang bóc tách cấu trúc Ebook..."
+                      : "Duyệt tìm tệp PDF / Word & Bóc tách ra Ebook ngay"}
                   </label>
                 </div>
               </div>
@@ -2311,12 +2378,21 @@ export function ClassAssignmentsTab({
                     </div>
                   )}
 
-                  <div className="prose prose-sm max-w-none text-xs text-slate-700 font-serif leading-relaxed">
-                    <h4 className="text-sm font-bold text-slate-900 font-sans mb-2">ĐỀ BÀI / PASSAGE READING</h4>
-                    <p className="whitespace-pre-line">
-                      {examAssignment.questions[0]?.passageText ||
-                        "Vui lòng đọc kỹ các câu hỏi bên cột phải và hoàn thành bài tập theo đúng thời lượng quy định."}
-                    </p>
+                  <div className="max-w-none space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h4 className="text-xs font-bold text-slate-800 font-sans tracking-wide uppercase">
+                        ĐỀ BÀI / PASSAGE READING
+                      </h4>
+                    </div>
+                    <FormattedPassageView
+                      text={Array.from(
+                        new Set(
+                          (examAssignment.questions || [])
+                            .map((q: any) => q.passageText?.trim())
+                            .filter(Boolean)
+                        )
+                      ).join("\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")}
+                    />
                   </div>
                 </div>
 

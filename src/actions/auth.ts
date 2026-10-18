@@ -495,7 +495,6 @@ export async function requestPasswordResetOtpAction(email: string) {
 
     return {
       success: true,
-      demoOtp: otp, // Gửi về cho môi trường test để tiện trải nghiệm
       mailResult,
     };
   } catch (error: any) {

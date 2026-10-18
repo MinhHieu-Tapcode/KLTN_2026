@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { roleLabel } from "@/components/shared/common-widgets";
 
 export function AddPermissionModal({
   open,
@@ -201,7 +202,7 @@ export function CustomModuleView({
       <div className="py-6 space-y-4">
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
           <p className="font-semibold">
-            ✓ Vai trò của bạn ({currentUser.role}) đã được cấp quyền truy cập màn hình này.
+            ✓ Vai trò của bạn ({roleLabel(currentUser.role)}) đã được cấp quyền truy cập màn hình này.
           </p>
           <p className="text-xs text-emerald-700 mt-1">
             Màn hình này được khởi tạo và phân quyền hoàn toàn thông qua giao diện Quản trị viên (Dynamic RBAC), không cần can thiệp mã nguồn.
@@ -216,14 +217,14 @@ export function CustomModuleView({
                 key={r}
                 className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-[#0F172A]"
               >
-                {r}
+                {roleLabel(r)}
               </span>
             ))}
           </div>
         </div>
 
         <p className="text-xs text-slate-500 italic">
-          * Các tính năng xử lý dữ liệu chi tiết của phân hệ này sẽ được đồng hành phát triển theo lộ trình của các Sprint tiếp theo.
+          * Tính năng này đang được hoàn thiện.
         </p>
       </div>
 

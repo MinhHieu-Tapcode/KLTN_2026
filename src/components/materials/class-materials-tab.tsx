@@ -157,6 +157,15 @@ export function ClassMaterialsTab({
   const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
+  // Helper chuyển đổi URL xem PDF an toàn, tránh bị ép tải về máy
+  const getSafePdfUrl = (url?: string) => {
+    if (!url) return "";
+    if (url.startsWith("blob:") || url.startsWith("/") || url.startsWith("data:")) {
+      return url;
+    }
+    return `/api/pdf-proxy?url=${encodeURIComponent(url)}`;
+  };
+
   const canManage =
     currentUser.role === "ADMIN" ||
     currentUser.role === "TEACHER" ||
@@ -1179,7 +1188,7 @@ export function ClassMaterialsTab({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(previewMaterial.fileUrl, "_blank")}
+                      onClick={() => window.open(getSafePdfUrl(previewMaterial.fileUrl), "_blank")}
                       className="text-xs rounded-xl border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold gap-1.5 h-8.5"
                     >
                       <ExternalLink className="size-3.5" /> Mở toàn màn hình (Tab mới)
@@ -1216,12 +1225,18 @@ export function ClassMaterialsTab({
                   </audio>
                 </div>
               ) : previewMaterial.fileType === "PDF" ? (
-                <div className="w-full h-full min-h-[70vh] rounded-xl overflow-hidden border border-slate-200 bg-slate-900 shadow-inner">
-                  <iframe
-                    src={`${previewMaterial.fileUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
-                    className="w-full h-full border-0"
-                    title={previewMaterial.title}
-                  />
+                <div className="w-full h-full min-h-[70vh] rounded-xl overflow-hidden border border-slate-200 bg-slate-800 shadow-inner flex flex-col">
+                  <object
+                    data={`${getSafePdfUrl(previewMaterial.fileUrl)}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
+                    type="application/pdf"
+                    className="w-full h-full flex-1 border-0"
+                  >
+                    <iframe
+                      src={`${getSafePdfUrl(previewMaterial.fileUrl)}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
+                      className="w-full h-full flex-1 border-0"
+                      title={previewMaterial.title}
+                    />
+                  </object>
                 </div>
               ) : (
                 <div className="p-12 text-center bg-slate-50 rounded-2xl border border-slate-200">

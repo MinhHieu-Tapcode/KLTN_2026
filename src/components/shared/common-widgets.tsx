@@ -163,7 +163,33 @@ export function subtitle(view: View) {
     "custom-module": "Màn hình chức năng mở rộng được phân quyền động từ cơ sở dữ liệu.",
     "materials-global": "Quản lý kho tài liệu, giáo trình, slide bài giảng và file nghe IELTS.",
     "assignments-global": "Danh sách bài tập, hạn nộp, chấm điểm tự luận và giám sát thi trực tuyến.",
-    dashboard: "",
+    dashboard: "Theo dõi nhanh hoạt động học tập và giảng dạy trên toàn hệ thống.",
   };
   return map[view] || "";
 }
+
+export function roleLabel(role?: string | null): string {
+  if (!role) return "";
+  const map: Record<string, string> = {
+    ADMIN: "Quản trị viên",
+    SCHOOL_MANAGER: "Quản nhiệm trường",
+    TEACHER: "Giáo viên",
+    TEACHING_ASSISTANT: "Trợ giảng",
+    TA: "Trợ giảng",
+    STUDENT: "Học viên",
+  };
+  return map[role] || role;
+}
+
+export function roleBreadcrumbPrefix(role?: string | null): string {
+  const map: Record<string, string> = {
+    ADMIN: "Quản trị hệ thống",
+    SCHOOL_MANAGER: "Quản lý trường học",
+    TEACHER: "Không gian giảng dạy",
+    TEACHING_ASSISTANT: "Không gian trợ giảng",
+    TA: "Không gian trợ giảng",
+    STUDENT: "Không gian học tập",
+  };
+  return (role && map[role]) || "Hệ thống LMS";
+}
+

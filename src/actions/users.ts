@@ -8,7 +8,7 @@ import {
   createSessionToken,
   setSessionCookie,
 } from "@/lib/auth";
-import { isAdmin, isSchoolManager } from "@/lib/permissions";
+import { isAdmin, isSchoolManager, checkRole, ROLE_GROUPS } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import * as XLSX from "xlsx";
 import { RoleCode, Gender, StaffClassRole } from "@prisma/client";
@@ -850,12 +850,74 @@ export async function updateUserAction(
   }
 }
 
+function softDeleteInMemoryUsers(ids: string[]) {
+  const globalStore = globalThis as any;
+  const idSet = new Set(ids);
+  let modifiedCount = 0;
+
+  if (Array.isArray(globalStore.demoUsers)) {
+    for (const u of globalStore.demoUsers) {
+      if (idSet.has(u.id) && u.isActive !== false) {
+        u.isActive = false;
+        modifiedCount++;
+      }
+    }
+  }
+
+  if (Array.isArray(globalStore.demoClasses)) {
+    for (const cls of globalStore.demoClasses) {
+      if (Array.isArray(cls.enrollments)) {
+        const beforeLen = cls.enrollments.length;
+        cls.enrollments = cls.enrollments.filter((en: any) => !idSet.has(en.studentId));
+        if (cls.enrollments.length !== beforeLen) {
+          cls._count = { ...(cls._count || {}), enrollments: cls.enrollments.length };
+        }
+      }
+      if (Array.isArray(cls.assignments)) {
+        cls.assignments = cls.assignments.filter((as: any) => !idSet.has(as.userId));
+      }
+    }
+  }
+
+  return modifiedCount;
+}
+
 // Xóa mềm người dùng (isActive: false) - Tuyệt đối bảo vệ dữ liệu lịch sử (BUG_05)
 export async function deleteUserAction(id: string) {
   try {
     const session = await getSession();
+    const roleCheck = checkRole(
+      session,
+      ROLE_GROUPS.ADMIN_AND_MANAGER,
+      "Bạn không có quyền xóa tài khoản người dùng!"
+    );
+    if (!roleCheck.ok) {
+      return { success: false, error: roleCheck.error };
+    }
+
     if (session?.userId === id) {
       return { success: false, error: "Bạn không thể tự xóa tài khoản của chính mình!" };
+    }
+
+    const demoList = (globalUsersStore.demoUsers || []) as any[];
+    const demoTarget = demoList.find((u: any) => u.id === id);
+    if (demoTarget) {
+      if (demoTarget.role?.code === "ADMIN" && !isAdmin(session)) {
+        return { success: false, error: "Bạn không có quyền xóa tài khoản Quản trị viên!" };
+      }
+      if (demoTarget.role?.code === "SCHOOL_MANAGER" && isSchoolManager(session)) {
+        return { success: false, error: "Quản nhiệm không có quyền xóa tài khoản Quản nhiệm khác!" };
+      }
+      softDeleteInMemoryUsers([id]);
+    }
+
+    if (!(await isDbAlive())) {
+      if (!demoTarget) {
+        return { success: false, error: "Tài khoản không tồn tại!" };
+      }
+      safeRevalidate("/users");
+      safeRevalidate("/classes");
+      return { success: true };
     }
 
     const targetUser = await prisma.user.findUnique({
@@ -867,11 +929,19 @@ export async function deleteUserAction(id: string) {
     });
 
     if (!targetUser) {
+      if (demoTarget) {
+        safeRevalidate("/users");
+        safeRevalidate("/classes");
+        return { success: true };
+      }
       return { success: false, error: "Tài khoản không tồn tại!" };
     }
 
     if (targetUser.role?.code === "ADMIN" && !isAdmin(session)) {
       return { success: false, error: "Bạn không có quyền xóa tài khoản Quản trị viên!" };
+    }
+    if (targetUser.role?.code === "SCHOOL_MANAGER" && isSchoolManager(session)) {
+      return { success: false, error: "Quản nhiệm không có quyền xóa tài khoản Quản nhiệm khác!" };
     }
 
     await prisma.user.update({
@@ -879,6 +949,8 @@ export async function deleteUserAction(id: string) {
       data: { isActive: false },
     });
 
+    safeRevalidate("/users");
+    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa người dùng!" };
@@ -903,16 +975,54 @@ export async function restoreUserAction(id: string) {
 export async function deleteMultipleUsersAction(ids: string[]) {
   try {
     const session = await getSession();
+    const roleCheck = checkRole(
+      session,
+      ROLE_GROUPS.ADMIN_AND_MANAGER,
+      "Bạn không có quyền xóa tài khoản người dùng!"
+    );
+    if (!roleCheck.ok) {
+      return { success: false, error: roleCheck.error };
+    }
+
     const safeIds = ids.filter((id) => id !== session?.userId);
+    if (safeIds.length === 0) {
+      return { success: false, error: "Không có tài khoản hợp lệ để xóa!" };
+    }
+
+    const demoList = (globalUsersStore.demoUsers || []) as any[];
+    const allowedDemoIds = demoList
+      .filter((u: any) => {
+        if (!safeIds.includes(u.id)) return false;
+        if (u.role?.code === "ADMIN") return false;
+        if (isSchoolManager(session) && u.role?.code === "SCHOOL_MANAGER") return false;
+        return true;
+      })
+      .map((u: any) => u.id);
+
+    if (allowedDemoIds.length > 0) {
+      softDeleteInMemoryUsers(allowedDemoIds);
+    }
+
+    if (!(await isDbAlive())) {
+      safeRevalidate("/users");
+      safeRevalidate("/classes");
+      return { success: true };
+    }
+
+    const blockedRoles: RoleCode[] = isSchoolManager(session)
+      ? ["ADMIN", "SCHOOL_MANAGER"]
+      : ["ADMIN"];
 
     await prisma.user.updateMany({
       where: {
         id: { in: safeIds },
-        role: { code: { not: "ADMIN" } },
+        role: { code: { notIn: blockedRoles } },
       },
       data: { isActive: false },
     });
 
+    safeRevalidate("/users");
+    safeRevalidate("/classes");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể xóa các tài khoản đã chọn!" };

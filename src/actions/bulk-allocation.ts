@@ -386,8 +386,10 @@ export async function generateBulkClassSuggestionAction(
         continue; // Không tạo lớp trống nếu trình độ không có học sinh
       }
 
-      // Xác định số lớp: Ưu tiên override -> cấu hình DB
-      let classCount = lvl.targetClassCount || 1;
+      // Tự động xác định số lớp dựa trên số lượng học sinh thực tế (sĩ số tiêu chuẩn mặc định 25 học viên/lớp)
+      // Ưu tiên classCountOverrides nếu người dùng chủ động chỉ định
+      const DEFAULT_CAPACITY_PER_CLASS = 25;
+      let classCount = Math.max(1, Math.ceil(studentsInLevel.length / DEFAULT_CAPACITY_PER_CLASS));
       if (classCountOverrides && classCountOverrides[lvl.id]) {
         classCount = Math.max(1, classCountOverrides[lvl.id]);
       }
@@ -434,59 +436,64 @@ export async function generateBulkClassSuggestionAction(
 }
 
 /**
- * 4. Chuyển học sinh giữa các lớp cùng trình độ & chia lại toàn bộ
+ * 4. Chuyển học sinh giữa các lớp cùng trình độ
  */
 export async function rebalanceOnStudentTransferAction(
   currentPlan: LevelAllocationPlan,
   studentEmail: string,
   targetClassTempId: string,
-  schoolCode: string = "TD"
+  _schoolCode: string = "TD"
 ) {
   try {
-    // 1. Thu thập lại toàn bộ học sinh của trình độ này
-    const allStudents: ValidatedStudentRow[] = [];
-    let foundStudent: ValidatedStudentRow | undefined;
+    let transferredStudent: ValidatedStudentRow | undefined;
+    let sourceClassName = "";
 
-    for (const c of currentPlan.classes) {
-      for (const s of c.students) {
-        if (s.email.toLowerCase() === studentEmail.toLowerCase()) {
-          foundStudent = s;
-        }
-        allStudents.push(s);
+    // 1. Tìm và lấy học sinh ra khỏi lớp hiện tại
+    const classesWithoutStudent = currentPlan.classes.map((c) => {
+      const idx = c.students.findIndex((s) => s.email.toLowerCase() === studentEmail.toLowerCase());
+      if (idx !== -1) {
+        transferredStudent = c.students[idx];
+        sourceClassName = c.name;
+        return {
+          ...c,
+          students: c.students.filter((_, i) => i !== idx),
+        };
       }
-    }
+      return c;
+    });
 
-    if (!foundStudent) {
+    if (!transferredStudent) {
       return { success: false, error: "Không tìm thấy học sinh được chỉ định trong phương án!" };
     }
 
-    const targetClass = currentPlan.classes.find((c) => c.tempId === targetClassTempId);
+    const targetClass = classesWithoutStudent.find((c) => c.tempId === targetClassTempId);
     if (!targetClass) {
       return { success: false, error: "Không tìm thấy lớp học đích!" };
     }
 
-    // 2. Chạy lại thuật toán chia đều toàn bộ học sinh theo số lớp đang có
-    const rebalancedClasses = await distributeStudentsBalanced(
-      allStudents,
-      currentPlan.classCount,
-      currentPlan.levelCode,
-      currentPlan.levelName,
-      currentPlan.levelId,
-      schoolCode
-    );
+    // 2. Thêm học sinh vào lớp đích
+    const finalClasses = classesWithoutStudent.map((c) => {
+      if (c.tempId === targetClassTempId) {
+        return {
+          ...c,
+          students: [...c.students, transferredStudent!],
+        };
+      }
+      return c;
+    });
 
     const updatedPlan: LevelAllocationPlan = {
       ...currentPlan,
-      classes: rebalancedClasses,
+      classes: finalClasses,
     };
 
     return {
       success: true,
       updatedPlan,
-      message: `Đã cập nhật phương án phân lớp trình độ ${currentPlan.levelName}. Hệ thống đã phân bổ lại ${allStudents.length} học sinh vào ${currentPlan.classCount} lớp.`,
+      message: `Đã chuyển học sinh ${transferredStudent.fullName} từ ${sourceClassName} sang ${targetClass.name}.`,
     };
   } catch (error: any) {
-    return { success: false, error: error.message || "Lỗi khi chuyển lớp và phân bổ lại!" };
+    return { success: false, error: error.message || "Lỗi khi chuyển lớp!" };
   }
 }
 
@@ -534,6 +541,189 @@ export async function rebalanceOnClassCountChangeAction(
     };
   } catch (error: any) {
     return { success: false, error: error.message || "Lỗi khi điều chỉnh số lớp!" };
+  }
+}
+
+/**
+ * 5b. Điều chỉnh theo sĩ số tối đa / lớp (Stepper [-] 30 [+]) cho toàn bộ các trình độ
+ */
+export async function rebalanceByCapacityAction(
+  currentPlans: LevelAllocationPlan[],
+  maxCapacity: number,
+  schoolCode: string = "TD"
+) {
+  try {
+    const cap = Math.max(5, Math.floor(Number(maxCapacity) || 30));
+    const newPlans: LevelAllocationPlan[] = [];
+
+    for (const plan of currentPlans) {
+      const allStudents: ValidatedStudentRow[] = [];
+      for (const c of plan.classes) {
+        allStudents.push(...c.students);
+      }
+      const S = allStudents.length;
+      if (S === 0) {
+        newPlans.push(plan);
+        continue;
+      }
+      const newClassCount = Math.max(1, Math.ceil(S / cap));
+      const rebalanced = await distributeStudentsBalanced(
+        allStudents,
+        newClassCount,
+        plan.levelCode,
+        plan.levelName,
+        plan.levelId,
+        schoolCode
+      );
+      const updatedClasses = rebalanced.map((c) => ({ ...c, capacity: cap }));
+      newPlans.push({
+        ...plan,
+        classCount: updatedClasses.length,
+        classes: updatedClasses,
+      });
+    }
+
+    return {
+      success: true,
+      updatedPlans: newPlans,
+      message: `Đã chia lại các lớp theo sĩ số tối đa ${cap} học sinh/lớp.`,
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Lỗi khi chia lại lớp theo sĩ số!" };
+  }
+}
+
+/**
+ * 5c. Xóa một lớp học và phân bổ lại học sinh vào các lớp còn lại cùng trình độ
+ */
+export async function removeClassAndRebalanceAction(
+  currentPlan: LevelAllocationPlan,
+  classTempIdToRemove: string,
+  schoolCode: string = "TD"
+) {
+  try {
+    if (currentPlan.classes.length <= 1) {
+      return { success: false, error: "Không thể xóa lớp duy nhất của trình độ này!" };
+    }
+
+    const allStudents: ValidatedStudentRow[] = [];
+    for (const c of currentPlan.classes) {
+      allStudents.push(...c.students);
+    }
+
+    const newClassCount = currentPlan.classes.length - 1;
+    const rebalancedClasses = await distributeStudentsBalanced(
+      allStudents,
+      newClassCount,
+      currentPlan.levelCode,
+      currentPlan.levelName,
+      currentPlan.levelId,
+      schoolCode
+    );
+
+    const updatedPlan: LevelAllocationPlan = {
+      ...currentPlan,
+      classCount: newClassCount,
+      classes: rebalancedClasses,
+    };
+
+    return {
+      success: true,
+      updatedPlan,
+      message: `Đã xóa lớp và phân bổ lại ${allStudents.length} học sinh vào ${newClassCount} lớp còn lại.`,
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Lỗi khi xóa lớp và chia lại!" };
+  }
+}
+
+/**
+ * 5d. Cấu hình sĩ số từng lớp (hoặc xóa lớp khi sĩ số = 0) và phân bổ lại học sinh
+ */
+export async function updateClassCapacitiesAndRebalanceAction(
+  currentPlans: LevelAllocationPlan[],
+  classSettings: Record<string, { capacity: number; isRemoved?: boolean }>,
+  schoolCode: string = "TD"
+) {
+  try {
+    const newPlans: LevelAllocationPlan[] = [];
+    let totalRemoved = 0;
+
+    for (const plan of currentPlans) {
+      // Xác định các lớp bị xóa hoặc có capacity <= 0
+      const activeClasses = plan.classes.filter((c) => {
+        const setting = classSettings[c.tempId];
+        if (setting && (setting.isRemoved || setting.capacity <= 0)) {
+          return false;
+        }
+        return true;
+      });
+
+      if (activeClasses.length === 0 && plan.studentCount > 0) {
+        return {
+          success: false,
+          error: `Trình độ ${plan.levelName} không thể giải thể tất cả các lớp khi vẫn có học sinh!`,
+        };
+      }
+
+      const allStudents: ValidatedStudentRow[] = [];
+      for (const c of plan.classes) {
+        allStudents.push(...c.students);
+      }
+
+      if (activeClasses.length < plan.classes.length) {
+        // Có lớp bị xóa -> Phân bổ lại toàn bộ học sinh vào số lớp còn lại
+        const removedCount = plan.classes.length - activeClasses.length;
+        totalRemoved += removedCount;
+        const newClassCount = activeClasses.length;
+        const rebalanced = await distributeStudentsBalanced(
+          allStudents,
+          newClassCount,
+          plan.levelCode,
+          plan.levelName,
+          plan.levelId,
+          schoolCode
+        );
+
+        const updatedClasses = rebalanced.map((c) => {
+          return {
+            ...c,
+            capacity: Math.max(10, c.capacity),
+          };
+        });
+
+        newPlans.push({
+          ...plan,
+          classCount: updatedClasses.length,
+          classes: updatedClasses,
+        });
+      } else {
+        // Giữ nguyên số lớp, chỉ cập nhật capacity cho từng lớp nếu có
+        const updatedClasses = plan.classes.map((c) => {
+          const setting = classSettings[c.tempId];
+          const newCap = setting && setting.capacity > 0 ? setting.capacity : c.capacity;
+          return { ...c, capacity: newCap };
+        });
+
+        newPlans.push({
+          ...plan,
+          classes: updatedClasses,
+        });
+      }
+    }
+
+    const message =
+      totalRemoved > 0
+        ? `Đã giải thể ${totalRemoved} lớp (sĩ số = 0) và tự động chuyển học sinh sang các lớp khác cùng trình độ.`
+        : "Đã cập nhật cấu hình sĩ số các lớp thành công.";
+
+    return {
+      success: true,
+      updatedPlans: newPlans,
+      message,
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Lỗi khi cấu hình sĩ số lớp!" };
   }
 }
 

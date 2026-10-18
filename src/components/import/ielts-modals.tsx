@@ -38,7 +38,7 @@ export function IeltsLevelModal({
     const minScore = Number(formData.get("minScore"));
     const maxScore = Number(formData.get("maxScore"));
     const description = formData.get("description")?.toString()?.trim();
-    const targetClassCount = Number(formData.get("targetClassCount")) || 1;
+    const targetClassCount = level?.targetClassCount || 1;
     const isActive = formData.get("isActive") === "on";
 
     if (!name) {
@@ -144,20 +144,6 @@ export function IeltsLevelModal({
                 className="field text-sm"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1">
-              Số lớp phân bổ mặc định
-            </label>
-            <input
-              name="targetClassCount"
-              type="number"
-              min="1"
-              defaultValue={level?.targetClassCount || 1}
-              required
-              className="field text-sm"
-            />
           </div>
 
           <div>

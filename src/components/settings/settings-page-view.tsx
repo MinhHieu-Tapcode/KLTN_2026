@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { Layers, Loader2, Lock, Sliders } from "lucide-react";
+import { Layers, Loader2, Lock } from "lucide-react";
 import { RoleCode } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { changePasswordAction } from "@/actions/auth";
@@ -9,7 +9,6 @@ import { updateProfileAction } from "@/actions/users";
 import { Field, InfoCard } from "@/components/shared/common-widgets";
 import { RbacMatrixSection, ROLES_LIST } from "@/components/settings/rbac-matrix-section";
 import {
-  IeltsAllocationSection,
   IeltsLevelsSection,
 } from "@/components/settings/ielts-config-section";
 
@@ -49,7 +48,7 @@ export function SettingsPageView({
         p.allowedRoles?.includes((currentUser?.role || activeUser?.role?.code) as RoleCode)
     );
 
-  const [tab, setTab] = useState<"profile" | "matrix" | "ielts-levels" | "ielts-allocation" | "system">(
+  const [tab, setTab] = useState<"profile" | "matrix" | "ielts-levels" | "system">(
     canManageSettings ? "matrix" : "profile"
   );
   const [isPending, startTransition] = useTransition();
@@ -161,18 +160,6 @@ export function SettingsPageView({
             <Layers className="size-4" /> Cấu hình trình độ IELTS
           </button>
         )}
-        {canManageSettings && (
-          <button
-            onClick={() => setTab("ielts-allocation")}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 ${
-              tab === "ielts-allocation"
-                ? "bg-[#EA580C] text-white shadow-sm"
-                : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
-            }`}
-          >
-            <Sliders className="size-4" /> Cấu hình phân lớp IELTS
-          </button>
-        )}
         <button
           onClick={() => setTab("profile")}
           className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
@@ -211,12 +198,6 @@ export function SettingsPageView({
         />
       )}
 
-      {canManageSettings && tab === "ielts-allocation" && (
-        <IeltsAllocationSection
-          ieltsLevels={ieltsLevels}
-          onRefreshLevels={onRefreshLevels}
-        />
-      )}
 
       {tab === "profile" && (
         <div className="space-y-6 max-w-3xl">
@@ -421,8 +402,8 @@ export function SettingsPageView({
             title="Thông tin hệ thống"
             items={[
               "Tên phần mềm: SIMPACE LMS",
-              "Phiên bản: Sprint 1.0 (Full-stack Next.js 14)",
-              "Cơ sở dữ liệu: Supabase PostgreSQL (10 bảng)",
+              "Phiên bản: 1.0",
+              "Cơ sở dữ liệu: Supabase PostgreSQL",
               "Ngôn ngữ: 100% TypeScript + Tiếng Việt",
             ]}
           />
