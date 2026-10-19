@@ -502,7 +502,9 @@ export function ClassAssignmentsTab({
 
   // Chốt danh sách câu hỏi sử dụng
   const handleFinalizeQuestions = () => {
-    if (selectedQuestionNumbers.length === 0) {
+    const allValidNums = new Set((parsedEbookData?.questions || []).map((q: any) => q.questionNumber));
+    const validSelected = selectedQuestionNumbers.filter((n) => allValidNums.has(n));
+    if (validSelected.length === 0) {
       showAlert(
         "Chưa chọn câu hỏi",
         "Vui lòng tích chọn ít nhất 1 câu hỏi mà giáo viên muốn sử dụng trong bài tập!",
@@ -510,10 +512,11 @@ export function ClassAssignmentsTab({
       );
       return;
     }
+    setSelectedQuestionNumbers(validSelected);
     setIsQuestionsFinalized(true);
     showAlert(
       "Đã chốt danh sách câu hỏi thành công!",
-      `Bạn đã chốt sử dụng ${selectedQuestionNumbers.length} câu hỏi. Bây giờ bạn có thể tải file Excel mẫu chuẩn theo đúng ${selectedQuestionNumbers.length} câu này và nạp file Excel đáp án!`,
+      `Bạn đã chốt sử dụng ${validSelected.length} câu hỏi. Bây giờ bạn có thể tải file Excel mẫu chuẩn theo đúng ${validSelected.length} câu này và nạp file Excel đáp án!`,
       "success"
     );
   };
@@ -636,11 +639,24 @@ export function ClassAssignmentsTab({
           sections: updatedSections,
         });
 
-        showAlert(
-          "Khớp đáp án thành công!",
-          `Đã tự động placeholder và điền đáp án chuẩn cho ${excelMap.size} câu hỏi trong Ebook từ file "${file.name}"!`,
-          "success"
-        );
+        const missingNumbers = selectedQuestionNumbers.filter((qNum) => {
+          const ans = excelMap.get(qNum);
+          return !ans || ans.trim().length === 0;
+        });
+
+        if (missingNumbers.length > 0) {
+          showAlert(
+            "Cảnh báo thiếu đáp án",
+            `File Excel đã điền ${selectedQuestionNumbers.length - missingNumbers.length}/${selectedQuestionNumbers.length} câu đã chốt. Còn thiếu ${missingNumbers.length} câu chưa có đáp án: Câu ${missingNumbers.slice(0, 8).join(", ")}${missingNumbers.length > 8 ? "..." : ""}. Vui lòng bổ sung đầy đủ đáp án trước khi tạo đề!`,
+            "warning"
+          );
+        } else {
+          showAlert(
+            "Khớp đáp án thành công!",
+            `Đã tự động điền đầy đủ 100% đáp án chuẩn cho toàn bộ ${selectedQuestionNumbers.length} câu hỏi đã chốt từ file "${file.name}"!`,
+            "success"
+          );
+        }
       }
     } catch (err: any) {
       showAlert("Lỗi đọc file Excel", "Không thể đọc nội dung file Excel. Vui lòng kiểm tra định dạng tệp .xlsx!", "error");
@@ -685,7 +701,7 @@ export function ClassAssignmentsTab({
     if (parsedEbookData.sections) {
       updatedSections = parsedEbookData.sections.map((sec: any) => ({
         ...sec,
-        questions: sec.questions.filter((q: any) => q.questionNumber !== qNum),
+        questions: (sec.questions || []).filter((q: any) => q.questionNumber !== qNum),
       }));
     }
     setParsedEbookData({
@@ -693,12 +709,15 @@ export function ClassAssignmentsTab({
       questions: updatedQuestions,
       sections: updatedSections,
     });
+    setSelectedQuestionNumbers((prev) => prev.filter((n) => n !== qNum));
   };
 
   // Thêm một câu hỏi mới vào Ebook Section đang mở
   const addEbookQuestionToSection = (sectionId: string, questionType: string = "MULTIPLE_CHOICE") => {
     if (!parsedEbookData) return;
-    const newQNum = (parsedEbookData.questions?.length || 0) + 1;
+    const allQuestions = parsedEbookData.questions || [];
+    const maxNum = allQuestions.reduce((max: number, q: any) => Math.max(max, q.questionNumber || 0), 0);
+    const newQNum = maxNum + 1;
     let initialOptions: any[] = [];
     let initialCorrect = "";
     if (questionType === "MULTIPLE_CHOICE") {
@@ -729,14 +748,15 @@ export function ClassAssignmentsTab({
       options: initialOptions,
     };
 
-    const updatedQuestions = [...(parsedEbookData.questions || []), newQuestion];
+    const updatedQuestions = [...allQuestions, newQuestion];
     let updatedSections = parsedEbookData.sections;
-    if (parsedEbookData.sections) {
-      updatedSections = parsedEbookData.sections.map((sec: any) => {
-        if (sec.id === sectionId || sec.key === sectionId || sec.skill === sectionId) {
+    if (parsedEbookData.sections && parsedEbookData.sections.length > 0) {
+      const hasMatch = parsedEbookData.sections.some((s: any) => s.id === sectionId || s.key === sectionId);
+      updatedSections = parsedEbookData.sections.map((sec: any, sIdx: number) => {
+        if (sec.id === sectionId || sec.key === sectionId || (!hasMatch && sIdx === 0)) {
           return {
             ...sec,
-            questions: [...sec.questions, newQuestion],
+            questions: [...(sec.questions || []), newQuestion],
           };
         }
         return sec;
@@ -748,6 +768,7 @@ export function ClassAssignmentsTab({
       questions: updatedQuestions,
       sections: updatedSections,
     });
+    setSelectedQuestionNumbers((prev) => [...prev, newQNum]);
   };
 
   // Tải file Excel mẫu chuẩn (CHỈ ĐÚNG 2 CỘT: CÂU SỐ & ĐÁP ÁN THEO ĐÚNG CÁC CÂU ĐÃ CHỐT)
@@ -798,7 +819,40 @@ export function ClassAssignmentsTab({
       return;
     }
 
-    // RÀNG BUỘC: Nếu có bài Listening, bắt buộc có Audio
+    // RÀNG BUỘC 1: Nếu là Reading hoặc Listening, BẮT BUỘC toàn bộ câu hỏi đã chốt phải có đáp án chuẩn
+    const isObjectiveSkill =
+      parsedEbookData.skill === "READING" ||
+      parsedEbookData.skill === "LISTENING" ||
+      parsedEbookData.skill === "ALL_SKILLS";
+
+    if (isObjectiveSkill) {
+      const emptyAnswerQuestions: number[] = [];
+      for (const qNum of selectedQuestionNumbers) {
+        let targetQ = (parsedEbookData.questions || []).find((q: any) => q.questionNumber === qNum);
+        if (!targetQ && parsedEbookData.sections) {
+          for (const sec of parsedEbookData.sections) {
+            targetQ = (sec.questions || []).find((q: any) => q.questionNumber === qNum);
+            if (targetQ) break;
+          }
+        }
+        if (targetQ && targetQ.type !== "ESSAY" && targetQ.type !== "SPEAKING_RECORD") {
+          if (!targetQ.correctAnswer || String(targetQ.correctAnswer).trim().length === 0) {
+            emptyAnswerQuestions.push(qNum);
+          }
+        }
+      }
+
+      if (emptyAnswerQuestions.length > 0) {
+        showAlert(
+          "Chưa đủ đáp án chuẩn",
+          `Không thể tạo đề! Bạn đã chốt ${selectedQuestionNumbers.length} câu nhưng còn ${emptyAnswerQuestions.length} câu chưa có đáp án: Câu ${emptyAnswerQuestions.slice(0, 8).join(", ")}${emptyAnswerQuestions.length > 8 ? "..." : ""}. Với đề thi Reading/Listening, bạn phải điền đủ đáp án (bằng tay hoặc nạp file Excel) cho 100% câu đã chốt trước khi lưu!`,
+          "warning"
+        );
+        return;
+      }
+    }
+
+    // RÀNG BUỘC 2: Nếu có bài Listening, bắt buộc có Audio
     const hasListening =
       parsedEbookData.skill === "LISTENING" ||
       parsedEbookData.skill === "ALL_SKILLS" ||
@@ -1800,73 +1854,105 @@ export function ClassAssignmentsTab({
               {/* THANH ĐIỀU KHIỂN & THANH CÔNG CỤ CỦA EBOOK */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
                 <div className="flex items-center gap-2">
-                  <Badge className="bg-[#EA580C] text-white text-xs">Ebook 2 Cột</Badge>
-                  <span className="text-xs font-bold text-slate-800">{parsedEbookData.title}</span>
-                </div>
-
-                {/* Nút nạp File Excel Đáp án & Tải file mẫu - Chỉ kích hoạt sau khi đã Chốt câu hỏi */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {!isQuestionsFinalized ? (
-                    <div className="text-[11px] text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200 font-medium flex items-center gap-1.5">
-                      <AlertCircle className="size-3.5 text-amber-600 shrink-0" />
-                      <span>Bước 2: Tích chọn các câu hỏi & bấm <b>Chốt danh sách câu hỏi</b> ở Cột 2 trước khi nạp Excel!</span>
-                    </div>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={handleDownloadExcelTemplate}
-                    disabled={!isQuestionsFinalized}
-                    className={`px-2.5 py-1 text-[11px] rounded-lg font-semibold flex items-center gap-1 transition shadow-sm ${
-                      isQuestionsFinalized
-                        ? "bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 cursor-pointer"
-                        : "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-70"
-                    }`}
-                    title={!isQuestionsFinalized ? "Vui lòng bấm 'Chốt danh sách câu hỏi sử dụng' trước khi tải file mẫu!" : "Tải file mẫu gồm đúng các câu hỏi đã chốt"}
-                  >
-                    <Download className="size-3" />
-                    <span>Tải file Excel mẫu ({isQuestionsFinalized ? `${selectedQuestionNumbers.length} câu` : "Chưa chốt"})</span>
-                  </button>
-
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    id="ebook-excel-input"
-                    className="hidden"
-                    disabled={!isQuestionsFinalized}
-                    onChange={handleExcelUploadForParser}
-                  />
-                  <label
-                    htmlFor={isQuestionsFinalized ? "ebook-excel-input" : undefined}
-                    onClick={() => {
-                      if (!isQuestionsFinalized) {
-                        showAlert(
-                          "Chưa chốt danh sách câu hỏi",
-                          "Vui lòng xem lại danh sách câu hỏi bên Cột 2 và bấm nút '🔒 Chốt danh sách câu hỏi sử dụng' trước khi nạp file Excel đáp án!",
-                          "warning"
-                        );
-                      }
+                  <Badge className="bg-[#EA580C] text-white text-xs shrink-0">Ebook 2 Cột</Badge>
+                  <select
+                    value={parsedEbookData.skill}
+                    onChange={(e) => {
+                      const newSkill = e.target.value;
+                      setParsedEbookData({
+                        ...parsedEbookData,
+                        skill: newSkill,
+                      });
                     }}
-                    className={`px-3 py-1 text-xs rounded-lg font-semibold flex items-center gap-1.5 transition shadow-sm ${
-                      isQuestionsFinalized
-                        ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                        : "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-75"
-                    }`}
+                    className="h-7 px-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-[#EA580C] shrink-0"
+                    title="Chuyển đổi kỹ năng đề thi"
                   >
-                    <FileSpreadsheet className="size-3.5" />
-                    <span>Nạp Đáp án Excel (2 Cột)</span>
-                  </label>
+                    <option value="READING">📖 Reading (Đọc)</option>
+                    <option value="LISTENING">🎧 Listening (Nghe)</option>
+                    <option value="WRITING">✍️ Writing (Viết)</option>
+                    <option value="SPEAKING">🎙️ Speaking (Nói)</option>
+                    <option value="ALL_SKILLS">🌐 Tổng hợp (4 Kỹ năng)</option>
+                  </select>
+                  <span className="text-xs font-bold text-slate-800 truncate max-w-[180px]" title={parsedEbookData.title}>
+                    {parsedEbookData.title}
+                  </span>
                 </div>
+
+                {/* Phân biệt: Kỹ năng Trắc nghiệm (Reading/Listening) vs Định tính (Writing/Speaking) */}
+                {parsedEbookData.skill === "WRITING" || parsedEbookData.skill === "SPEAKING" ? (
+                  <div className="text-[11px] text-purple-700 bg-purple-50 px-2.5 py-1 rounded-xl border border-purple-200 font-medium flex items-center gap-1.5">
+                    <AlertCircle className="size-3.5 text-purple-600 shrink-0" />
+                    <span>
+                      Đề {parsedEbookData.skill === "WRITING" ? "Viết (Writing)" : "Nói (Speaking)"}: Học viên nộp bài làm định tính, không có đáp án trắc nghiệm.
+                    </span>
+                  </div>
+                ) : (
+                  /* Nút nạp File Excel Đáp án & Tải file mẫu - Chỉ kích hoạt sau khi đã Chốt câu hỏi */
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!isQuestionsFinalized ? (
+                      <div className="text-[11px] text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200 font-medium flex items-center gap-1.5">
+                        <AlertCircle className="size-3.5 text-amber-600 shrink-0" />
+                        <span>Bước 2: Tích chọn các câu hỏi & bấm <b>Chốt danh sách câu hỏi</b> ở Cột 2 trước khi nạp Excel!</span>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadExcelTemplate}
+                      disabled={!isQuestionsFinalized}
+                      className={`px-2.5 py-1 text-[11px] rounded-lg font-semibold flex items-center gap-1 transition shadow-sm ${
+                        isQuestionsFinalized
+                          ? "bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 cursor-pointer"
+                          : "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-70"
+                      }`}
+                      title={!isQuestionsFinalized ? "Vui lòng bấm 'Chốt danh sách câu hỏi sử dụng' trước khi tải file mẫu!" : "Tải file mẫu gồm đúng các câu hỏi đã chốt"}
+                    >
+                      <Download className="size-3" />
+                      <span>Tải file Excel mẫu ({isQuestionsFinalized ? `${selectedQuestionNumbers.length} câu` : "Chưa chốt"})</span>
+                    </button>
+
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      id="ebook-excel-input"
+                      className="hidden"
+                      disabled={!isQuestionsFinalized}
+                      onChange={handleExcelUploadForParser}
+                    />
+                    <label
+                      htmlFor={isQuestionsFinalized ? "ebook-excel-input" : undefined}
+                      onClick={() => {
+                        if (!isQuestionsFinalized) {
+                          showAlert(
+                            "Chưa chốt danh sách câu hỏi",
+                            "Vui lòng xem lại danh sách câu hỏi bên Cột 2 và bấm nút '🔒 Chốt danh sách câu hỏi sử dụng' trước khi nạp file Excel đáp án!",
+                            "warning"
+                          );
+                        }
+                      }}
+                      className={`px-3 py-1 text-xs rounded-lg font-semibold flex items-center gap-1.5 transition shadow-sm ${
+                        isQuestionsFinalized
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                          : "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-75"
+                      }`}
+                    >
+                      <FileSpreadsheet className="size-3.5" />
+                      <span>Nạp Đáp án Excel (2 Cột)</span>
+                    </label>
+                  </div>
+                )}
               </div>
 
               {/* NẾU LÀ ĐỀ TỔNG HỢP: HIỂN THỊ CÁC TAB THEO ĐÚNG TỪNG PHẦN ĐỘC LẬP */}
-              {parsedEbookData.sections && (
+              {parsedEbookData.sections && parsedEbookData.sections.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
                   <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
                     <Layers className="size-3.5" /> Chọn phần bài tập:
                   </span>
                   {parsedEbookData.sections.map((sec: any) => {
-                    const isSelected = activeEbookSectionId === sec.id || (!activeEbookSectionId && sec.id === "reading_1");
+                    const isSelected = activeEbookSectionId === sec.id || (!activeEbookSectionId && sec.id === parsedEbookData.sections[0]?.id);
+                    const skillIcon = sec.skill === "LISTENING" ? "🎧" : sec.skill === "WRITING" ? "✍️" : sec.skill === "SPEAKING" ? "🎙️" : "📖";
+                    const qCount = sec.questions?.length ?? 0;
                     return (
                       <button
                         key={sec.id}
@@ -1879,10 +1965,7 @@ export function ClassAssignmentsTab({
                         }`}
                       >
                         <span>
-                          {sec.id === "reading_1" ? "📖 Reading 1: Urban Beekeeping (6 câu)" :
-                           sec.id === "reading_2" ? "📖 Reading 2: Teenagers Sleep (6 câu)" :
-                           sec.id === "listening_1" ? "🎧 Listening 1: Riverside Club (8 câu)" :
-                           sec.id === "writing_1" ? "✍️ Writing 2: Essay (1 câu)" : sec.title}
+                          {skillIcon} {sec.title} ({qCount} câu)
                         </span>
                       </button>
                     );
@@ -1892,11 +1975,13 @@ export function ClassAssignmentsTab({
 
               {/* GIAO DIỆN EBOOK 2 CỘT TƯƠNG TÁC */}
               {(() => {
-                const currentSec = parsedEbookData.sections
+                const currentSec = parsedEbookData.sections && parsedEbookData.sections.length > 0
                   ? (parsedEbookData.sections.find((s: any) => s.id === activeEbookSectionId) || parsedEbookData.sections[0])
                   : null;
                 const isListeningSec = currentSec ? currentSec.skill === "LISTENING" : parsedEbookData.skill === "LISTENING";
-                const questionsToShow = currentSec ? (currentSec.questions || []) : (parsedEbookData.questions || []);
+                const questionsToShow = currentSec && currentSec.questions && currentSec.questions.length > 0
+                  ? currentSec.questions
+                  : (parsedEbookData.questions || []);
 
                 return (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[60vh]">
@@ -1983,15 +2068,22 @@ export function ClassAssignmentsTab({
                           </div>
 
                           {/* Huy hiệu trạng thái chốt */}
-                          {isQuestionsFinalized ? (
-                            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold gap-1.5 shadow-sm">
-                              <ShieldCheck className="size-3.5" /> Đã chốt {selectedQuestionNumbers.length} câu sử dụng
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[11px] font-semibold gap-1.5">
-                              <AlertCircle className="size-3.5 text-amber-600" /> Chưa chốt (Đang chọn {selectedQuestionNumbers.length}/{parsedEbookData.questions?.length || 0} câu)
-                            </Badge>
-                          )}
+                          {(() => {
+                            const validSelectedCount = selectedQuestionNumbers.filter((n: number) =>
+                              (parsedEbookData.questions || []).some((q: any) => q.questionNumber === n)
+                            ).length;
+                            const totalQuestionsCount = parsedEbookData.questions?.length || 0;
+
+                            return isQuestionsFinalized ? (
+                              <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold gap-1.5 shadow-sm">
+                                <ShieldCheck className="size-3.5" /> Đã chốt {validSelectedCount} câu sử dụng
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[11px] font-semibold gap-1.5">
+                                <AlertCircle className="size-3.5 text-amber-600" /> Chưa chốt (Đang chọn {validSelectedCount}/{totalQuestionsCount} câu)
+                              </Badge>
+                            );
+                          })()}
                         </div>
 
                         {/* Thanh thao tác chọn câu hỏi & Nút Chốt câu hỏi sử dụng */}
@@ -2018,7 +2110,7 @@ export function ClassAssignmentsTab({
                                   onClick={handleFinalizeQuestions}
                                   className="px-3 py-1 text-xs bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-lg font-bold flex items-center gap-1 transition shadow-sm"
                                 >
-                                  <span>🔒 Chốt danh sách câu hỏi sử dụng ({selectedQuestionNumbers.length})</span>
+                                  <span>🔒 Chốt danh sách câu hỏi sử dụng ({selectedQuestionNumbers.filter((n: number) => (parsedEbookData.questions || []).some((q: any) => q.questionNumber === n)).length})</span>
                                 </button>
                               </>
                             ) : (

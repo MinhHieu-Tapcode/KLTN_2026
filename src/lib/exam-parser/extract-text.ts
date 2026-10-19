@@ -314,7 +314,7 @@ export function splitIntoExamParts(cleanedText: string): Array<{
 }> {
   const numToken = "(?:\\d+|ONE|TWO|THREE|FOUR|I|II|III|IV)";
   const headingRegex = new RegExp(
-    `(?:^|\\n)(?=(?:PART\\s+${numToken}\\s*[–\\-:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s+${numToken}|PASSAGE\\s+${numToken}\\b|LISTENING\\s+(?:SECTION|PART)\\s+${numToken}|SECTION\\s+${numToken}\\b|WRITING\\s+TASK\\s+${numToken}|SPEAKING\\s+PART\\s+${numToken})\\b)`,
+    `(?:^|\\n)(?=(?:PART\\s*${numToken}\\s*[-–:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s*${numToken}|PASSAGE\\s*${numToken}\\b|LISTENING\\s+(?:SECTION|PART)\\s*${numToken}|SECTION\\s*${numToken}\\b|WRITING\\s+TASK\\s*${numToken}|SPEAKING\\s+PART\\s*${numToken})\\b)`,
     "gi"
   );
 
@@ -390,11 +390,59 @@ export function splitIntoExamParts(cleanedText: string): Array<{
 function detectSkillFromText(
   text: string
 ): "READING" | "LISTENING" | "WRITING" | "SPEAKING" | undefined {
-  const head = text.slice(0, 800).toUpperCase();
-  if (head.includes("LISTENING") || head.includes("AUDIO TRACK") || head.includes("RECORDING"))
+  const upper = text.toUpperCase();
+  const head = upper.slice(0, 1500);
+
+  // 1. Kiểm tra tiêu đề tường minh (Explicit Headers) - Bắt trúng Part1-Reading Passage 1
+  if (
+    /READING\s+PASSAGE|PASSAGE\s+\d+|PART\s*\d*[\s\-–:]*READING|READING\s+TEST/i.test(head) ||
+    /TRUE\s*,\s*FALSE\s*,\s*NOT\s+GIVEN|YES\s*,\s*NO\s*,\s*NOT\s+GIVEN/i.test(head)
+  ) {
+    return "READING";
+  }
+
+  if (
+    /LISTENING\s+(?:SECTION|PART)|SECTION\s+\d+\s+QUESTIONS|AUDIO\s+TRACK|RECORDING\s+\d+/i.test(head) ||
+    /PLAY\s+AUDIO|LISTEN\s+TO\s+(?:THE\s+)?CONVERSATION/i.test(head)
+  ) {
     return "LISTENING";
-  if (head.includes("WRITING TASK") || head.includes("WRITE AT LEAST")) return "WRITING";
-  if (head.includes("SPEAKING") || head.includes("CUE CARD")) return "SPEAKING";
-  if (head.includes("READING") || head.includes("PASSAGE")) return "READING";
+  }
+
+  if (/WRITING\s+TASK\s+[12]|TASK\s+[12]\s*:\s*WRITE/i.test(head)) {
+    return "WRITING";
+  }
+
+  if (/SPEAKING\s+PART\s+[123]|CUE\s+CARD/i.test(head)) {
+    return "SPEAKING";
+  }
+
+  // 2. Nếu không có tiêu đề rõ ràng, tính điểm trọng số đặc trưng trên văn bản
+  const readingScore =
+    (upper.match(/\bPASSAGE\b/g)?.length || 0) * 3 +
+    (upper.match(/\bREADING\b/g)?.length || 0) * 2 +
+    (upper.match(/\bPARAGRAPH\b/g)?.length || 0) * 2 +
+    (upper.match(/TRUE|FALSE|NOT GIVEN/g)?.length || 0);
+
+  const listeningScore =
+    (upper.match(/\bSECTION\b/g)?.length || 0) * 3 +
+    (upper.match(/\bLISTENING\b/g)?.length || 0) * 2 +
+    (upper.match(/\bAUDIO|RECORDING|TRACK\b/g)?.length || 0) * 3;
+
+  const writingScore =
+    (upper.match(/WRITING\s+TASK/g)?.length || 0) * 4 +
+    (upper.match(/WRITE\s+AT\s+LEAST/g)?.length || 0) * 3;
+
+  const speakingScore =
+    (upper.match(/SPEAKING\s+PART/g)?.length || 0) * 4 +
+    (upper.match(/CUE\s+CARD/g)?.length || 0) * 3;
+
+  const maxScore = Math.max(readingScore, listeningScore, writingScore, speakingScore);
+  if (maxScore > 0) {
+    if (maxScore === readingScore) return "READING";
+    if (maxScore === listeningScore) return "LISTENING";
+    if (maxScore === writingScore) return "WRITING";
+    if (maxScore === speakingScore) return "SPEAKING";
+  }
+
   return undefined;
 }

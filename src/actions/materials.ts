@@ -939,6 +939,13 @@ export async function uploadCoursebookPackageAction(data: {
     mimeType?: string;
   }>;
   audioFolderName?: string;
+  answerKeyFile?: {
+    title?: string;
+    fileName: string;
+    fileSize: number;
+    fileUrl: string;
+    mimeType?: string;
+  };
 }) {
   const auth = checkNotStudent(
     await getSession(),
@@ -1036,6 +1043,25 @@ export async function uploadCoursebookPackageAction(data: {
         createdAt: new Date().toISOString(),
       }));
 
+      const extraMaterials: any[] = [];
+      if (data.answerKeyFile) {
+        parentFolder.fileCount += 1;
+        extraMaterials.push({
+          id: `mat-pkg-${Date.now()}-ans`,
+          folderId: parentFolder.id,
+          title: data.answerKeyFile.title?.trim() || `${rawTitle} - Đáp án (Answer Key)`,
+          fileName: data.answerKeyFile.fileName,
+          fileSize: data.answerKeyFile.fileSize || 2097152,
+          fileType: "PDF",
+          fileUrl: data.answerKeyFile.fileUrl,
+          mimeType: data.answerKeyFile.mimeType || "application/pdf",
+          downloadCount: 0,
+          uploadedById: session.userId || "SYSTEM",
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       globalMaterialsStore.demoFolders = [
         parentFolder,
         audioSubFolder,
@@ -1043,6 +1069,7 @@ export async function uploadCoursebookPackageAction(data: {
       ];
       globalMaterialsStore.demoMaterials = [
         bookMat,
+        ...extraMaterials,
         ...audioMats,
         ...(globalMaterialsStore.demoMaterials || []),
       ];
@@ -1113,6 +1140,25 @@ export async function uploadCoursebookPackageAction(data: {
         createdAt: new Date().toISOString(),
       }));
 
+      const extraMaterials: any[] = [];
+      if (data.answerKeyFile) {
+        parentFolder.fileCount += 1;
+        extraMaterials.push({
+          id: `mat-lvl-${Date.now()}-ans`,
+          folderId: parentFolder.id,
+          title: data.answerKeyFile.title?.trim() || `${rawTitle} - Đáp án (Answer Key)`,
+          fileName: data.answerKeyFile.fileName,
+          fileSize: data.answerKeyFile.fileSize || 2097152,
+          fileType: "PDF",
+          fileUrl: data.answerKeyFile.fileUrl,
+          mimeType: data.answerKeyFile.mimeType || "application/pdf",
+          downloadCount: 0,
+          uploadedById: session.userId || "SYSTEM",
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       globalMaterialsStore.demoFolders = [
         parentFolder,
         audioSubFolder,
@@ -1120,6 +1166,7 @@ export async function uploadCoursebookPackageAction(data: {
       ];
       globalMaterialsStore.demoMaterials = [
         bookMat,
+        ...extraMaterials,
         ...audioMats,
         ...(globalMaterialsStore.demoMaterials || []),
       ];
@@ -1215,6 +1262,22 @@ export async function uploadCoursebookPackageAction(data: {
           uploadedById: session.userId || "SYSTEM",
         },
       });
+
+      // Tệp đáp án nếu có
+      if (data.answerKeyFile) {
+        await prisma.learningMaterial.create({
+          data: {
+            folderId: parentFolder.id,
+            title: data.answerKeyFile.title?.trim() || `${rawTitle} - Đáp án (Answer Key)`,
+            fileName: data.answerKeyFile.fileName,
+            fileSize: data.answerKeyFile.fileSize,
+            fileType: "PDF",
+            fileUrl: data.answerKeyFile.fileUrl,
+            mimeType: data.answerKeyFile.mimeType || "application/pdf",
+            uploadedById: session.userId || "SYSTEM",
+          },
+        });
+      }
 
       // Thư mục con Audio cấp Trình độ
       const audioSubFolder = await prisma.materialFolder.create({

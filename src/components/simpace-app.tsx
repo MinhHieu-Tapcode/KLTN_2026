@@ -34,6 +34,7 @@ import { getSystemPermissionsAction } from "@/actions/permissions";
 import { getIeltsLevelsAction } from "@/actions/ielts-levels";
 import { RoleCode } from "@prisma/client";
 import { GlobalMaterialsView } from "@/components/materials/global-materials-view";
+import { ClassMaterialsTab } from "@/components/materials/class-materials-tab";
 import { ClassAssignmentsTab } from "@/components/assignments/class-assignments-tab";
 import { subtitle, roleLabel, roleBreadcrumbPrefix } from "@/components/shared/common-widgets";
 import { SimpaceLogo } from "@/components/logo";
@@ -587,17 +588,43 @@ export function SimpaceApp({
               />
             )}
             {view === "materials-global" && (
-              <GlobalMaterialsView
-                classes={classes}
-                currentUser={currentUser}
-                onOpenClassMaterials={async (cls) => {
-                  const detail = await getClassDetailAction(cls.id);
-                  setSelectedClass(detail || cls);
-                  setClassDetailTab("materials");
-                  navigate("class-detail");
-                }}
-                onRefreshAll={refreshAll}
-              />
+              currentUser.role === "STUDENT" ? (
+                (() => {
+                  const currentUid = currentUser?.id || currentUser?.userId;
+                  const myClass =
+                    classes.find((c) =>
+                      c.enrollments?.some(
+                        (e: any) =>
+                          e.studentId === currentUid ||
+                          e.student?.id === currentUid ||
+                          (currentUser.username && e.student?.username === currentUser.username) ||
+                          (currentUser.email && e.student?.email === currentUser.email)
+                      )
+                    ) || classes[0];
+
+                  return (
+                    <div className="space-y-4">
+                      <ClassMaterialsTab
+                        classId={myClass?.id || "demo-class-1"}
+                        className={myClass?.name || "Lớp IELTS của tôi"}
+                        currentUser={currentUser}
+                      />
+                    </div>
+                  );
+                })()
+              ) : (
+                <GlobalMaterialsView
+                  classes={classes}
+                  currentUser={currentUser}
+                  onOpenClassMaterials={async (cls) => {
+                    const detail = await getClassDetailAction(cls.id);
+                    setSelectedClass(detail || cls);
+                    setClassDetailTab("materials");
+                    navigate("class-detail");
+                  }}
+                  onRefreshAll={refreshAll}
+                />
+              )
             )}
             {view === "assignments-global" && (() => {
               const currentUid = currentUser?.id || currentUser?.userId;

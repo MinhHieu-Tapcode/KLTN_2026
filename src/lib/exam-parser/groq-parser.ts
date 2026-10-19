@@ -9,9 +9,8 @@ import { splitIntoExamParts } from "./extract-text";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const ACTIVE_MODELS = [
-  "openai/gpt-oss-120b",
-  "qwen/qwen3.8-27b",
-  "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
 ];
 
 const SYSTEM_PROMPT = `Bạn là bộ máy bóc tách đề thi IELTS chuyên nghiệp sang định dạng Ebook 2 Cột tương tác.
@@ -371,7 +370,7 @@ export function fallbackRuleBasedParse(
     const inlineBlankMatch = line.match(
       /^(.*?)(\d{1,2})\s*(?:_{2,}|\.{3,})(.*)$/
     );
-    const numMatch = line.match(/^(?:\()?(\d{1,2})[\.\)]\s+(.+)$/);
+    const numMatch = line.match(/^(?:\()?(\d{1,2})(?:[\.\)]\s*|\s{1,3})(?=[A-Z0-9"'])(.+)$/);
 
     if (bracketMatch) {
       const qNum = parseInt(bracketMatch[2], 10);
@@ -395,7 +394,7 @@ export function fallbackRuleBasedParse(
           skill
         )
       );
-    } else if (numMatch) {
+    } else if (numMatch && parseInt(numMatch[1], 10) >= 1 && parseInt(numMatch[1], 10) <= 40) {
       const qNum = parseInt(numMatch[1], 10);
       const prompt = numMatch[2].trim();
 
