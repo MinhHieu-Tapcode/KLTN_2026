@@ -13,7 +13,53 @@ export const QuestionTypeEnum = z.enum([
   "FILL_IN_BLANK",
   "ESSAY",
   "SPEAKING_RECORD",
+  "MATCHING_HEADINGS",
+  "MATCHING_INFO",
+  "MATCHING_FEATURES",
+  "SENTENCE_ENDINGS",
+  "MAP",
+  "SHORT_ANSWER",
 ]);
+
+export type IeltsQuestionKind =
+  | "TFNG"
+  | "MCQ"
+  | "MULTIPLE_CHOICE_MULTI"
+  | "TABLE"
+  | "FLOWCHART"
+  | "SUMMARY"
+  | "MATCHING_HEADINGS"
+  | "MATCHING_INFO"
+  | "MATCHING_FEATURES"
+  | "SENTENCE_ENDINGS"
+  | "MAP"
+  | "SHORT_ANSWER"
+  | "FILL_IN_BLANK";
+
+export interface GroupSkeleton {
+  id: string;
+  groupIndex: number;
+  partIndex: number;
+  title: string;
+  instruction: string;
+  kind: IeltsQuestionKind;
+  startNum: number;
+  endNum: number;
+  expectedNumbers: number[];
+  rawHeader: string;
+  pageNumber?: number;
+}
+
+export interface ExamSkeleton {
+  parts: Array<{
+    partIndex: number;
+    title: string;
+    groups: GroupSkeleton[];
+  }>;
+  allGroups: GroupSkeleton[];
+  totalExpectedQuestions: number;
+  allExpectedNumbers: number[];
+}
 
 export const ParsedQuestionSchema = z.object({
   questionNumber: z.number().int().positive(),

@@ -463,9 +463,7 @@ export function ClassAssignmentsTab({
         setTabSwitchCount((prev) => {
           const nextCount = prev + 1;
           setShowWarningModal(true);
-          if (nextCount > examAssignment.maxTabSwitches) {
-            handleAutoSubmit(nextCount, "VIOLATED_TAB_SWITCH_LIMIT");
-          }
+          // Không tự động thu bài khi làm bài tập, chỉ ghi nhận số lần out tab
           return nextCount;
         });
       }
@@ -475,9 +473,7 @@ export function ClassAssignmentsTab({
       setTabSwitchCount((prev) => {
         const nextCount = prev + 1;
         setShowWarningModal(true);
-        if (nextCount > examAssignment.maxTabSwitches) {
-          handleAutoSubmit(nextCount, "VIOLATED_TAB_SWITCH_LIMIT");
-        }
+        // Không tự động thu bài khi làm bài tập, chỉ ghi nhận số lần out tab
         return nextCount;
       });
     };
@@ -502,7 +498,8 @@ export function ClassAssignmentsTab({
     }));
 
     const finalTabCount = forceCheatingCount !== undefined ? forceCheatingCount : tabSwitchCount;
-    const isCheated = finalTabCount > examAssignment.maxTabSwitches;
+    // Không gắn cờ gian lận / khóa bài đối với bài tập luyện tập, chỉ lưu số lần chuyển tab để giáo viên theo dõi
+    const isCheated = false;
 
     startTransition(async () => {
       const res = await submitAssignmentAction({
@@ -984,20 +981,13 @@ export function ClassAssignmentsTab({
               {/* Cấu hình Giám sát thi */}
               <div className="col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                 <div>
-                  <b className="text-xs text-slate-800 block">Giám sát chống gian lận (Chuyển tab)</b>
-                  <span className="text-[11px] text-slate-500">Cảnh báo và tự động nộp bài khi học viên rời tab làm bài</span>
+                  <b className="text-xs text-slate-800 block">Theo dõi rời tab làm bài</b>
+                  <span className="text-[11px] text-slate-500">
+                    Tự động ghi nhận số lần học viên chuyển tab/rời màn hình vào kết quả để giáo viên theo dõi (không tự động thu bài)
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-600">Tối đa:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={manualMaxTabSwitches}
-                    onChange={(e) => setManualMaxTabSwitches(Number(e.target.value))}
-                    className="w-14 h-8 text-xs text-center border border-slate-200 rounded-lg bg-white"
-                  />
-                  <span className="text-xs text-slate-500">lần</span>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                  <CheckCircle2 className="size-3.5" /> Tự động ghi nhận
                 </div>
               </div>
             </div>
@@ -1050,7 +1040,22 @@ export function ClassAssignmentsTab({
                         onChange={(e) => {
                           const newType = e.target.value;
                           setManualQuestions((prev) =>
-                            prev.map((item, idx) => (idx === qIdx ? { ...item, type: newType } : item))
+                            prev.map((item, idx) => {
+                              if (idx !== qIdx) return item;
+                              if (newType === "MATCHING" && (!item.options || item.options.length === 0)) {
+                                return {
+                                  ...item,
+                                  type: newType,
+                                  correctAnswer: "i",
+                                  options: [
+                                    { optionLabel: "i", content: "", isCorrect: true },
+                                    { optionLabel: "ii", content: "", isCorrect: false },
+                                    { optionLabel: "iii", content: "", isCorrect: false },
+                                  ],
+                                };
+                              }
+                              return { ...item, type: newType };
+                            })
                           );
                         }}
                         className="h-7 text-xs rounded-lg border border-slate-200 bg-white font-medium text-slate-700 px-2"
@@ -1224,6 +1229,121 @@ export function ClassAssignmentsTab({
                     </div>
                   )}
 
+                  {q.type === "MATCHING" && (
+                    <div className="space-y-2.5 pt-1 p-3 bg-amber-50/50 rounded-xl border border-amber-200/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                          📋 Danh sách các Tiêu đề / Thông tin để nối (List of Headings):
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const romanNums = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+                            const curOpts = (q.options && q.options.length > 0) ? q.options : [
+                              { optionLabel: "i", content: "", isCorrect: true },
+                              { optionLabel: "ii", content: "", isCorrect: false },
+                              { optionLabel: "iii", content: "", isCorrect: false },
+                            ];
+                            const nextLabel = romanNums[curOpts.length] || `opt${curOpts.length + 1}`;
+                            const newOpts = [...curOpts, { optionLabel: nextLabel, content: "", isCorrect: false }];
+                            setManualQuestions((prev) =>
+                              prev.map((item, idx) => (idx === qIdx ? { ...item, options: newOpts } : item))
+                            );
+                          }}
+                          className="h-6 text-[10px] px-2 bg-white text-amber-800 border-amber-300 hover:bg-amber-100"
+                        >
+                          + Thêm Tiêu đề
+                        </Button>
+                      </div>
+
+                      {/* Danh sách các Headings */}
+                      <div className="space-y-1.5">
+                        {((q.options && q.options.length > 0) ? q.options : [
+                          { optionLabel: "i", content: "", isCorrect: true },
+                          { optionLabel: "ii", content: "", isCorrect: false },
+                          { optionLabel: "iii", content: "", isCorrect: false },
+                        ]).map((opt: any, optIdx: number) => (
+                          <div key={optIdx} className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-amber-900 w-6 text-center font-mono">{opt.optionLabel}.</span>
+                            <Input
+                              value={opt.content}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setManualQuestions((prev) =>
+                                  prev.map((item, idx) => {
+                                    if (idx !== qIdx) return item;
+                                    const curOpts = (item.options && item.options.length > 0) ? [...item.options] : [
+                                      { optionLabel: "i", content: "", isCorrect: true },
+                                      { optionLabel: "ii", content: "", isCorrect: false },
+                                      { optionLabel: "iii", content: "", isCorrect: false },
+                                    ];
+                                    curOpts[optIdx] = { ...curOpts[optIdx], content: val };
+                                    return { ...item, options: curOpts };
+                                  })
+                                );
+                              }}
+                              placeholder={`Nhập nội dung tiêu đề ${opt.optionLabel}...`}
+                              className="h-7 text-xs bg-white flex-1"
+                            />
+                            {/* Chọn đáp án đúng cho câu hỏi này */}
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 shrink-0 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`matching-correct-${qIdx}`}
+                                checked={q.correctAnswer === opt.optionLabel}
+                                onChange={() => {
+                                  setManualQuestions((prev) =>
+                                    prev.map((item, idx) => {
+                                      if (idx !== qIdx) return item;
+                                      const curOpts = (item.options && item.options.length > 0) ? [...item.options] : [
+                                        { optionLabel: "i", content: "", isCorrect: true },
+                                        { optionLabel: "ii", content: "", isCorrect: false },
+                                        { optionLabel: "iii", content: "", isCorrect: false },
+                                      ];
+                                      const newOpts = curOpts.map((o: any, oi: number) => ({
+                                        ...o,
+                                        isCorrect: oi === optIdx,
+                                      }));
+                                      return { ...item, options: newOpts, correctAnswer: opt.optionLabel };
+                                    })
+                                  );
+                                }}
+                                className="size-4 accent-[#EA580C]"
+                              />
+                              <span className="text-[10px]">Đáp án đúng</span>
+                            </label>
+                            {/* Nút xóa heading nếu > 2 headings */}
+                            {(q.options?.length || 0) > 2 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setManualQuestions((prev) =>
+                                    prev.map((item, idx) => {
+                                      if (idx !== qIdx) return item;
+                                      const newOpts = (item.options || []).filter((_: any, oi: number) => oi !== optIdx);
+                                      return { ...item, options: newOpts };
+                                    })
+                                  );
+                                }}
+                                className="text-slate-400 hover:text-rose-600 p-1"
+                                title="Xóa tiêu đề này"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="text-[11px] text-amber-800 bg-amber-100/70 p-2 rounded-lg flex items-center justify-between">
+                        <span>Đoạn văn/mệnh đề nối: <b>{q.prompt || `Câu hỏi số ${qIdx + 1}`}</b></span>
+                        <span>Đáp án chọn: <b className="text-[#EA580C] font-mono">{q.correctAnswer || "i"}</b></span>
+                      </div>
+                    </div>
+                  )}
+
                   {(q.type === "ESSAY" || q.type === "SPEAKING_RECORD") && (
                     <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl text-[11px] text-amber-800">
                       ℹ️ Dạng câu hỏi <b>{q.type === "ESSAY" ? "Tự luận Viết" : "Ghi âm Nói"}</b>: Giáo viên sẽ trực tiếp chấm tay và nhận xét dựa trên 4 tiêu chí IELTS sau khi học sinh nộp bài.
@@ -1341,32 +1461,32 @@ export function ClassAssignmentsTab({
       )}
 
       {/* ========================================================
-          MODAL CẢNH BÁO ĐỎ: RỜI KHỎI TAB THI
+          MODAL NHẮC NHỞ: RỜI KHỎI MÀN HÌNH BÀI TẬP
           ======================================================== */}
       {showWarningModal && (
         <Dialog open={true} onOpenChange={() => setShowWarningModal(false)}>
-          <DialogContent className="max-w-md rounded-2xl p-6 bg-white border-2 border-rose-500">
+          <DialogContent className="max-w-md rounded-2xl p-6 bg-white border border-amber-300">
             <div className="text-center space-y-3">
-              <div className="size-14 rounded-full bg-rose-100 text-rose-600 grid place-items-center mx-auto animate-bounce">
+              <div className="size-14 rounded-full bg-amber-100 text-amber-600 grid place-items-center mx-auto">
                 <AlertTriangle className="size-7" />
               </div>
-              <h3 className="text-base font-bold text-rose-700">
-                CẢNH BÁO RỜI MÀN HÌNH LÀM BÀI!
+              <h3 className="text-base font-bold text-amber-700">
+                NHẮC NHỞ: RỜI KHỎI MÀN HÌNH BÀI TẬP
               </h3>
               <p className="text-xs text-slate-600">
-                Hệ thống phát hiện bạn vừa chuyển tab hoặc thu nhỏ trình duyệt.
+                Hệ thống phát hiện bạn vừa chuyển tab hoặc rời cửa sổ trình duyệt.
                 <br />
-                Số lần vi phạm: <b className="text-rose-600 font-bold">{tabSwitchCount} / {examAssignment?.maxTabSwitches || 3}</b>.
+                Đã ghi nhận lần thứ: <b className="text-amber-600 font-bold">{tabSwitchCount}</b>.
               </p>
-              <p className="text-[11px] text-slate-500 bg-rose-50 p-2 rounded-xl">
-                Lưu ý: Nếu vi phạm quá số lần cho phép, bài thi sẽ bị <b>tự động thu hồi và khóa làm tiếp</b>!
+              <p className="text-[11px] text-slate-500 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                Lưu ý: Số lần rời tab sẽ được lưu lại trong kết quả nộp bài để giáo viên theo dõi. Bạn vẫn có thể tiếp tục làm bài bình thường!
               </p>
               <Button
                 size="sm"
                 onClick={() => setShowWarningModal(false)}
-                className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs"
+                className="w-full rounded-xl bg-[#EA580C] hover:bg-[#EA580C]/90 text-white font-semibold text-xs"
               >
-                Tôi đã hiểu và quay lại làm bài
+                Tôi đã hiểu và tiếp tục làm bài
               </Button>
             </div>
           </DialogContent>

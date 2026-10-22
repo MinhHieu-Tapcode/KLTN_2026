@@ -5,6 +5,34 @@ const globalAssignmentsStore = globalThis as unknown as {
   demoAssignments?: any[];
 };
 
+/**
+ * Ánh xạ an toàn giữa QuestionType của bộ Exam Parser và Enum QuestionType của Prisma DB
+ */
+function mapQuestionTypeToDbEnum(typeStr?: string): QuestionType {
+  switch (typeStr) {
+    case "MULTIPLE_CHOICE_MULTI":
+    case "MULTIPLE_SELECT":
+      return "MULTIPLE_SELECT" as QuestionType;
+    case "TRUE_FALSE_NG":
+      return "TRUE_FALSE_NG" as QuestionType;
+    case "FILL_IN_BLANK":
+    case "MATCHING_HEADINGS":
+    case "MATCHING_INFO":
+    case "MATCHING_FEATURES":
+    case "SENTENCE_ENDINGS":
+    case "MAP":
+    case "SHORT_ANSWER":
+      return "FILL_IN_BLANK" as QuestionType;
+    case "ESSAY":
+      return "ESSAY" as QuestionType;
+    case "SPEAKING_RECORD":
+      return "SPEAKING_RECORD" as QuestionType;
+    case "MULTIPLE_CHOICE":
+    default:
+      return "MULTIPLE_CHOICE" as QuestionType;
+  }
+}
+
 export interface CreateAssignmentInput {
   classId?: string;
   targetClassIds?: string[];
@@ -86,7 +114,7 @@ export async function createAssignmentService(
 
   const primaryClassId = targetClassList[0];
 
-  if (!(await isDbAlive())) {
+  const saveToDemoStore = () => {
     const totalPts = data.questions.reduce((sum, q) => sum + (Number(q.points) || 1), 0);
     const assignId = `assign-${Date.now()}`;
     const assignedClasses = targetClassList.map((cId) => ({
@@ -96,7 +124,7 @@ export async function createAssignmentService(
       dueDate: data.dueDate || null,
       startDate: data.startDate || null,
       enableProctoring: data.enableProctoring !== false,
-      maxTabSwitches: data.maxTabSwitches ? Number(data.maxTabSwitches) : 3,
+      maxTabSwitches: 999, // Không giới hạn số lần out tab
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -119,7 +147,7 @@ export async function createAssignmentService(
       dueDate: data.dueDate || null,
       audioUrl: data.audioUrl || null,
       enableProctoring: data.enableProctoring !== false,
-      maxTabSwitches: data.maxTabSwitches ? Number(data.maxTabSwitches) : 3,
+      maxTabSwitches: 999, // Không giới hạn số lần out tab
       createdById: createdById || "SYSTEM",
       totalPoints: totalPts,
       submittedCount: 0,
@@ -136,7 +164,7 @@ export async function createAssignmentService(
         questionNumber: q.questionNumber || idx + 1,
         passageText: q.passageText?.trim() || null,
         prompt: q.prompt.trim(),
-        type: q.type || "MULTIPLE_CHOICE",
+        type: mapQuestionTypeToDbEnum(q.type),
         points: Number(q.points) || 1.0,
         correctAnswer: q.correctAnswer?.trim() || null,
         explanation: q.explanation?.trim() || null,
@@ -161,72 +189,89 @@ export async function createAssignmentService(
       assignmentId: newAssign.id,
       assignedClassCount: targetClassList.length,
     };
+  };
+
+  if (!(await isDbAlive())) {
+    return saveToDemoStore();
   }
 
-  const assignment = await prisma.assignment.create({
-    data: {
-      classId: primaryClassId,
-      title: data.title.trim(),
-      description: JSON.stringify({
-        instruction: data.description?.trim() || null,
-        flowcharts: data.flowcharts || [],
-        tables: data.tables || [],
-        matchingHeadings: data.matchingHeadings || [],
-        summaries: data.summaries || [],
-      }),
-      skill: (data.skill as AssignmentSkill) || "READING",
-      type: (data.type as AssignmentType) || "HOMEWORK",
-      durationMinutes: data.durationMinutes ? Number(data.durationMinutes) : null,
-      dueDate: data.dueDate ? new Date(data.dueDate) : null,
-      audioUrl: data.audioUrl || null,
-      enableProctoring: data.enableProctoring !== false,
-      maxTabSwitches: data.maxTabSwitches ? Number(data.maxTabSwitches) : 3,
-      createdById: createdById || "SYSTEM",
-      assignedClasses: {
-        create: targetClassList.map((cId) => ({
-          classId: cId,
-          dueDate: data.dueDate ? new Date(data.dueDate) : null,
-          startDate: data.startDate ? new Date(data.startDate) : null,
-          enableProctoring: data.enableProctoring !== false,
-          maxTabSwitches: data.maxTabSwitches ? Number(data.maxTabSwitches) : 3,
-        })),
+  try {
+    const assignment = await prisma.assignment.create({
+      data: {
+        classId: primaryClassId,
+        title: data.title.trim(),
+        description: JSON.stringify({
+          instruction: data.description?.trim() || null,
+          flowcharts: data.flowcharts || [],
+          tables: data.tables || [],
+          matchingHeadings: data.matchingHeadings || [],
+          summaries: data.summaries || [],
+        }),
+        skill: (data.skill as AssignmentSkill) || "READING",
+        type: (data.type as AssignmentType) || "HOMEWORK",
+        durationMinutes: data.durationMinutes ? Number(data.durationMinutes) : null,
+        dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        audioUrl: data.audioUrl || null,
+        enableProctoring: data.enableProctoring !== false,
+        maxTabSwitches: 999, // Không giới hạn số lần out tab
+        createdById: createdById || "SYSTEM",
+        assignedClasses: {
+          create: targetClassList.map((cId) => ({
+            classId: cId,
+            dueDate: data.dueDate ? new Date(data.dueDate) : null,
+            startDate: data.startDate ? new Date(data.startDate) : null,
+            enableProctoring: data.enableProctoring !== false,
+            maxTabSwitches: 999,
+          })),
+        },
+        questions: {
+          create: data.questions.map((q, idx) => ({
+            questionNumber: q.questionNumber || idx + 1,
+            passageText: q.passageText?.trim() || null,
+            prompt: q.prompt.trim(),
+            type: mapQuestionTypeToDbEnum(q.type),
+            points: Number(q.points) || 1.0,
+            correctAnswer: q.correctAnswer?.trim() || null,
+            explanation: q.explanation?.trim() || null,
+            orderIndex: idx,
+            options:
+              q.options && q.options.length > 0
+                ? {
+                    create: q.options.map((opt) => ({
+                      optionLabel: opt.optionLabel,
+                      content: opt.content,
+                      isCorrect: Boolean(opt.isCorrect),
+                    })),
+                  }
+                : undefined,
+          })),
+        },
       },
-      questions: {
-        create: data.questions.map((q, idx) => ({
-          questionNumber: q.questionNumber || idx + 1,
-          passageText: q.passageText?.trim() || null,
-          prompt: q.prompt.trim(),
-          type: (q.type as QuestionType) || "MULTIPLE_CHOICE",
-          points: Number(q.points) || 1.0,
-          correctAnswer: q.correctAnswer?.trim() || null,
-          explanation: q.explanation?.trim() || null,
-          orderIndex: idx,
-          options:
-            q.options && q.options.length > 0
-              ? {
-                  create: q.options.map((opt) => ({
-                    optionLabel: opt.optionLabel,
-                    content: opt.content,
-                    isCorrect: Boolean(opt.isCorrect),
-                  })),
-                }
-              : undefined,
-        })),
+      include: {
+        assignedClasses: true,
+        questions: {
+          include: { options: true },
+        },
       },
-    },
-    include: {
-      assignedClasses: true,
-      questions: {
-        include: { options: true },
-      },
-    },
-  });
+    });
 
-  return {
-    success: true,
-    assignmentId: assignment.id,
-    assignedClassCount: assignment.assignedClasses.length,
-  };
+    return {
+      success: true,
+      assignmentId: assignment.id,
+      assignedClassCount: assignment.assignedClasses.length,
+    };
+  } catch (dbErr: any) {
+    const errText = String(dbErr?.message || dbErr || "");
+    // Bắt lỗi P2021 hoặc text lỗi nếu bảng assignments chưa được tạo trên Supabase PostgreSQL
+    if (dbErr?.code === "P2021" || errText.includes("does not exist")) {
+      console.warn(
+        "[createAssignmentService] CSDL chưa có bảng 'assignments', tự động chuyển sang lưu tạm bộ nhớ:",
+        errText
+      );
+      return saveToDemoStore();
+    }
+    throw dbErr;
+  }
 }
 
 /**
@@ -280,7 +325,7 @@ export async function updateAssignmentService(
         questionNumber: q.questionNumber || idx + 1,
         passageText: q.passageText?.trim() || null,
         prompt: q.prompt.trim(),
-        type: q.type || "MULTIPLE_CHOICE",
+        type: mapQuestionTypeToDbEnum(q.type),
         points: Number(q.points) || 1.0,
         correctAnswer: q.correctAnswer?.trim() || null,
         explanation: q.explanation?.trim() || null,
@@ -347,7 +392,7 @@ export async function updateAssignmentService(
             questionNumber: q.questionNumber || idx + 1,
             passageText: q.passageText?.trim() || null,
             prompt: q.prompt.trim(),
-            type: (q.type as QuestionType) || "MULTIPLE_CHOICE",
+            type: mapQuestionTypeToDbEnum(q.type),
             points: Number(q.points) || 1.0,
             correctAnswer: q.correctAnswer?.trim() || null,
             explanation: q.explanation?.trim() || null,

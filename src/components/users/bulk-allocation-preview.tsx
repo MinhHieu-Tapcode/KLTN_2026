@@ -462,23 +462,36 @@ export function BulkAllocationPreview({
 
       const nextPlans = allocationSuggestion.levelPlans.map((p) => {
         if (p.levelId === sourcePlan.levelId) {
+          const cleanSourceClasses = updatedSourceClasses.filter((c) => c.students.length > 0);
           return {
             ...p,
-            classes: updatedSourceClasses,
-            studentCount: updatedSourceClasses.reduce((sum, c) => sum + c.students.length, 0),
+            classes: cleanSourceClasses,
+            classCount: cleanSourceClasses.length,
+            studentCount: cleanSourceClasses.reduce((sum, c) => sum + c.students.length, 0),
           };
         }
         if (p.levelId === targetPlan.levelId) {
+          const cleanTargetClasses = updatedTargetClasses.filter((c) => c.students.length > 0);
           return {
             ...p,
-            classes: updatedTargetClasses,
-            studentCount: updatedTargetClasses.reduce((sum, c) => sum + c.students.length, 0),
+            classes: cleanTargetClasses,
+            classCount: cleanTargetClasses.length,
+            studentCount: cleanTargetClasses.reduce((sum, c) => sum + c.students.length, 0),
           };
         }
         return p;
       });
 
-      onUpdateSuggestion({ ...allocationSuggestion, levelPlans: nextPlans });
+      const newTotalClasses = nextPlans.reduce((sum, p) => sum + p.classes.length, 0);
+
+      onUpdateSuggestion({
+        ...allocationSuggestion,
+        levelPlans: nextPlans,
+        summary: {
+          ...allocationSuggestion.summary,
+          totalClasses: newTotalClasses,
+        },
+      });
       onNotify(`Đã chuyển học sinh ${student.fullName} từ ${srcClassName} sang ${tgtClassName} thành công!`);
     }
   };
@@ -510,24 +523,31 @@ export function BulkAllocationPreview({
     const student = deleteTargetStudent;
 
     const nextPlans = allocationSuggestion.levelPlans.map((plan) => {
-      const updatedClasses = plan.classes.map((cls) => {
-        const nextStudents = cls.students.filter(
-          (s) => s.email.toLowerCase() !== student.email.toLowerCase()
-        );
-        return { ...cls, students: nextStudents };
-      });
+      const updatedClasses = plan.classes
+        .map((cls) => {
+          const nextStudents = cls.students.filter(
+            (s) => s.email.toLowerCase() !== student.email.toLowerCase()
+          );
+          return { ...cls, students: nextStudents };
+        })
+        .filter((cls) => cls.students.length > 0); // Tự động loại bỏ lớp khi sĩ số = 0
+
       return {
         ...plan,
         classes: updatedClasses,
+        classCount: updatedClasses.length,
         studentCount: updatedClasses.reduce((sum, c) => sum + c.students.length, 0),
       };
     });
+
+    const newTotalClasses = nextPlans.reduce((sum, p) => sum + p.classes.length, 0);
 
     onUpdateSuggestion({
       ...allocationSuggestion,
       levelPlans: nextPlans,
       summary: {
         ...allocationSuggestion.summary,
+        totalClasses: newTotalClasses,
         totalAllocatedStudents: Math.max(0, allocationSuggestion.summary.totalAllocatedStudents - 1),
       },
     });

@@ -46,6 +46,7 @@ Quy ước thêm:
 5. **Không sửa/xóa bảng hoặc cột hiện hữu** trong `schema.prisma` khi chưa được đồng ý. Ưu tiên chỉ thêm mới.
 6. Mọi chữ hiển thị cho người dùng (nhãn, thông báo lỗi, nút) bằng tiếng Việt.
 7. Không đọc/sửa `scratch/`, `.next/`, `node_modules/`. Thư mục `lovable-design/` chỉ là prototype giao diện tham khảo, **không phải code chính**.
+8. **TRUNG THỰC KỸ THUẬT TUYỆT ĐỐI:** AI phải nói mọi sự thật về năng lực hệ thống và giới hạn công nghệ. Tuyệt đối KHÔNG vẽ ra những giải pháp viển vông, không có thật, hoặc hệ thống không thể đạt được với nguồn lực và thời gian hiện tại của nhóm sinh viên (Agile 1 tháng, miễn phí). Cái gì làm được thì nói làm được, cái gì AI/công nghệ chưa làm được hoặc khó khả thi thì phải nói thẳng, chỉ rõ điểm nghẽn thực tế để nhóm đưa ra quyết định thực tế nhất.
 
 ## 5. Checklist sau khi sửa xong
 - Chạy `npx tsc --noEmit` và `npm run lint`, báo kết quả.

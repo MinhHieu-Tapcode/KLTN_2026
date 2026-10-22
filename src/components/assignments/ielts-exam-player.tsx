@@ -161,7 +161,7 @@ export function IeltsExamPlayer({
   // Xác định câu hỏi theo section hiện tại (nếu có chia section)
   const currentSection = sections.length > 0 ? sections[activeSectionIndex] : null;
 
-  // Lắng nghe sự kiện chuyển tab
+  // Lắng nghe sự kiện chuyển tab (Chỉ ghi nhận số lần rời tab để gửi giáo viên, không tự động thu bài)
   useEffect(() => {
     if (!enableProctoring) return;
 
@@ -169,14 +169,7 @@ export function IeltsExamPlayer({
       if (document.hidden) {
         setTabSwitches((prev) => {
           const next = prev + 1;
-          if (next >= maxTabSwitches) {
-            setProctorWarning(`Bạn đã vi phạm chuyển tab ${next}/${maxTabSwitches} lần! Hệ thống sẽ tự động thu bài.`);
-            setTimeout(() => {
-              onSubmit(studentAnswers);
-            }, 3000);
-          } else {
-            setProctorWarning(`Cảnh báo: Phát hiện rời khỏi màn hình thi (${next}/${maxTabSwitches} lần)!`);
-          }
+          setProctorWarning(`Nhắc nhở: Hệ thống ghi nhận bạn vừa rời khỏi màn hình làm bài (lần thứ ${next}). Lịch sử rời tab sẽ được gửi cho giáo viên.`);
           return next;
         });
       }
@@ -184,7 +177,7 @@ export function IeltsExamPlayer({
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [enableProctoring, maxTabSwitches, studentAnswers, onSubmit]);
+  }, [enableProctoring]);
 
   // Đếm ngược thời gian
   useEffect(() => {
@@ -258,9 +251,9 @@ export function IeltsExamPlayer({
           {!isPreview && enableProctoring && (
             <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-300">
               <ShieldAlert className="size-3.5 text-amber-400" />
-              <span>Chuyển tab: </span>
-              <b className={tabSwitches > 0 ? "text-rose-400" : "text-emerald-400"}>
-                {tabSwitches}/{maxTabSwitches}
+              <span>Rời tab: </span>
+              <b className={tabSwitches > 0 ? "text-amber-400" : "text-emerald-400"}>
+                {tabSwitches} lần
               </b>
             </div>
           )}

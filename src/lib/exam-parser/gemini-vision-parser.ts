@@ -311,6 +311,12 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
           ) {
             effectiveType = "TRUE_FALSE_NG";
           } else if (
+            (rawType.includes("MULTI") && (rawType.includes("SELECT") || rawType.includes("CHOICE"))) ||
+            combinedContext.includes("choose two") ||
+            combinedContext.includes("choose three")
+          ) {
+            effectiveType = "MULTIPLE_CHOICE_MULTI";
+          } else if (
             rawType.includes("CHOICE") ||
             rawType.includes("MCQ") ||
             (Array.isArray(q.options) && q.options.length >= 2)
@@ -332,7 +338,7 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
               { optionLabel: "C", content: "NOT GIVEN", isCorrect: correctAnswer === "NOT GIVEN" },
             ];
             if (!correctAnswer) correctAnswer = "TRUE";
-          } else if (effectiveType === "MULTIPLE_CHOICE") {
+          } else if (effectiveType === "MULTIPLE_CHOICE" || effectiveType === "MULTIPLE_CHOICE_MULTI") {
             const rawOpts = Array.isArray(q.options) ? q.options : [];
             const labels = ["A", "B", "C", "D", "E", "F", "G", "H"];
             if (rawOpts.length >= 2) {

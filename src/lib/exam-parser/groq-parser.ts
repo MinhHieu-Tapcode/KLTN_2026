@@ -1,5 +1,6 @@
 import {
   GroqPartOutputSchema,
+  GroupSkeleton,
   ParsedExamResult,
   ParsedQuestion,
   ParsedSection,
@@ -7,6 +8,12 @@ import {
 } from "./types";
 import { splitIntoExamParts } from "./extract-text";
 import { executeWithGroqKeyPool, getGroqKeyPool } from "./groq-key-pool";
+import {
+  buildExamSkeleton,
+  extractGroupSkeletonsFromText,
+  findGroupByQuestionNumber,
+} from "./exam-skeleton";
+import { validateQuestion } from "./question-validator";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const ACTIVE_MODELS = [
@@ -262,44 +269,103 @@ ${textToSend}
 
 /**
  * Chuẩn hóa một câu hỏi từ đầu ra AI sang đúng chuẩn giao diện Ebook 2 cột
+ * Áp dụng kiến trúc Group Property: Khóa dạng câu hỏi theo Nhóm thay vì suy đoán trôi dạt từng câu
  */
 function normalizeQuestion(
   rawQ: any,
   fallbackNumber: number,
   partTitle: string,
-  skill: string
+  skill: string,
+  group?: GroupSkeleton
 ): ParsedQuestion {
   const rawType = String(rawQ?.type || "FILL_IN_BLANK")
     .trim()
     .toUpperCase();
-  const contextForType = `${rawQ?.prompt || ""} ${rawQ?.explanation || ""}`.toLowerCase();
+  const promptContext = String(rawQ?.prompt || "").toLowerCase();
 
   let normalizedType: ParsedQuestion["type"] = "FILL_IN_BLANK";
-  if (
-    rawType.includes("TRUE") ||
-    rawType.includes("FALSE") ||
-    rawType.includes("YES") ||
-    rawType.includes("NOT_GIVEN") ||
-    contextForType.includes("agree with the information") ||
-    contextForType.includes("true if the statement") ||
-    contextForType.includes("true/false/not given") ||
-    contextForType.includes("yes/no/not given")
-  ) {
-    normalizedType = "TRUE_FALSE_NG";
-  } else if (rawType.includes("MULTI") && rawType.includes("SELECT")) {
-    normalizedType = "MULTIPLE_CHOICE_MULTI";
-  } else if (
-    rawType.includes("CHOICE") ||
-    rawType.includes("MCQ") ||
-    (Array.isArray(rawQ?.options) && rawQ.options.length >= 2)
-  ) {
-    normalizedType = "MULTIPLE_CHOICE";
-  } else if (rawType.includes("ESSAY") || rawType.includes("WRITING")) {
-    normalizedType = "ESSAY";
-  } else if (rawType.includes("SPEAK")) {
-    normalizedType = "SPEAKING_RECORD";
-  } else if (QuestionTypeEnum.options.includes(rawType as any)) {
-    normalizedType = rawType as ParsedQuestion["type"];
+
+  // ƯU TIÊN 1: Khóa loại câu theo Group Skeleton (Group Property)
+  if (group) {
+    switch (group.kind) {
+      case "TFNG":
+        normalizedType = "TRUE_FALSE_NG";
+        break;
+      case "MULTIPLE_CHOICE_MULTI":
+        normalizedType = "MULTIPLE_CHOICE_MULTI";
+        break;
+      case "MCQ":
+        normalizedType = "MULTIPLE_CHOICE";
+        break;
+      case "MATCHING_HEADINGS":
+        normalizedType = "MATCHING_HEADINGS";
+        break;
+      case "MATCHING_INFO":
+        normalizedType = "MATCHING_INFO";
+        break;
+      case "MATCHING_FEATURES":
+        normalizedType = "MATCHING_FEATURES";
+        break;
+      case "SENTENCE_ENDINGS":
+        normalizedType = "SENTENCE_ENDINGS";
+        break;
+      case "MAP":
+        normalizedType = "MAP";
+        break;
+      case "SHORT_ANSWER":
+        normalizedType = "SHORT_ANSWER";
+        break;
+      case "TABLE":
+      case "FLOWCHART":
+      case "SUMMARY":
+      case "FILL_IN_BLANK":
+      default:
+        normalizedType = "FILL_IN_BLANK";
+        break;
+    }
+  } else {
+    // ƯU TIÊN 2: Khi không có thông tin nhóm, suy đoán từ rawType và prompt
+    if (
+      rawType.includes("TRUE") ||
+      rawType.includes("FALSE") ||
+      rawType.includes("YES") ||
+      rawType.includes("NOT_GIVEN") ||
+      promptContext.includes("agree with the information") ||
+      promptContext.includes("true if the statement") ||
+      promptContext.includes("true/false/not given") ||
+      promptContext.includes("yes/no/not given")
+    ) {
+      normalizedType = "TRUE_FALSE_NG";
+    } else if (
+      (rawType.includes("MULTI") && (rawType.includes("SELECT") || rawType.includes("CHOICE"))) ||
+      promptContext.includes("choose two") ||
+      promptContext.includes("choose three")
+    ) {
+      // Sửa bug kiến trúc: nhận diện trọn vẹn cả MULTIPLE_CHOICE_MULTI lẫn MULTIPLE_SELECT
+      normalizedType = "MULTIPLE_CHOICE_MULTI";
+    } else if (
+      rawType.includes("CHOICE") ||
+      rawType.includes("MCQ") ||
+      (Array.isArray(rawQ?.options) && rawQ.options.length >= 2)
+    ) {
+      normalizedType = "MULTIPLE_CHOICE";
+    } else if (rawType.includes("HEAD") || promptContext.includes("heading")) {
+      normalizedType = "MATCHING_HEADINGS";
+    } else if (rawType.includes("INFO") || promptContext.includes("paragraph contains")) {
+      normalizedType = "MATCHING_INFO";
+    } else if (rawType.includes("FEATURE") || promptContext.includes("match each")) {
+      normalizedType = "MATCHING_FEATURES";
+    } else if (rawType.includes("MAP") || promptContext.includes("label the")) {
+      normalizedType = "MAP";
+    } else if (rawType.includes("SHORT")) {
+      normalizedType = "SHORT_ANSWER";
+    } else if (rawType.includes("ESSAY") || rawType.includes("WRITING")) {
+      normalizedType = "ESSAY";
+    } else if (rawType.includes("SPEAK")) {
+      normalizedType = "SPEAKING_RECORD";
+    } else if (QuestionTypeEnum.options.includes(rawType as any)) {
+      normalizedType = rawType as ParsedQuestion["type"];
+    }
   }
 
   let options: ParsedQuestion["options"] = [];
@@ -391,14 +457,18 @@ function normalizeQuestion(
 
 /**
  * Phương án dự phòng bằng quy tắc (Rule-based Fallback) khi không có kết nối AI
- * Mở rộng: Hỗ trợ trọn vẹn cả Table Completion, Matching Headings, True/False/Not Given
+ * Áp dụng kiến trúc Skeleton + Content Validator:
+ * - Không biến số La Mã (i, ii...) thành câu hỏi đơn
+ * - Không nhận nhầm dòng số năm hay số đo thành câu hỏi
+ * - Khóa dải số câu hỏi theo Skeleton thực tế của đề thi
  */
 export function fallbackRuleBasedParse(
   partTitle: string,
   partContent: string,
   skill: "READING" | "LISTENING" | "WRITING" | "SPEAKING",
-  startNumber: number
-): { passageText: string; questions: ParsedQuestion[] } {
+  startNumber: number,
+  knownGroups?: GroupSkeleton[]
+): { passageText: string; questions: ParsedQuestion[]; matchingHeadings?: any } {
   if (skill === "WRITING") {
     return {
       passageText: partContent,
@@ -437,6 +507,14 @@ export function fallbackRuleBasedParse(
     };
   }
 
+  // 1. Phân tích Skeleton của phần thi này
+  const groups = knownGroups && knownGroups.length > 0
+    ? knownGroups
+    : extractGroupSkeletonsFromText(partContent, 0);
+
+  // Nếu có nhóm xác định được dải số bắt đầu thật, ưu tiên dùng dải số đó
+  const effectiveStartNum = groups.length > 0 ? groups[0].startNum : startNumber;
+
   const passageText = extractVerbatimPassage(partContent);
   const qSplitMatch = partContent.match(
     /\n(?=(?:Questions?\s+\d+|SECTION\s+QUESTIONS))/i
@@ -448,20 +526,53 @@ export function fallbackRuleBasedParse(
 
   const questions: ParsedQuestion[] = [];
   const lines = questionZone.split("\n");
-  let currentSubZoneIsTfng = /TRUE\s*\/?\s*FALSE\s*\/?\s*NOT\s+GIVEN|YES\s*\/?\s*NO\s*\/?\s*NOT\s+GIVEN/i.test(
-    questionZone
-  );
+
+  // 2. Tách Matching Headings nếu có (tránh biến heading thành câu hỏi lẻ)
+  let extractedMatchingHeadings: any = null;
+  const mhGroup = groups.find((g) => g.kind === "MATCHING_HEADINGS");
+  if (mhGroup) {
+    const romanHeadingMatches = Array.from(
+      questionZone.matchAll(/(?:^|\n)\s*([ivxlc]+)[\.\)]\s+([^\n]+)/gi)
+    );
+    if (romanHeadingMatches.length >= 2) {
+      const headings = romanHeadingMatches.map((m, idx) => ({
+        id: String(idx + 1),
+        romanNumeral: m[1].toLowerCase(),
+        text: m[2].trim(),
+      }));
+      extractedMatchingHeadings = {
+        title: mhGroup.title || "List of Headings",
+        instruction: mhGroup.instruction || "Choose the correct heading for each paragraph from the list of headings below.",
+        headings,
+        items: [],
+        questionNumbers: mhGroup.expectedNumbers,
+      };
+    }
+  }
+
+  let currentGroup = groups[0] || undefined;
+  let currentSubZoneIsTfng = currentGroup?.kind === "TFNG";
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
 
+    // Cập nhật Nhóm hiện tại khi gặp dòng Header "Questions X-Y"
     if (/^Questions?\s+\d+/i.test(line)) {
-      const lookahead = lines.slice(i, i + 6).join(" ");
-      currentSubZoneIsTfng =
-        /TRUE\s*\/?\s*FALSE\s*\/?\s*NOT\s+GIVEN|YES\s*\/?\s*NO\s*\/?\s*NOT\s+GIVEN/i.test(
-          lookahead
-        );
+      const matchedGroup = groups.find((g) =>
+        line.toLowerCase().includes(g.title.toLowerCase()) ||
+        new RegExp(`Questions?\\s+${g.startNum}\\b`, "i").test(line)
+      );
+      if (matchedGroup) {
+        currentGroup = matchedGroup;
+        currentSubZoneIsTfng = currentGroup.kind === "TFNG";
+      } else {
+        const lookahead = lines.slice(i, i + 6).join(" ");
+        currentSubZoneIsTfng =
+          /TRUE\s*\/?\s*FALSE\s*\/?\s*NOT\s+GIVEN|YES\s*\/?\s*NO\s*\/?\s*NOT\s+GIVEN/i.test(
+            lookahead
+          );
+      }
       continue;
     }
 
@@ -476,18 +587,22 @@ export function fallbackRuleBasedParse(
           const qNum = parseInt(qNumStr, 10);
           if (qNum >= 1 && qNum <= 60 && !questions.some((q) => q.questionNumber === qNum)) {
             const prompt = line.replace(/\|/g, " ").replace(/\s+/g, " ").trim();
-            questions.push(
-              normalizeQuestion(
-                {
-                  questionNumber: qNum,
-                  prompt: `${prompt}`,
-                  type: "FILL_IN_BLANK",
-                },
-                startNumber + questions.length,
-                partTitle,
-                skill
-              )
+            const groupForQ = groups.find((g) => g.expectedNumbers.includes(qNum)) || currentGroup;
+            const qObj = normalizeQuestion(
+              {
+                questionNumber: qNum,
+                prompt: `${prompt}`,
+                type: "FILL_IN_BLANK",
+              },
+              qNum,
+              partTitle,
+              skill,
+              groupForQ
             );
+            const vRes = validateQuestion(qObj, groupForQ);
+            if (vRes.isValid) {
+              questions.push(qObj);
+            }
           }
         }
       }
@@ -504,60 +619,54 @@ export function fallbackRuleBasedParse(
     const formMatch = line.match(/^([A-Za-z\s]{2,30}):\s*(?:(?:\((\d{1,3})\))?\s*(___+|\.{3,}))/);
     // 5. Dạng câu hỏi đánh số thông thường: 1. prompt hoặc 1) prompt
     const numMatch = line.match(/^(?:\()?(\d{1,3})(?:[\.\)]\s*|\s{1,3})(.+)$/);
-    // 6. Dạng Matching Headings số La Mã: i. Headings title hoặc vii) ...
-    const romanMatch = line.match(/^([ivxlc]+)[\.\)]\s+(.+)$/i);
 
     if (bracketMatch) {
       const qNum = parseInt(bracketMatch[2], 10);
       const prompt = line.replace(/\[(?:Question\s*)?\d{1,3}\]/gi, "_______");
+      const groupForQ = groups.find((g) => g.expectedNumbers.includes(qNum)) || currentGroup;
       questions.push(
         normalizeQuestion(
           { questionNumber: qNum, prompt, type: "FILL_IN_BLANK" },
-          startNumber + questions.length,
+          qNum,
           partTitle,
-          skill
+          skill,
+          groupForQ
         )
       );
     } else if (formMatch) {
-      const qNum = formMatch[2] ? parseInt(formMatch[2], 10) : startNumber + questions.length;
+      const qNum = formMatch[2] ? parseInt(formMatch[2], 10) : effectiveStartNum + questions.length;
       const prompt = `${formMatch[1].trim()}: (${qNum}) _______`;
+      const groupForQ = groups.find((g) => g.expectedNumbers.includes(qNum)) || currentGroup;
       questions.push(
         normalizeQuestion(
           { questionNumber: qNum, prompt, type: "FILL_IN_BLANK" },
-          startNumber + questions.length,
+          qNum,
           partTitle,
-          skill
+          skill,
+          groupForQ
         )
       );
     } else if (inlineBlankMatch && !numMatch) {
       const qNum = parseInt(inlineBlankMatch[2], 10);
       const prompt = `${inlineBlankMatch[1].trim()} (${qNum}) _______ ${inlineBlankMatch[3].trim()}`.trim();
+      const groupForQ = groups.find((g) => g.expectedNumbers.includes(qNum)) || currentGroup;
       questions.push(
         normalizeQuestion(
           { questionNumber: qNum, prompt, type: "FILL_IN_BLANK" },
-          startNumber + questions.length,
+          qNum,
           partTitle,
-          skill
-        )
-      );
-    } else if (romanMatch && romanMatch[2].length > 5) {
-      const romanLabel = romanMatch[1].toLowerCase();
-      questions.push(
-        normalizeQuestion(
-          {
-            questionNumber: startNumber + questions.length,
-            prompt: `Choose the correct heading for paragraph: ${romanMatch[2].trim()}`,
-            type: "FILL_IN_BLANK",
-            explanation: `Heading label: ${romanLabel}`,
-          },
-          startNumber + questions.length,
-          partTitle,
-          skill
+          skill,
+          groupForQ
         )
       );
     } else if (numMatch && parseInt(numMatch[1], 10) >= 1 && parseInt(numMatch[1], 10) <= 60) {
       const qNum = parseInt(numMatch[1], 10);
       const prompt = numMatch[2].trim();
+      const groupForQ = groups.find((g) => g.expectedNumbers.includes(qNum)) || currentGroup;
+
+      // Kiểm tra loại trừ: Không nhận nhầm các dòng thông tin như "1995 saw...", "2 hours after..."
+      const isInExpectedGroup = groupForQ?.expectedNumbers.includes(qNum);
+      const hasBlank = /_{2,}|\.{3,}/.test(prompt);
 
       const opts: Array<{ optionLabel: string; content: string }> = [];
       let j = i + 1;
@@ -568,7 +677,7 @@ export function fallbackRuleBasedParse(
           continue;
         }
 
-        // Trường hợp 1: Có nhiều phương án trên cùng 1 dòng (ví dụ 2 hoặc 4 phương án in ngang)
+        // Trường hợp 1: Có nhiều phương án trên cùng 1 dòng
         const multiMatches = Array.from(
           lineJ.matchAll(/(?:^|\s{2,}|\t)([A-H])(?:[\.\)]\s*|\s+)(.+?)(?=(?:\s{2,}|\t)[A-H](?:[\.\)]\s*|\s+)|$)/gi)
         );
@@ -583,7 +692,7 @@ export function fallbackRuleBasedParse(
           continue;
         }
 
-        // Trường hợp 2: Mỗi dòng 1 phương án (hỗ trợ cả định dạng Cambridge không có chấm "A text")
+        // Trường hợp 2: Mỗi dòng 1 phương án
         const optMatch = lineJ.match(/^([A-H])(?:[\.\)]\s*|\s+)(.+)$/i);
         if (optMatch) {
           const expectedLabel = String.fromCharCode(65 + opts.length);
@@ -600,56 +709,85 @@ export function fallbackRuleBasedParse(
         break;
       }
 
-      if (opts.length >= 2) {
-        i = j - 1;
-        questions.push(
-          normalizeQuestion(
+      // Xác định tính hợp lệ: phải có ít nhất 1 dấu hiệu câu hỏi thật
+      const hasOptions = opts.length >= 2;
+      const isTrueFalseLine = (currentSubZoneIsTfng || groupForQ?.kind === "TFNG") && prompt.length >= 10;
+
+      if (isInExpectedGroup || hasBlank || hasOptions || isTrueFalseLine) {
+        if (hasOptions) {
+          i = j - 1;
+          const qObj = normalizeQuestion(
             {
               questionNumber: qNum,
               prompt,
               type: "MULTIPLE_CHOICE",
               options: opts,
             },
-            startNumber + questions.length,
+            qNum,
             partTitle,
-            skill
-          )
-        );
-      } else {
-        const qType = /_{2,}|\.{3,}/.test(prompt)
-          ? "FILL_IN_BLANK"
-          : currentSubZoneIsTfng
-          ? "TRUE_FALSE_NG"
-          : "FILL_IN_BLANK";
+            skill,
+            groupForQ
+          );
+          const vRes = validateQuestion(qObj, groupForQ);
+          if (vRes.isValid) questions.push(qObj);
+        } else {
+          const qType = hasBlank
+            ? "FILL_IN_BLANK"
+            : (currentSubZoneIsTfng || groupForQ?.kind === "TFNG")
+            ? "TRUE_FALSE_NG"
+            : "FILL_IN_BLANK";
+          const qObj = normalizeQuestion(
+            { questionNumber: qNum, prompt, type: qType },
+            qNum,
+            partTitle,
+            skill,
+            groupForQ
+          );
+          const vRes = validateQuestion(qObj, groupForQ);
+          if (vRes.isValid) questions.push(qObj);
+        }
+      }
+    }
+  }
+
+  // Nếu là Matching Headings mà các items chưa được nhận diện dạng số, điền items từ expectedNumbers
+  if (extractedMatchingHeadings && extractedMatchingHeadings.questionNumbers) {
+    extractedMatchingHeadings.questionNumbers.forEach((num: number) => {
+      if (!questions.some((q) => q.questionNumber === num)) {
         questions.push(
           normalizeQuestion(
-            { questionNumber: qNum, prompt, type: qType },
-            startNumber + questions.length,
+            {
+              questionNumber: num,
+              prompt: `Choose the correct heading for Section/Paragraph ${String.fromCharCode(65 + (num - extractedMatchingHeadings.questionNumbers[0]))}`,
+              type: "MATCHING_HEADINGS",
+            },
+            num,
             partTitle,
-            skill
+            skill,
+            mhGroup
           )
         );
       }
-    }
+    });
   }
 
   if (questions.length === 0) {
     questions.push(
       normalizeQuestion(
         {
-          questionNumber: startNumber,
+          questionNumber: effectiveStartNum,
           prompt:
-            "Câu hỏi số 1 (Giáo viên có thể chỉnh sửa hoặc bấm + Thêm câu hỏi mới)",
+            "Câu hỏi số " + effectiveStartNum + " (Giáo viên có thể chỉnh sửa hoặc bấm + Thêm câu hỏi mới)",
           type: "FILL_IN_BLANK",
         },
-        startNumber,
+        effectiveStartNum,
         partTitle,
         skill
       )
     );
   }
 
-  return { passageText, questions };
+  return { passageText, questions, matchingHeadings: extractedMatchingHeadings };
 }
 
 /**
@@ -668,7 +806,10 @@ export async function parseExamTextWithGroq(params: {
   const rawParts = splitIntoExamParts(cleanedText);
   const warnings: string[] = [];
 
-  // Bóc tách từng Part:
+  // 1. Xây dựng bộ khung Skeleton toàn đề thi (Dual-Gate: Gate 1)
+  const examSkeleton = buildExamSkeleton(cleanedText, rawParts);
+
+  // 2. Bóc tách từng Part song song hoặc tuần tự
   const partTasks = rawParts.map(async (part, idx) => {
     const effectiveSkill: "READING" | "LISTENING" | "WRITING" | "SPEAKING" =
       skill === "ALL_SKILLS"
@@ -679,6 +820,10 @@ export async function parseExamTextWithGroq(params: {
     let passageText = extractVerbatimPassage(part.content);
     let partQuestions: ParsedQuestion[] = [];
     let aiResult: any = null;
+
+    // Trích xuất cấu trúc nhóm câu hỏi riêng của Part này
+    const partGroups = extractGroupSkeletonsFromText(part.content, idx);
+    const partExpectedStart = partGroups.length > 0 ? partGroups[0].startNum : 1;
 
     if (keyPool.length > 0) {
       try {
@@ -691,9 +836,45 @@ export async function parseExamTextWithGroq(params: {
             aiResult.questionStartMarker
           );
           const rawQuestions = Array.isArray(aiResult.questions) ? aiResult.questions : [];
-          partQuestions = rawQuestions.map((rq: any, qIdx: number) =>
-            normalizeQuestion(rq, qIdx + 1, partTitle, effectiveSkill)
-          );
+
+          // Chuẩn hóa và lọc qua Cổng kiểm tra nội dung (Gate 2: Content Validator)
+          for (let qIdx = 0; qIdx < rawQuestions.length; qIdx++) {
+            const rq = rawQuestions[qIdx];
+            const rawNum = typeof rq?.questionNumber === "number" && rq.questionNumber > 0
+              ? rq.questionNumber
+              : partExpectedStart + qIdx;
+
+            const matchedGroup = partGroups.find((g) => g.expectedNumbers.includes(rawNum));
+            const normalizedQ = normalizeQuestion(
+              rq,
+              rawNum,
+              partTitle,
+              effectiveSkill,
+              matchedGroup
+            );
+
+            // Cổng kiểm tra nội dung câu hỏi
+            const vRes = validateQuestion(normalizedQ, matchedGroup);
+            if (vRes.isValid) {
+              partQuestions.push(normalizedQ);
+            } else {
+              // Nếu là câu chỉ dẫn hoặc tiêu đề bảng bị nhận nhầm, loại bỏ và cảnh báo
+              if (
+                vRes.reasons.some((r) =>
+                  r.includes("prompt_la_cau_chi_dan") ||
+                  r.includes("la_tieu_de_bang_khong_phai_cau_hoi") ||
+                  r.includes("qua_ngan")
+                )
+              ) {
+                warnings.push(
+                  `Phần ${idx + 1}: Đã loại bỏ phần tử lỗi (Câu ${rawNum}): ${vRes.reasons.join(", ")}`
+                );
+              } else {
+                // Các trường hợp khác (ví dụ thiếu chỗ trống) vẫn giữ lại để giáo viên tự sửa
+                partQuestions.push(normalizedQ);
+              }
+            }
+          }
         }
       } catch (err: any) {
         console.warn(`[parseExamTextWithGroq] Fallback cho phần ${idx + 1}:`, err.message);
@@ -702,9 +883,18 @@ export async function parseExamTextWithGroq(params: {
     }
 
     if (partQuestions.length === 0) {
-      const fallback = fallbackRuleBasedParse(partTitle, part.content, effectiveSkill, 1);
+      const fallback = fallbackRuleBasedParse(
+        partTitle,
+        part.content,
+        effectiveSkill,
+        partExpectedStart,
+        partGroups
+      );
       passageText = fallback.passageText;
       partQuestions = fallback.questions;
+      if (fallback.matchingHeadings && !aiResult?.matchingHeadings) {
+        aiResult = { ...aiResult, matchingHeadings: fallback.matchingHeadings };
+      }
     }
 
     return {
@@ -716,30 +906,31 @@ export async function parseExamTextWithGroq(params: {
       matchingHeadings: aiResult?.matchingHeadings,
       tables: aiResult?.tables,
       summaries: aiResult?.summaries,
+      partGroups,
     };
   });
 
   const partResults = await Promise.all(partTasks);
 
-  // Sắp xếp lại thứ tự câu hỏi xuyên suốt toàn bộ đề thi để không bị trùng lặp
+  // 3. Gom và sắp xếp các câu hỏi theo ĐÚNG SỐ THỰC TẾ CỦA ĐỀ THI
+  // TUYỆT ĐỐI KHÔNG DỒN SỐ TỰ ĐỘNG (runningQuestionNum) ĐỂ TRÁNH TẠO 40 CÂU ẢO
   const sections: ParsedSection[] = [];
   const allQuestions: ParsedQuestion[] = [];
-  let runningQuestionNum = 1;
+  const seenQuestionNumbers = new Set<number>();
 
   for (let idx = 0; idx < partResults.length; idx++) {
     const res = partResults[idx];
-    const usedNums = new Set(allQuestions.map((q) => q.questionNumber));
 
     const adjustedQuestions = res.questions.map((q) => {
-      let num = q.questionNumber;
-      if (usedNums.has(num) || num <= 0) {
-        num = runningQuestionNum;
+      if (seenQuestionNumbers.has(q.questionNumber)) {
+        warnings.push(
+          `Cảnh báo trùng số câu: Câu ${q.questionNumber} xuất hiện nhiều hơn 1 lần trong đề thi`
+        );
       }
-      usedNums.add(num);
-      runningQuestionNum = Math.max(runningQuestionNum, num + 1);
+      seenQuestionNumbers.add(q.questionNumber);
+
       return {
         ...q,
-        questionNumber: num,
         passageText: res.passageText || q.passageText || res.partTitle,
       };
     });
@@ -758,6 +949,9 @@ export async function parseExamTextWithGroq(params: {
       questions: adjustedQuestions,
     });
   }
+
+  // Sắp xếp câu hỏi theo thứ tự số tăng dần thực tế
+  allQuestions.sort((a, b) => a.questionNumber - b.questionNumber);
 
   const allMatchingHeadings: any[] = [];
   const allTables: any[] = [];

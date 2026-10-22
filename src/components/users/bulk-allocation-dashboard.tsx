@@ -51,10 +51,10 @@ export function BulkAllocationDashboard({
     });
   }, [levelPlans]);
 
-  // Flatten all classes
+  // Flatten all classes (Chỉ lấy các lớp có học sinh, loại bỏ lớp rỗng)
   const allClasses: ProposedClass[] = [];
   for (const plan of sortedLevelPlans) {
-    allClasses.push(...plan.classes);
+    allClasses.push(...plan.classes.filter((c) => c.students.length > 0));
   }
 
   // Calculate SVG Donut segments
@@ -229,7 +229,7 @@ export function BulkAllocationDashboard({
                 </span>
               </div>
 
-              {plan.classes.map((cls) => {
+              {plan.classes.filter((c) => c.students.length > 0).map((cls) => {
                 const count = cls.students.length;
                 const cap = cls.capacity || maxCapacity || 30;
                 const ratio = Math.min(100, Math.round((count / cap) * 100));

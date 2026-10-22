@@ -508,20 +508,24 @@ export async function rebalanceOnStudentTransferAction(
       return { success: false, error: "Không tìm thấy lớp học đích!" };
     }
 
-    // 2. Thêm học sinh vào lớp đích
-    const finalClasses = classesWithoutStudent.map((c) => {
-      if (c.tempId === targetClassTempId) {
-        return {
-          ...c,
-          students: [...c.students, transferredStudent!],
-        };
-      }
-      return c;
-    });
+    // 2. Thêm học sinh vào lớp đích và tự động dọn dẹp lớp rỗng (0 học sinh)
+    const activeClasses = classesWithoutStudent
+      .map((c) => {
+        if (c.tempId === targetClassTempId) {
+          return {
+            ...c,
+            students: [...c.students, transferredStudent!],
+          };
+        }
+        return c;
+      })
+      .filter((c) => c.students.length > 0);
 
     const updatedPlan: LevelAllocationPlan = {
       ...currentPlan,
-      classes: finalClasses,
+      classes: activeClasses,
+      classCount: activeClasses.length,
+      studentCount: activeClasses.reduce((sum, c) => sum + c.students.length, 0),
     };
 
     return {

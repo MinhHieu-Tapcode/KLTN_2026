@@ -366,21 +366,12 @@ export function MultiClassAssignmentModal({
                   onChange={(e) => setEnableProctoring(e.target.checked)}
                   className="size-4 rounded accent-[#EA580C] cursor-pointer"
                 />
-                <span className="font-semibold text-slate-800">Giám sát rời tab chống gian lận</span>
+                <span className="font-semibold text-slate-800">Ghi nhận số lần rời tab vào bài làm</span>
               </label>
               {enableProctoring && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500 text-[11px]">Tối đa rời:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={maxTabSwitches}
-                    onChange={(e) => setMaxTabSwitches(Number(e.target.value))}
-                    className="w-12 h-6 text-center text-xs border border-slate-200 rounded bg-white font-bold"
-                  />
-                  <span className="text-slate-500 text-[11px]">lần</span>
-                </div>
+                <span className="text-emerald-700 font-medium text-[11px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  Tự động ghi nhận (không tự động thu bài)
+                </span>
               )}
             </div>
           </div>
