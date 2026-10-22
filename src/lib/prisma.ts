@@ -31,36 +31,39 @@ function parseDbHostAndPort(): { host: string; port: number } {
 }
 
 /**
- * Kiểm tra siêu tốc xem Cơ sở dữ liệu PostgreSQL có đang hoạt động hay không.
- * Tự động phân biệt giữa Localhost (kiểm tra 300ms) và Cloud Database / Supabase trên Vercel (kiểm tra 2500ms)
- * để tránh false-negative và ngăn chặn triệt để tình trạng treo / lag.
+ * Kiểm tra xem Cơ sở dữ liệu PostgreSQL có đang hoạt động hay không.
+ * - Trên môi trường Production / Cloud (Vercel / Supabase): Bỏ qua raw socket probe nặng nề,
+ *   tận dụng tối đa Connection Pool của Prisma và Supavisor, phản hồi tức thì (0ms overhead).
+ * - Trên môi trường Localhost: Kiểm tra nhanh qua socket (300ms) để thông báo cho lập trình viên nếu quên bật Postgres.
  */
 export async function isDbAlive(): Promise<boolean> {
-  const now = Date.now();
+  const urlStr = process.env.DATABASE_URL;
+  if (!urlStr) {
+    return false;
+  }
+
   const { host, port } = parseDbHostAndPort();
   const isLocal = host === "127.0.0.1" || host === "localhost";
 
-  // Cache kết quả: Nếu DB đang hoạt động tốt -> cache 60s. Nếu tạm thời lỗi -> cache ngắn (5s cho cloud, 15s cho local) để thử lại sớm
-  const cacheDuration = globalForPrisma.isDbReachable
-    ? 60000
-    : isLocal
-    ? 15000
-    : 5000;
+  // Trên Cloud / Vercel: DB Supabase luôn sẵn sàng qua Connection Pooler.
+  // Không thực hiện TCP raw socket hay query thừa trước mỗi request để tránh đội latency.
+  if (!isLocal || process.env.VERCEL) {
+    return true;
+  }
 
+  // Ở Local: Kiểm tra nhanh socket để hỗ trợ dev khi chạy máy cá nhân
+  const now = Date.now();
   if (
     globalForPrisma.isDbReachable !== undefined &&
     globalForPrisma.lastDbCheckTime &&
-    now - globalForPrisma.lastDbCheckTime < cacheDuration
+    now - globalForPrisma.lastDbCheckTime < 15000
   ) {
     return globalForPrisma.isDbReachable;
   }
 
-  const socketTimeout = isLocal ? 300 : 2500;
-  const probeTimeout = isLocal ? 800 : 3500;
-
   const isSocketOpen = await new Promise<boolean>((resolve) => {
     try {
-      const socket = net.createConnection({ host, port, timeout: socketTimeout });
+      const socket = net.createConnection({ host, port, timeout: 300 });
       socket.once("connect", () => {
         socket.destroy();
         resolve(true);
@@ -78,25 +81,7 @@ export async function isDbAlive(): Promise<boolean> {
     }
   });
 
-  if (!isSocketOpen) {
-    globalForPrisma.isDbReachable = false;
-    globalForPrisma.lastDbCheckTime = now;
-    return false;
-  }
-
-  try {
-    const probe = prisma.$queryRaw`SELECT 1`;
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("DB_PROBE_TIMEOUT")), probeTimeout)
-    );
-    await Promise.race([probe, timeout]);
-    globalForPrisma.isDbReachable = true;
-    globalForPrisma.lastDbCheckTime = now;
-    return true;
-  } catch {
-    globalForPrisma.isDbReachable = false;
-    globalForPrisma.lastDbCheckTime = now;
-    return false;
-  }
+  globalForPrisma.isDbReachable = isSocketOpen;
+  globalForPrisma.lastDbCheckTime = now;
+  return isSocketOpen;
 }
-
