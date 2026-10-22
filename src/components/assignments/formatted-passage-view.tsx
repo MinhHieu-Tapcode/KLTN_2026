@@ -1,67 +1,14 @@
 "use client";
 
 import React from "react";
+import { renderInlineFormattedText } from "./inline-text-formatter";
 
 interface FormattedPassageViewProps {
   text?: string | null;
   fallbackText?: string;
 }
 
-/**
- * Render inline formatting:
- * - **bold** -> <strong>
- * - *italic* -> <em>
- * - IELTS uppercase constraints (ONE WORD ONLY, TRUE, FALSE, NOT GIVEN, NO MORE THAN..., etc.) -> <strong>
- * - Blank lines (______) -> highlighted blank badge
- */
-function renderInlineFormattedText(raw: string, isInstructionLine = false): React.ReactNode {
-  // Chuẩn hóa các cụm từ khóa quy định chuẩn của mọi đề IELTS để in đậm tự động
-  let processed = raw;
-  if (isInstructionLine) {
-    processed = processed.replace(
-      /\b(ONE WORD AND\/OR A NUMBER|NO MORE THAN (?:ONE|TWO|THREE|FOUR|\d+) WORDS?(?: AND\/OR A NUMBER)?|ONE WORD ONLY|TWO WORDS ONLY|TRUE|FALSE|NOT GIVEN|YES|NO|CHOOSE (?:ONE|TWO|THREE) LETTERS?|A,\s*B,\s*C\s*or\s*D|at least \d+ words)\b/g,
-      "**$1**"
-    );
-  }
 
-  // Tách theo token: **bold**, *italic*, hoặc chỗ trống điền từ (___+)
-  const tokenRegex = /(\*\*[^*]+\*\*|\*[^*\n]+\*|\(\d{1,2}\)\s*_{2,}|\b\d{1,2}\s*_{3,}|_{3,})/g;
-  const parts = processed.split(tokenRegex);
-
-  return parts.map((part, idx) => {
-    if (!part) return null;
-
-    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-      return (
-        <strong key={idx} className="font-bold text-slate-900">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-
-    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
-      return (
-        <em key={idx} className="italic text-slate-700">
-          {part.slice(1, -1)}
-        </em>
-      );
-    }
-
-    if (/_{3,}/.test(part)) {
-      const numMatch = part.match(/\d{1,2}/);
-      return (
-        <span
-          key={idx}
-          className="inline-flex items-center px-2 py-0.5 mx-0.5 rounded bg-orange-50 border border-orange-200 text-[#EA580C] font-sans font-bold text-xs tracking-wider"
-        >
-          {numMatch ? `(${numMatch[0]}) ______` : "________"}
-        </span>
-      );
-    }
-
-    return <React.Fragment key={idx}>{part}</React.Fragment>;
-  });
-}
 
 /**
  * Component hiển thị Đề bài / Passage chuẩn định dạng đề thi IELTS (áp dụng tổng quát cho mọi file PDF/Word)
@@ -70,6 +17,7 @@ export function FormattedPassageView({
   text,
   fallbackText = "Vui lòng đọc kỹ các câu hỏi bên cột phải và hoàn thành bài tập theo đúng thời lượng quy định.",
 }: FormattedPassageViewProps) {
+  const [fontSize, setFontSize] = React.useState<"normal" | "large">("normal");
   const cleanSource = (text || "").trim();
   if (!cleanSource) {
     return <p className="text-xs text-slate-500 italic">{fallbackText}</p>;
@@ -79,12 +27,70 @@ export function FormattedPassageView({
   const sections = cleanSource.split(/\n*━{5,}\n*/);
 
   return (
-    <div className="space-y-6 font-serif text-slate-800">
+    <div className={`space-y-4 font-serif text-slate-800 ${fontSize === "large" ? "text-[15.5px]" : "text-[13px]"}`}>
+      <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-tight font-sans">
+          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px]">1.1 PASSAGE</span>
+          <span>Bài đọc hiểu</span>
+        </div>
+        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 font-sans">
+          <button
+            type="button"
+            onClick={() => setFontSize("normal")}
+            className={`px-2 py-0.5 rounded text-xs font-bold transition ${
+              fontSize === "normal" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+            }`}
+            title="Cỡ chữ chuẩn"
+          >
+            A
+          </button>
+          <button
+            type="button"
+            onClick={() => setFontSize("large")}
+            className={`px-2 py-0.5 rounded text-xs font-bold transition ${
+              fontSize === "large" ? "bg-white text-[#EA580C] shadow-2xs font-extrabold" : "text-slate-500 hover:text-slate-800"
+            }`}
+            title="Phóng to cỡ chữ"
+          >
+            A+
+          </button>
+        </div>
+      </div>
       {sections.map((secText, secIdx) => {
-        const rawLines = secText
+        // Dọn dẹp dòng rác: watermark website, link PDF, số trang rác
+        const filteredLines: string[] = [];
+        const lines = secText
           .split(/\r?\n/)
           .map((l) => l.trim())
           .filter((l) => l.length > 0);
+
+        for (const line of lines) {
+          if (
+            /^(?:https?:\s*\/|\/\/[a-z0-9\-\.]+\.[a-z]{2,}|www\.[a-z0-9\-]+|trendinggyan|ieltscuecard)/i.test(line) ||
+            /^(?:page\s+\d+|trang\s+\d+|-\s*\d+\s*-|\d+\s*\/\s*\d+)$/i.test(line) ||
+            /(?:https?:\s*\/|trendinggyan|ieltscuecard).*page\s*\d+/i.test(line)
+          ) {
+            continue;
+          }
+          filteredLines.push(line);
+        }
+
+        // Nối các dòng bị ngắt câu giữa chừng (ví dụ: dòng trước kết thúc bằng "whether a vision is" và dòng sau bắt đầu bằng chữ thường)
+        const rawLines: string[] = [];
+        for (const line of filteredLines) {
+          if (
+            rawLines.length > 0 &&
+            !rawLines[rawLines.length - 1].startsWith("|") &&
+            !line.startsWith("|") &&
+            !/^[A-Z][.:]|\bParagraph\s+[A-Z]/i.test(line) &&
+            !/^(?:part\s+\d|reading\s+passage|section\s+\d|writing\s+task|questions?\s+\d)/i.test(line) &&
+            (!/[.?!:"]$/.test(rawLines[rawLines.length - 1]) || /^[a-z]/.test(line))
+          ) {
+            rawLines[rawLines.length - 1] = `${rawLines[rawLines.length - 1]} ${line}`;
+          } else {
+            rawLines.push(line);
+          }
+        }
 
         // Gom các dòng bảng | ... | liên tiếp thành 1 khối table
         const blocks: Array<
@@ -239,7 +245,7 @@ export function FormattedPassageView({
                 return (
                   <h4
                     key={bIdx}
-                    className="text-[15.5px] font-bold text-slate-900 font-serif leading-snug pt-1"
+                    className="text-base font-extrabold text-slate-900 font-sans tracking-tight uppercase pb-1.5 mb-2 border-b border-slate-200"
                   >
                     {renderInlineFormattedText(line, false)}
                   </h4>
@@ -259,9 +265,9 @@ export function FormattedPassageView({
                     key={bIdx}
                     className="text-[13.5px] leading-[1.8] text-slate-700 text-justify"
                   >
-                    <strong className="font-sans font-extrabold text-slate-950 text-[14px] mr-1.5">
+                    <span className="inline-flex items-center justify-center size-6 rounded-md bg-slate-100 border border-slate-200 font-sans font-bold text-xs text-slate-900 mr-2 shrink-0 select-none">
                       {label}
-                    </strong>
+                    </span>
                     {renderInlineFormattedText(body, false)}
                   </p>
                 );

@@ -1,3 +1,16 @@
+export {
+  createAssignmentService,
+  updateAssignmentService,
+  deleteAssignmentService,
+} from "./assignment-mutation.service";
+export type {
+  CreateAssignmentInput,
+  UpdateAssignmentInput,
+} from "./assignment-mutation.service";
+export {
+  regradeAssignmentSubmissionsService,
+} from "./assignment-regrade.service";
+
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { isAnswerCorrect, isObjectiveOnly as allObjective, isObjectiveType } from "@/lib/grading";
 import { AssignmentSkill, AssignmentType, QuestionType } from "@prisma/client";
@@ -122,24 +135,92 @@ if (!globalAssignmentsStore.demoAssignments) {
   ];
 }
 
-export async function getClassAssignmentsService(classId: string) {
+export async function getClassAssignmentsService(classId: string, currentUserId?: string) {
   if (!(await isDbAlive())) {
     const list = (globalAssignmentsStore.demoAssignments || []).filter(
-      (a) => a.isActive !== false && (!classId || a.classId === classId)
+      (a) =>
+        a.isActive !== false &&
+        (!classId ||
+          a.classId === classId ||
+          (Array.isArray(a.assignedClasses) &&
+            a.assignedClasses.some((ac: any) => ac.classId === classId && ac.isActive !== false)))
     );
-    return { success: true, assignments: list };
+    const formatted = list.map((a) => {
+      const classLink = (a.assignedClasses || []).find((ac: any) => ac.classId === classId);
+      const dueDate = classLink?.dueDate || a.dueDate;
+      const enableProctoring =
+        classLink?.enableProctoring !== undefined ? classLink.enableProctoring : a.enableProctoring;
+      const maxTabSwitches =
+        classLink?.maxTabSwitches !== undefined ? classLink.maxTabSwitches : a.maxTabSwitches;
+      const totalPoints = (a.questions || []).reduce(
+        (sum: number, q: any) => sum + (Number(q.points) || 1),
+        0
+      );
+      const submittedCount = (a.submissions || []).filter(
+        (s: any) =>
+          (!classId || !s.classId || s.classId === classId) &&
+          (s.status === "SUBMITTED" || s.status === "GRADED")
+      ).length;
+      const flaggedCount = (a.submissions || []).filter(
+        (s: any) => (!classId || !s.classId || s.classId === classId) && s.isCheatingFlagged
+      ).length;
+
+      const mySub = currentUserId
+        ? (a.submissions || []).find((s: any) => s.studentId === currentUserId)
+        : null;
+      const mySubmission = mySub
+        ? {
+            id: mySub.id,
+            status: mySub.status,
+            score: mySub.score,
+            totalPoints: mySub.totalPoints || totalPoints,
+            submittedAt: mySub.submittedAt,
+            isCheatingFlagged: mySub.isCheatingFlagged,
+          }
+        : null;
+
+      return {
+        ...a,
+        dueDate,
+        enableProctoring,
+        maxTabSwitches,
+        totalPoints,
+        submittedCount,
+        flaggedCount,
+        mySubmission,
+        assignedClassCount: Array.isArray(a.assignedClasses)
+          ? a.assignedClasses.filter((ac: any) => ac.isActive !== false).length
+          : 1,
+      };
+    });
+    return { success: true, assignments: formatted };
   }
 
   const assignments = await prisma.assignment.findMany({
     where: {
-      classId,
       isActive: true,
+      OR: [
+        { classId },
+        { assignedClasses: { some: { classId, isActive: true } } },
+      ],
     },
     include: {
+      assignedClasses: {
+        where: { isActive: true },
+        include: {
+          class: { select: { id: true, name: true, code: true } },
+        },
+      },
       questions: {
         select: { id: true, points: true },
       },
       submissions: {
+        where: {
+          OR: [
+            { classId },
+            { classId: null },
+          ],
+        },
         select: {
           id: true,
           studentId: true,
@@ -155,29 +236,59 @@ export async function getClassAssignmentsService(classId: string) {
   });
 
   const formatted = assignments.map((a) => {
+    const classLink = a.assignedClasses.find((ac) => ac.classId === classId);
     const totalPoints = a.questions.reduce((sum, q) => sum + (q.points || 0), 0);
     const submittedCount = a.submissions.filter(
       (s) => s.status === "SUBMITTED" || s.status === "GRADED"
     ).length;
     const flaggedCount = a.submissions.filter((s) => s.isCheatingFlagged).length;
 
+    const dueDate = classLink?.dueDate
+      ? classLink.dueDate.toISOString()
+      : a.dueDate
+      ? a.dueDate.toISOString()
+      : null;
+
+    const enableProctoring =
+      classLink?.enableProctoring !== undefined ? classLink.enableProctoring : a.enableProctoring;
+    const maxTabSwitches =
+      classLink?.maxTabSwitches !== undefined ? classLink.maxTabSwitches : a.maxTabSwitches;
+
+    const mySub = currentUserId
+      ? a.submissions.find((s) => s.studentId === currentUserId)
+      : null;
+    const mySubmission = mySub
+      ? {
+          id: mySub.id,
+          status: mySub.status,
+          score: mySub.score,
+          totalPoints,
+          submittedAt: mySub.submittedAt ? mySub.submittedAt.toISOString() : null,
+          isCheatingFlagged: mySub.isCheatingFlagged,
+        }
+      : null;
+
     return {
       id: a.id,
-      classId: a.classId,
+      classId: classId || a.classId,
+      originalClassId: a.classId,
       title: a.title,
       description: a.description,
       skill: a.skill,
       type: a.type,
       durationMinutes: a.durationMinutes,
-      dueDate: a.dueDate ? a.dueDate.toISOString() : null,
+      dueDate,
       audioUrl: a.audioUrl,
-      enableProctoring: a.enableProctoring,
-      maxTabSwitches: a.maxTabSwitches,
+      enableProctoring,
+      maxTabSwitches,
       questionCount: a.questions.length,
       totalPoints,
       submissionCount: a.submissions.length,
       submittedCount,
       flaggedCount,
+      mySubmission,
+      assignedClassCount: Math.max(a.assignedClasses.length, 1),
+      assignedClassNames: a.assignedClasses.map((ac) => ac.class.name),
       createdAt: a.createdAt.toISOString(),
     };
   });
@@ -216,10 +327,73 @@ export async function getAssignmentDetailService(
       (globalAssignmentsStore.demoAssignments || []).find((a) => a.id === assignmentId) ||
       (globalAssignmentsStore.demoAssignments || [])[0];
     if (found) {
+      let flowcharts = found.flowcharts || [];
+      if (!flowcharts || flowcharts.length === 0) {
+        const qNums = (found.questions || []).map((q: any) => Number(q.questionNumber));
+        if (qNums.includes(18) && qNums.includes(19) && qNums.includes(23)) {
+          flowcharts = [
+            {
+              id: "fc-envisioning",
+              title: "The Envisioning Process",
+              instruction:
+                "Complete the flow chart. Choose NO MORE THAN THREE WORDS from the passage for each answer.",
+              boxes: [
+                {
+                  id: "box-1",
+                  textTemplate: "manager (having just obtained _______)",
+                  questionNumbers: [18],
+                  isStatic: false,
+                  nextBoxIds: ["box-center"],
+                },
+                {
+                  id: "box-2",
+                  textTemplate: "people with greatly varied _______",
+                  questionNumbers: [19],
+                  isStatic: false,
+                  nextBoxIds: ["box-center", "box-6"],
+                },
+                {
+                  id: "box-center",
+                  textTemplate: "playing with language for a long time",
+                  isStatic: true,
+                  nextBoxIds: ["box-4"],
+                },
+                {
+                  id: "box-4",
+                  textTemplate: "_______ set of words",
+                  questionNumbers: [20],
+                  isStatic: false,
+                  nextBoxIds: ["box-5"],
+                },
+                {
+                  id: "box-5",
+                  textTemplate:
+                    "- obeyed only at _______\n- can cause lack of _______",
+                  questionNumbers: [21, 22],
+                  isStatic: false,
+                  nextBoxIds: [],
+                },
+                {
+                  id: "box-6",
+                  textTemplate: "want _______ payback",
+                  questionNumbers: [23],
+                  isStatic: false,
+                  nextBoxIds: [],
+                },
+              ],
+              questionNumbers: [18, 19, 20, 21, 22, 23],
+            },
+          ];
+        }
+      }
       return {
         success: true,
         assignment: {
           ...found,
+          flowcharts,
+          tables: found.tables || [],
+          matchingHeadings: found.matchingHeadings || [],
+          summaries: found.summaries || [],
           questions: (found.questions || []).map((q: any) => ({
             ...q,
             passageText: resolveLegacyShortPassageText(q.passageText, found.title),
@@ -256,13 +430,91 @@ export async function getAssignmentDetailService(
 
   const latestSubmission = assignment.submissions[0] || null;
 
+  let parsedMeta: any = null;
+  try {
+    if (assignment.description && assignment.description.startsWith("{")) {
+      parsedMeta = JSON.parse(assignment.description);
+    }
+  } catch {}
+
+  let flowcharts: any[] = parsedMeta?.flowcharts || [];
+  let tables: any[] = parsedMeta?.tables || [];
+  let matchingHeadings: any[] = parsedMeta?.matchingHeadings || [];
+  let summaries: any[] = parsedMeta?.summaries || [];
+
+  if (flowcharts.length === 0) {
+    const qNums = assignment.questions.map((q) => q.questionNumber);
+    const hasEnvisioningFlowchart =
+      qNums.includes(18) && qNums.includes(19) && qNums.includes(23);
+
+    if (hasEnvisioningFlowchart) {
+      flowcharts = [
+        {
+          id: "fc-envisioning",
+          title: "The Envisioning Process",
+          instruction:
+            "Complete the flow chart. Choose NO MORE THAN THREE WORDS from the passage for each answer.",
+          boxes: [
+            {
+              id: "box-1",
+              textTemplate: "manager (having just obtained _______)",
+              questionNumbers: [18],
+              isStatic: false,
+              nextBoxIds: ["box-center"],
+            },
+            {
+              id: "box-2",
+              textTemplate: "people with greatly varied _______",
+              questionNumbers: [19],
+              isStatic: false,
+              nextBoxIds: ["box-center", "box-6"],
+            },
+            {
+              id: "box-center",
+              textTemplate: "playing with language for a long time",
+              isStatic: true,
+              nextBoxIds: ["box-4"],
+            },
+            {
+              id: "box-4",
+              textTemplate: "_______ set of words",
+              questionNumbers: [20],
+              isStatic: false,
+              nextBoxIds: ["box-5"],
+            },
+            {
+              id: "box-5",
+              textTemplate:
+                "- obeyed only at _______\n- can cause lack of _______",
+              questionNumbers: [21, 22],
+              isStatic: false,
+              nextBoxIds: [],
+            },
+            {
+              id: "box-6",
+              textTemplate: "want _______ payback",
+              questionNumbers: [23],
+              isStatic: false,
+              nextBoxIds: [],
+            },
+          ],
+          questionNumbers: [18, 19, 20, 21, 22, 23],
+        },
+      ];
+    }
+  }
+
   return {
     success: true,
     assignment: {
       id: assignment.id,
       classId: assignment.classId,
       title: assignment.title,
-      description: assignment.description,
+      description: parsedMeta?.instruction || assignment.description,
+      flowcharts,
+      tables,
+      matchingHeadings,
+      summaries,
       skill: assignment.skill,
       type: assignment.type,
       durationMinutes: assignment.durationMinutes,
@@ -310,147 +562,12 @@ export async function getAssignmentDetailService(
   };
 }
 
-export async function createAssignmentService(
-  data: {
-    classId: string;
-    title: string;
-    description?: string;
-    skill: string;
-    type?: string;
-    durationMinutes?: number;
-    dueDate?: string | null;
-    audioUrl?: string | null;
-    enableProctoring?: boolean;
-    maxTabSwitches?: number;
-    questions: Array<{
-      questionNumber: number;
-      passageText?: string;
-      prompt: string;
-      type: string;
-      points: number;
-      correctAnswer?: string;
-      explanation?: string;
-      options?: Array<{
-        optionLabel: string;
-        content: string;
-        isCorrect: boolean;
-      }>;
-    }>;
-  },
-  createdById: string
-): Promise<{ success: boolean; assignmentId?: string; error?: string }> {
-  if (!(await isDbAlive())) {
-    const totalPts = data.questions.reduce((sum, q) => sum + (Number(q.points) || 1), 0);
-    const newAssign = {
-      id: `assign-${Date.now()}`,
-      classId: data.classId,
-      title: data.title.trim(),
-      description: data.description?.trim() || null,
-      skill: data.skill || "READING",
-      type: data.type || "HOMEWORK",
-      durationMinutes: data.durationMinutes ? Number(data.durationMinutes) : 60,
-      dueDate: data.dueDate || null,
-      audioUrl: data.audioUrl || null,
-      enableProctoring: data.enableProctoring !== false,
-      maxTabSwitches: data.maxTabSwitches ? Number(data.maxTabSwitches) : 3,
-      createdById: createdById || "SYSTEM",
-      totalPoints: totalPts,
-      submittedCount: 0,
-      flaggedCount: 0,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      questions: data.questions.map((q, idx) => ({
-        id: `q-${Date.now()}-${idx}`,
-        questionNumber: q.questionNumber || idx + 1,
-        passageText: q.passageText?.trim() || null,
-        prompt: q.prompt.trim(),
-        type: q.type || "MULTIPLE_CHOICE",
-        points: Number(q.points) || 1.0,
-        correctAnswer: q.correctAnswer?.trim() || null,
-        explanation: q.explanation?.trim() || null,
-        orderIndex: idx,
-        options: (q.options || []).map((opt, oIdx) => ({
-          id: `opt-${Date.now()}-${idx}-${oIdx}`,
-          optionLabel: opt.optionLabel,
-          content: opt.content,
-          isCorrect: Boolean(opt.isCorrect),
-        })),
-      })),
-      submissions: [],
-    };
-    globalAssignmentsStore.demoAssignments = [
-      newAssign,
-      ...(globalAssignmentsStore.demoAssignments || []),
-    ];
-    return { success: true, assignmentId: newAssign.id };
-  }
-
-  const assignment = await prisma.assignment.create({
-    data: {
-      classId: data.classId,
-      title: data.title.trim(),
-      description: data.description?.trim() || null,
-      skill: (data.skill as AssignmentSkill) || "READING",
-      type: (data.type as AssignmentType) || "HOMEWORK",
-      durationMinutes: data.durationMinutes ? Number(data.durationMinutes) : null,
-      dueDate: data.dueDate ? new Date(data.dueDate) : null,
-      audioUrl: data.audioUrl || null,
-      enableProctoring: data.enableProctoring !== false,
-      maxTabSwitches: data.maxTabSwitches ? Number(data.maxTabSwitches) : 3,
-      createdById: createdById || "SYSTEM",
-      questions: {
-        create: data.questions.map((q, idx) => ({
-          questionNumber: q.questionNumber || idx + 1,
-          passageText: q.passageText?.trim() || null,
-          prompt: q.prompt.trim(),
-          type: (q.type as QuestionType) || "MULTIPLE_CHOICE",
-          points: Number(q.points) || 1.0,
-          correctAnswer: q.correctAnswer?.trim() || null,
-          explanation: q.explanation?.trim() || null,
-          orderIndex: idx,
-          options:
-            q.options && q.options.length > 0
-              ? {
-                  create: q.options.map((opt) => ({
-                    optionLabel: opt.optionLabel,
-                    content: opt.content,
-                    isCorrect: Boolean(opt.isCorrect),
-                  })),
-                }
-              : undefined,
-        })),
-      },
-    },
-    include: {
-      questions: {
-        include: { options: true },
-      },
-    },
-  });
-
-  return { success: true, assignmentId: assignment.id };
-}
-
-export async function deleteAssignmentService(
-  assignmentId: string
-): Promise<{ success: boolean; error?: string }> {
-  if (!(await isDbAlive())) {
-    const item = (globalAssignmentsStore.demoAssignments || []).find((a) => a.id === assignmentId);
-    if (item) item.isActive = false;
-    return { success: true };
-  }
-
-  await prisma.assignment.update({
-    where: { id: assignmentId },
-    data: { isActive: false },
-  });
-
-  return { success: true };
-}
+// createAssignmentService & deleteAssignmentService are now exported from ./assignment-mutation.service
 
 export async function submitAssignmentService(
   data: {
     assignmentId: string;
+    classId?: string;
     answers: Array<{
       questionId: string;
       studentAnswer?: string;
@@ -520,6 +637,7 @@ export async function submitAssignmentService(
     const newSub = {
       id: submissionId,
       studentId: studentInfo.userId || "demo-student-1",
+      classId: data.classId || null,
       studentName: studentInfo.fullName || "Trần Thị Lan",
       studentEmail: studentInfo.email || "hv001@simpace.vn",
       attemptNumber: (assign.submissions || []).length + 1,
@@ -603,10 +721,21 @@ export async function submitAssignmentService(
 
   const isObjectiveOnly = allObjective(assignment.questions);
 
+  let assignmentClassId: string | null = null;
+  if (data.classId) {
+    const ac = await prisma.assignmentClass.findFirst({
+      where: { assignmentId: data.assignmentId, classId: data.classId, isActive: true },
+      select: { id: true },
+    });
+    if (ac) assignmentClassId = ac.id;
+  }
+
   const submission = await prisma.assignmentSubmission.create({
     data: {
       assignmentId: data.assignmentId,
       studentId: studentInfo.userId,
+      classId: data.classId || null,
+      assignmentClassId,
       attemptNumber: previousSubmissionsCount + 1,
       submittedAt: new Date(),
       status: isObjectiveOnly ? "GRADED" : "SUBMITTED",

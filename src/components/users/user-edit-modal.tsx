@@ -104,7 +104,7 @@ export function UserTableRow({
                 u.profile?.entryIeltsScore !== null &&
                 u.profile?.entryIeltsScore !== undefined && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-[#EA580C]">
-                    IELTS {Number(u.profile.entryIeltsScore).toFixed(1)}
+                    Điểm đầu vào: {Number(u.profile.entryIeltsScore).toFixed(1)}
                   </span>
                 )}
             </div>

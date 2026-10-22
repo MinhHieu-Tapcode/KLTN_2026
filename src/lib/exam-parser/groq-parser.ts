@@ -6,40 +6,63 @@ import {
   QuestionTypeEnum,
 } from "./types";
 import { splitIntoExamParts } from "./extract-text";
+import { executeWithGroqKeyPool, getGroqKeyPool } from "./groq-key-pool";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const ACTIVE_MODELS = [
-  "llama-3.3-70b-versatile",
-  "llama-3.1-8b-instant",
+  "openai/gpt-oss-120b",
+  "qwen/qwen3.8-27b",
+  "openai/gpt-oss-20b",
 ];
 
 const SYSTEM_PROMPT = `Bạn là bộ máy bóc tách đề thi IELTS chuyên nghiệp sang định dạng Ebook 2 Cột tương tác.
-Nhiệm vụ của bạn là đọc văn bản một phần đề thi IELTS và trích xuất CHÍNH XÁC danh sách câu hỏi sang JSON.
+Nhiệm vụ của bạn là đọc toàn bộ văn bản của một Phần thi IELTS và trích xuất TOÀN DIỆN, ĐẦY ĐỦ 100% tất cả các câu hỏi sang JSON.
 
 CÁC NGUYÊN TẮC BẮT BUỘC:
 1. TIẾT KIỆM TOKEN & BẢO TOÀN BÀI ĐỌC GỐC:
    - Trường "passageText":
-     + Với bài READING dài: Để tránh tràn bộ nhớ JSON, chỉ cần đặt "passageText": "" và điền chính xác dòng tiêu đề bắt đầu khu vực câu hỏi vào "questionStartMarker" (ví dụ: "Questions 1-6" hoặc "Questions 1–13"). Hệ thống sẽ tự động cắt nguyên văn 100% bài đọc phía trên marker đó cho Cột 1!
-     + Với bài LISTENING (Form/Note/Table completion), WRITING hoặc SPEAKING: Chép nguyên văn nội dung biểu mẫu / đề bài vào "passageText".
-2. TÁCH CÂU HỎI CHÍNH XÁC (Cột 2 Ebook):
-   - Trích xuất TẤT CẢ các câu hỏi xuất hiện trong văn bản vào mảng "questions" theo đúng "questionNumber".
-   - Giữ nguyên nội dung câu hỏi trong "prompt". Nếu là câu điền từ vào chỗ trống, biểu diễn chỗ trống bằng "_______" kèm quy tắc giới hạn từ nếu có (ví dụ: "(ONE WORD ONLY)" hoặc "(NO MORE THAN TWO WORDS AND/OR A NUMBER)").
-   - Nếu là bài Writing Task 1 / Task 2 mà không đánh số câu hỏi con, tạo 1 câu hỏi loại "ESSAY" với prompt là yêu cầu viết bài.
-   - Nếu là bài Speaking Cue Card / Part 1-2-3, tạo các câu hỏi loại "SPEAKING_RECORD".
-3. PHÂN LOẠI ĐÚNG "type" CỦA TỪNG CÂU HỎI (chỉ dùng 1 trong 6 giá trị sau):
-   - "TRUE_FALSE_NG": Câu hỏi True/False/Not Given hoặc Yes/No/Not Given.
-   - "MULTIPLE_CHOICE": Câu hỏi trắc nghiệm chọn 1 đáp án (A, B, C, D). Phải trích xuất đầy đủ mảng "options" gồm [{"optionLabel": "A", "content": "..."}, ...].
-   - "MULTIPLE_CHOICE_MULTI": Câu hỏi chọn nhiều đáp án (Choose TWO letters A-E).
-   - "FILL_IN_BLANK": Câu hỏi điền từ vào chỗ trống, hoàn thành câu/bảng/biểu mẫu (Form/Note/Table/Sentence/Summary completion), trả lời ngắn (Short-answer), nối thông tin/tiêu đề (Matching Headings/Information/Features), hoặc dán nhãn bản đồ/biểu đồ (Map/Diagram labelling).
-   - "ESSAY": Bài viết IELTS Writing.
-   - "SPEAKING_RECORD": Bài nói IELTS Speaking.
+     + Với bài READING: ĐỂ TRÁNH TRÀN BỘ NHỚ VÀ KHÔNG BỊ CẮT CỤT CÂU HỎI, BẮT BUỘC đặt "passageText": "" và điền chính xác dòng tiêu đề bắt đầu phần câu hỏi đầu tiên vào "questionStartMarker" (ví dụ: "Questions 1-4" hoặc "Questions 1–13"). Hệ thống sẽ tự động cắt nguyên văn 100% bài đọc phía trên marker đó cho Cột 1! Tuyệt đối KHÔNG sao chép lại bài đọc vào JSON.
+     + Với bài LISTENING / WRITING / SPEAKING: Chép nội dung biểu mẫu / đề bài vào "passageText".
+2. TÁCH TRỌN VẸN 100% CÂU HỎI (Cột 2 Ebook):
+   - ĐẶC BIỆT CHÚ Ý DẠNG BẢNG BIỂU (Table Completion) hoặc Điền từ tóm tắt (Summary Completion):
+     Các câu hỏi có thể nằm rải rác bên trong các ô của bảng (ví dụ: "Red wines use 5. _____ in fermentation | 6. _____") hoặc trên cùng 1 dòng (ví dụ: "9. _____ | Can allow 10. _____ to remain"). BẮT BUỘC PHẢI TRÍCH XUẤT TẤT CẢ CÁC SỐ CÂU HỎI ĐÓ (ví dụ có 5, 6, 7, 8, 9, 10 thì phải tạo đủ 6 phần tử question tương ứng với questionNumber: 5, 6, 7, 8, 9, 10). KHÔNG ĐƯỢC BỎ SÓT!
+   - DẠNG TRUE/FALSE/NOT GIVEN hoặc YES/NO/NOT GIVEN:
+     Bất cứ khi nào đề bài yêu cầu "agree/contradict", "TRUE/FALSE/NOT GIVEN" hay "YES/NO/NOT GIVEN" (ví dụ các câu nhận định 1-4: "Blended wines are usually cheaper."), BẮT BUỘC gán type = "TRUE_FALSE_NG".
+   - DẠNG MULTIPLE CHOICE (Trắc nghiệm):
+     Bắt buộc trích xuất đầy đủ mảng options: A, B, C, D... type = "MULTIPLE_CHOICE".
+     ĐẶC BIỆT LƯU Ý: Các phương án có thể viết dạng "A mostly better." (chỉ có dấu cách sau chữ cái A, không có dấu chấm). Vẫn phải tách thành optionLabel: "A", content: "mostly better.".
+   - TRƯỜNG "explanation": CHỈ ghi giải thích chi tiết đáp án nếu có trong lời giải. TUYỆT ĐỐI KHÔNG ghi lại câu chỉ dẫn làm bài (như "Choose the correct letter, A, B, C, or D.", "Do the following statements agree...", "Write NO MORE THAN..."). Nếu không có giải thích, để rỗng "".
+   - Trích xuất ĐẦY ĐỦ từ câu đầu tiên đến câu cuối cùng của đề thi trong mảng "questions".
 
 Định dạng JSON trả về BẮT BUỘC:
 {
-  "partTitle": "Tiêu đề phần thi (ví dụ: Reading Passage 1: Urban Beekeeping)",
+  "partTitle": "Tiêu đề phần thi (ví dụ: Reading Passage 1: Make That Wine)",
   "skill": "READING" | "LISTENING" | "WRITING" | "SPEAKING",
-  "questionStartMarker": "Dòng bắt đầu phần câu hỏi trong văn bản gốc (ví dụ: Questions 1-6)",
-  "passageText": "Nội dung bài đọc/biểu mẫu (có thể để rỗng nếu đã có questionStartMarker)",
+  "questionStartMarker": "Dòng bắt đầu phần câu hỏi đầu tiên trong văn bản (ví dụ: Questions 1-4)",
+  "passageText": "Nội dung bài đọc/biểu mẫu (để rỗng \"\" đối với READING)",
+  "matchingHeadings": {
+    "title": "List of Headings",
+    "instruction": "Choose the correct heading for each section from the list of headings below.",
+    "headings": [{ "id": "1", "romanNumeral": "i", "text": "Heading text" }],
+    "items": [{ "questionNumber": 1, "paragraphLabel": "Paragraph A" }]
+  },
+  "tables": [
+    {
+      "title": "Table Title",
+      "instruction": "Complete the table below.",
+      "headers": ["Col 1", "Col 2"],
+      "rows": [["Cell 1", "Cell 2"]],
+      "questionNumbers": [5, 6]
+    }
+  ],
+  "summaries": [
+    {
+      "title": "Summary Title",
+      "instruction": "Complete the summary below.",
+      "summaryText": "Summary with (1) _______ and (2) _______",
+      "questionNumbers": [1, 2]
+    }
+  ],
   "questions": [
     {
       "questionNumber": 1,
@@ -48,7 +71,7 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
       "options": [
         { "optionLabel": "A", "content": "Nội dung lựa chọn A" }
       ],
-      "explanation": "Ghi chú hướng dẫn làm bài (ví dụ: Write ONE WORD ONLY / Paragraph A)"
+      "explanation": "Giải thích chi tiết vì sao đáp án đúng (để rỗng \"\" nếu không có lời giải)"
     }
   ]
 }`;
@@ -98,7 +121,7 @@ function extractVerbatimPassage(
   if (questionStartMarker && questionStartMarker.trim().length >= 5) {
     const marker = questionStartMarker.trim();
     const idx = partContent.toLowerCase().indexOf(marker.toLowerCase());
-    if (idx > 150) {
+    if (idx > 120) {
       return partContent.slice(0, idx).trim();
     }
   }
@@ -107,8 +130,14 @@ function extractVerbatimPassage(
   const qHeaderMatch = partContent.match(
     /\n(?=(?:Questions?\s+\d+\s*[–\-\–to]+\s*\d+|Questions?\s+\d+\b|SECTION\s+QUESTIONS))/i
   );
-  if (qHeaderMatch && qHeaderMatch.index && qHeaderMatch.index > 150) {
+  if (qHeaderMatch && qHeaderMatch.index && qHeaderMatch.index > 120) {
     return partContent.slice(0, qHeaderMatch.index).trim();
+  }
+
+  // Tìm mốc câu hỏi số 1: ví dụ "\n1. " hoặc "\n(1) "
+  const firstQMatch = partContent.match(/\n(?=(?:\[?(?:Question\s*)?1[\.\)]\s|\(1\)\s))/i);
+  if (firstQMatch && firstQMatch.index && firstQMatch.index > 120) {
+    return partContent.slice(0, firstQMatch.index).trim();
   }
 
   if (aiPassageText && aiPassageText.trim().length > 80) {
@@ -119,73 +148,116 @@ function extractVerbatimPassage(
 }
 
 /**
- * Gọi Groq AI cho 1 phần đề thi qua chuỗi model chuẩn (openai/gpt-oss-120b -> qwen/qwen3.8-27b -> openai/gpt-oss-20b)
+ * Gọi Groq AI cho 1 phần đề thi qua Key Pool (xoay vòng + failover)
  */
 async function callGroqForPart(
   partContent: string,
   defaultSkill: string,
-  apiKey: string
+  preferredKeyIdx?: number
 ): Promise<any> {
+  // Tìm mốc bắt đầu khu vực câu hỏi (ví dụ Questions 1-4, Questions 14-26...)
+  const qMarkerMatch = partContent.match(
+    /\n(?=(?:Questions?\s+\d+\s*[–\-\–to]+\s*\d+|Questions?\s+\d+\b|SECTION\s+QUESTIONS))/i
+  );
+  
+  // Tinh hoa: Chỉ gửi khối câu hỏi (questionBlock) cho Groq nếu tìm thấy mốc câu hỏi rõ ràng
+  // Điều này giúp tiết kiệm 75% token, loại bỏ hoàn toàn nguy cơ chạm trần 8.000 TPM
+  const isQuestionBlockSeparated = Boolean(qMarkerMatch && qMarkerMatch.index && qMarkerMatch.index > 150);
+  const textToSend = isQuestionBlockSeparated
+    ? partContent.slice(qMarkerMatch!.index).trim()
+    : partContent;
+
   const userMessage = `Kỹ năng mặc định giáo viên chọn: ${defaultSkill}.
-Hãy bóc tách văn bản đề thi dưới đây thành JSON chuẩn cho Ebook 2 cột:
+Hãy bóc tách danh sách câu hỏi đề thi dưới đây thành JSON chuẩn cho Ebook 2 cột:
 
---- BẮT ĐẦU VĂN BẢN ĐỀ THI ---
-${partContent}
---- KẾT THÚC VĂN BẢN ĐỀ THI ---`;
+--- BẮT ĐẦU PHẦN CÂU HỎI ĐỀ THI ---
+${textToSend}
+--- KẾT THÚC PHẦN CÂU HỎI ĐỀ THI ---`;
 
-  let lastError = "";
+  // Đếm sơ bộ số câu hỏi đánh số rõ ràng trong văn bản để kiểm tra đối chiếu
+  const questionMatches = textToSend.match(/(?:^|\n|\s)(\d{1,3})[\.\)]/g) || [];
+  const expectedMinQuestions = Math.min(questionMatches.length, 40);
 
-  for (const model of ACTIVE_MODELS) {
-    try {
-      const response = await fetch(GROQ_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.1,
-          max_tokens: 6000,
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userMessage },
-          ],
-        }),
-      });
+  return executeWithGroqKeyPool(async (apiKey) => {
+    let lastError = "";
 
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        lastError = errBody?.error?.message || `Groq HTTP ${response.status}`;
-        if (response.status === 401 || response.status === 403) {
-          throw new Error("GROQ_API_KEY không hợp lệ hoặc đã hết hạn!");
+    for (const model of ACTIVE_MODELS) {
+      try {
+        const response = await fetch(GROQ_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.1,
+            max_tokens: 8192,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: userMessage },
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          const errMsg = errBody?.error?.message || `Groq HTTP ${response.status}`;
+          lastError = errMsg;
+
+          if (response.status === 429) {
+            throw new Error(`429 Rate Limit: ${errMsg}`);
+          }
+          if (response.status === 401 || response.status === 403) {
+            throw new Error(`401/403 Invalid API Key: ${errMsg}`);
+          }
+          continue;
         }
-        continue;
-      }
 
-      const data = await response.json();
-      const rawJson = data?.choices?.[0]?.message?.content || "";
-      if (!rawJson) {
-        lastError = "Groq AI trả về nội dung rỗng";
-        continue;
-      }
+        const data = await response.json();
+        const rawJson = data?.choices?.[0]?.message?.content || "";
+        if (!rawJson) {
+          lastError = "Groq AI trả về nội dung rỗng";
+          continue;
+        }
 
-      const parsed = safeParseAndRepairJson(rawJson);
-      const validated = GroqPartOutputSchema.safeParse(parsed);
-      if (validated.success) {
-        return { ...validated.data, questionStartMarker: parsed.questionStartMarker };
-      }
-      return parsed;
-    } catch (err: any) {
-      lastError = err.message || "Lỗi kết nối Groq API";
-      if (lastError.includes("GROQ_API_KEY không hợp lệ")) {
-        throw err;
+        const parsed = safeParseAndRepairJson(rawJson);
+        const validated = GroqPartOutputSchema.safeParse(parsed);
+        const finalResult = validated.success
+          ? {
+              ...validated.data,
+              questionStartMarker: parsed.questionStartMarker,
+              matchingHeadings: parsed.matchingHeadings,
+              tables: parsed.tables,
+              summaries: parsed.summaries,
+            }
+          : parsed;
+
+        const count = Array.isArray(finalResult?.questions) ? finalResult.questions.length : 0;
+        // Kiểm tra đối chiếu số câu: Nếu văn bản gốc có 8+ câu đánh số mà AI trả về quá ít (<50%) -> ném lỗi để đổi key/model
+        if (expectedMinQuestions >= 8 && count < Math.floor(expectedMinQuestions * 0.5)) {
+          throw new Error(
+            `AI chỉ trích xuất được ${count}/${expectedMinQuestions} câu hỏi. Đang đổi API key để phân tích lại.`
+          );
+        }
+
+        return finalResult;
+      } catch (err: any) {
+        lastError = err.message || "Lỗi kết nối Groq API";
+        if (
+          lastError.includes("429") ||
+          lastError.includes("Rate Limit") ||
+          lastError.includes("Invalid API Key") ||
+          lastError.includes("Đang đổi API key")
+        ) {
+          throw err;
+        }
       }
     }
-  }
 
-  throw new Error(lastError || "Không thể gọi dịch vụ AI bóc tách đề thi");
+    throw new Error(lastError || "Không thể gọi dịch vụ AI bóc tách đề thi");
+  }, preferredKeyIdx);
 }
 
 /**
@@ -200,20 +272,34 @@ function normalizeQuestion(
   const rawType = String(rawQ?.type || "FILL_IN_BLANK")
     .trim()
     .toUpperCase();
+  const contextForType = `${rawQ?.prompt || ""} ${rawQ?.explanation || ""}`.toLowerCase();
 
   let normalizedType: ParsedQuestion["type"] = "FILL_IN_BLANK";
-  if (QuestionTypeEnum.options.includes(rawType as any)) {
-    normalizedType = rawType as ParsedQuestion["type"];
-  } else if (rawType.includes("TRUE") || rawType.includes("FALSE") || rawType.includes("YES")) {
+  if (
+    rawType.includes("TRUE") ||
+    rawType.includes("FALSE") ||
+    rawType.includes("YES") ||
+    rawType.includes("NOT_GIVEN") ||
+    contextForType.includes("agree with the information") ||
+    contextForType.includes("true if the statement") ||
+    contextForType.includes("true/false/not given") ||
+    contextForType.includes("yes/no/not given")
+  ) {
     normalizedType = "TRUE_FALSE_NG";
   } else if (rawType.includes("MULTI") && rawType.includes("SELECT")) {
     normalizedType = "MULTIPLE_CHOICE_MULTI";
-  } else if (rawType.includes("CHOICE") || rawType.includes("MCQ")) {
+  } else if (
+    rawType.includes("CHOICE") ||
+    rawType.includes("MCQ") ||
+    (Array.isArray(rawQ?.options) && rawQ.options.length >= 2)
+  ) {
     normalizedType = "MULTIPLE_CHOICE";
   } else if (rawType.includes("ESSAY") || rawType.includes("WRITING")) {
     normalizedType = "ESSAY";
   } else if (rawType.includes("SPEAK")) {
     normalizedType = "SPEAKING_RECORD";
+  } else if (QuestionTypeEnum.options.includes(rawType as any)) {
+    normalizedType = rawType as ParsedQuestion["type"];
   }
 
   let options: ParsedQuestion["options"] = [];
@@ -276,6 +362,15 @@ function normalizeQuestion(
       ? 9.0
       : 1.0;
 
+  let cleanExplanation = String(rawQ?.explanation || "").trim();
+  if (
+    /^(?:Do the following statements|Choose the correct letter|Complete the (?:table|flow chart|notes|summary)|Write NO MORE THAN|In boxes \d+)/i.test(
+      cleanExplanation
+    )
+  ) {
+    cleanExplanation = "";
+  }
+
   return {
     questionNumber: qNum,
     passageText: partTitle || `Phần ${skill}`,
@@ -284,15 +379,19 @@ function normalizeQuestion(
     points,
     correctAnswer: defaultAnswer,
     explanation:
-      String(rawQ?.explanation || "").trim() ||
-      "Đối chiếu nội dung đề bài và nạp file Excel đáp án để chấm điểm tự động.",
+      cleanExplanation ||
+      (normalizedType === "TRUE_FALSE_NG"
+        ? "Đọc kỹ bài đọc để đối chiếu nhận định là TRUE, FALSE hay NOT GIVEN."
+        : normalizedType === "MULTIPLE_CHOICE"
+        ? "Chọn phương án đúng nhất A, B, C hoặc D."
+        : "Đối chiếu nội dung đề bài và nạp file Excel đáp án để chấm điểm tự động."),
     options,
   };
 }
 
 /**
  * Phương án dự phòng bằng quy tắc (Rule-based Fallback) khi không có kết nối AI
- * Hỗ trợ đầy đủ: [Question N], (1) ..., 1. ..., câu hỏi điền từ trong dòng và trắc nghiệm A-D
+ * Mở rộng: Hỗ trợ trọn vẹn cả Table Completion, Matching Headings, True/False/Not Given
  */
 export function fallbackRuleBasedParse(
   partTitle: string,
@@ -366,15 +465,62 @@ export function fallbackRuleBasedParse(
       continue;
     }
 
-    const bracketMatch = line.match(/^(.*)\[(?:Question\s*)?(\d{1,2})\](.*)$/i);
-    const inlineBlankMatch = line.match(
-      /^(.*?)(\d{1,2})\s*(?:_{2,}|\.{3,})(.*)$/
+    // 1. Quét Table Completion: Bắt tất cả các ô chứa chỗ trống dạng "5. _____" hoặc "6. _____"
+    const tableMatches = Array.from(
+      line.matchAll(/(?:^|\||[:\s])(?:(?:\((\d{1,3})\)|\b(\d{1,3})[\.\)]?)\s*(?:_{2,}|\.{3,})|(?:_{2,}|\.{3,})\s*(?:\((\d{1,3})\)|\b(\d{1,3})[\.\)]?))/g)
     );
-    const numMatch = line.match(/^(?:\()?(\d{1,2})(?:[\.\)]\s*|\s{1,3})(?=[A-Z0-9"'])(.+)$/);
+    if (tableMatches.length > 0) {
+      for (const m of tableMatches) {
+        const qNumStr = m[1] || m[2] || m[3] || m[4];
+        if (qNumStr) {
+          const qNum = parseInt(qNumStr, 10);
+          if (qNum >= 1 && qNum <= 60 && !questions.some((q) => q.questionNumber === qNum)) {
+            const prompt = line.replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+            questions.push(
+              normalizeQuestion(
+                {
+                  questionNumber: qNum,
+                  prompt: `${prompt}`,
+                  type: "FILL_IN_BLANK",
+                },
+                startNumber + questions.length,
+                partTitle,
+                skill
+              )
+            );
+          }
+        }
+      }
+      continue;
+    }
+
+    // 2. Dạng [Question N] hoặc [N]
+    const bracketMatch = line.match(/^(.*)\[(?:Question\s*)?(\d{1,3})\](.*)$/i);
+    // 3. Dạng inline blank: (1) _______ hoặc 1 _______
+    const inlineBlankMatch = line.match(
+      /^(.*?)(\d{1,3})\s*(?:_{2,}|\.{3,})(.*)$/
+    );
+    // 4. Dạng Form Completion: Name: (1) _______ hoặc Address: _______
+    const formMatch = line.match(/^([A-Za-z\s]{2,30}):\s*(?:(?:\((\d{1,3})\))?\s*(___+|\.{3,}))/);
+    // 5. Dạng câu hỏi đánh số thông thường: 1. prompt hoặc 1) prompt
+    const numMatch = line.match(/^(?:\()?(\d{1,3})(?:[\.\)]\s*|\s{1,3})(.+)$/);
+    // 6. Dạng Matching Headings số La Mã: i. Headings title hoặc vii) ...
+    const romanMatch = line.match(/^([ivxlc]+)[\.\)]\s+(.+)$/i);
 
     if (bracketMatch) {
       const qNum = parseInt(bracketMatch[2], 10);
-      const prompt = line.replace(/\[(?:Question\s*)?\d{1,2}\]/gi, "_______");
+      const prompt = line.replace(/\[(?:Question\s*)?\d{1,3}\]/gi, "_______");
+      questions.push(
+        normalizeQuestion(
+          { questionNumber: qNum, prompt, type: "FILL_IN_BLANK" },
+          startNumber + questions.length,
+          partTitle,
+          skill
+        )
+      );
+    } else if (formMatch) {
+      const qNum = formMatch[2] ? parseInt(formMatch[2], 10) : startNumber + questions.length;
+      const prompt = `${formMatch[1].trim()}: (${qNum}) _______`;
       questions.push(
         normalizeQuestion(
           { questionNumber: qNum, prompt, type: "FILL_IN_BLANK" },
@@ -394,23 +540,64 @@ export function fallbackRuleBasedParse(
           skill
         )
       );
-    } else if (numMatch && parseInt(numMatch[1], 10) >= 1 && parseInt(numMatch[1], 10) <= 40) {
+    } else if (romanMatch && romanMatch[2].length > 5) {
+      const romanLabel = romanMatch[1].toLowerCase();
+      questions.push(
+        normalizeQuestion(
+          {
+            questionNumber: startNumber + questions.length,
+            prompt: `Choose the correct heading for paragraph: ${romanMatch[2].trim()}`,
+            type: "FILL_IN_BLANK",
+            explanation: `Heading label: ${romanLabel}`,
+          },
+          startNumber + questions.length,
+          partTitle,
+          skill
+        )
+      );
+    } else if (numMatch && parseInt(numMatch[1], 10) >= 1 && parseInt(numMatch[1], 10) <= 60) {
       const qNum = parseInt(numMatch[1], 10);
       const prompt = numMatch[2].trim();
 
       const opts: Array<{ optionLabel: string; content: string }> = [];
       let j = i + 1;
       while (j < lines.length) {
-        const optMatch = lines[j].trim().match(/^([A-H])[\.\)]\s+(.+)$/);
-        if (optMatch) {
-          opts.push({
-            optionLabel: optMatch[1].toUpperCase(),
-            content: optMatch[2].trim(),
-          });
+        const lineJ = lines[j].trim();
+        if (!lineJ) {
           j++;
-        } else {
-          break;
+          continue;
         }
+
+        // Trường hợp 1: Có nhiều phương án trên cùng 1 dòng (ví dụ 2 hoặc 4 phương án in ngang)
+        const multiMatches = Array.from(
+          lineJ.matchAll(/(?:^|\s{2,}|\t)([A-H])(?:[\.\)]\s*|\s+)(.+?)(?=(?:\s{2,}|\t)[A-H](?:[\.\)]\s*|\s+)|$)/gi)
+        );
+        if (multiMatches.length >= 2) {
+          for (const m of multiMatches) {
+            opts.push({
+              optionLabel: m[1].toUpperCase(),
+              content: m[2].trim(),
+            });
+          }
+          j++;
+          continue;
+        }
+
+        // Trường hợp 2: Mỗi dòng 1 phương án (hỗ trợ cả định dạng Cambridge không có chấm "A text")
+        const optMatch = lineJ.match(/^([A-H])(?:[\.\)]\s*|\s+)(.+)$/i);
+        if (optMatch) {
+          const expectedLabel = String.fromCharCode(65 + opts.length);
+          const matchedLabel = optMatch[1].toUpperCase();
+          if (matchedLabel === expectedLabel || (opts.length > 0 && matchedLabel.charCodeAt(0) > opts[opts.length - 1].optionLabel.charCodeAt(0))) {
+            opts.push({
+              optionLabel: matchedLabel,
+              content: optMatch[2].trim(),
+            });
+            j++;
+            continue;
+          }
+        }
+        break;
       }
 
       if (opts.length >= 2) {
@@ -467,6 +654,7 @@ export function fallbackRuleBasedParse(
 
 /**
  * Pipeline chính: Bóc tách văn bản đề thi đã dọn sạch thành cấu trúc Ebook 2 Cột bằng Groq AI
+ * Hỗ trợ bóc tách song song các Part khi có từ 2 Keys Groq trở lên
  */
 export async function parseExamTextWithGroq(params: {
   title: string;
@@ -476,71 +664,73 @@ export async function parseExamTextWithGroq(params: {
   cleanedText: string;
 }): Promise<ParsedExamResult> {
   const { title, skill, durationMinutes, audioUrl, cleanedText } = params;
-  const apiKey = (process.env.GROQ_API_KEY || "").trim();
-
+  const keyPool = getGroqKeyPool();
   const rawParts = splitIntoExamParts(cleanedText);
-  const sections: ParsedSection[] = [];
-  const allQuestions: ParsedQuestion[] = [];
   const warnings: string[] = [];
 
-  let runningQuestionNum = 1;
-
-  for (let idx = 0; idx < rawParts.length; idx++) {
-    const part = rawParts[idx];
+  // Bóc tách từng Part:
+  const partTasks = rawParts.map(async (part, idx) => {
     const effectiveSkill: "READING" | "LISTENING" | "WRITING" | "SPEAKING" =
       skill === "ALL_SKILLS"
         ? part.detectedSkill || "READING"
         : (skill as any) || "READING";
 
-    let partTitle = part.title || `${title} - Phần ${idx + 1}`;
+    const partTitle = part.title || `${title} - Phần ${idx + 1}`;
     let passageText = extractVerbatimPassage(part.content);
     let partQuestions: ParsedQuestion[] = [];
+    let aiResult: any = null;
 
-    if (apiKey) {
+    if (keyPool.length > 0) {
       try {
-        const aiResult = await callGroqForPart(part.content, effectiveSkill, apiKey);
+        const preferredKeyIdx = idx % keyPool.length;
+        aiResult = await callGroqForPart(part.content, effectiveSkill, preferredKeyIdx);
         if (aiResult) {
-          partTitle = aiResult.partTitle?.trim() || partTitle;
           passageText = extractVerbatimPassage(
             part.content,
             aiResult.passageText,
             aiResult.questionStartMarker
           );
-          const rawQuestions = Array.isArray(aiResult.questions)
-            ? aiResult.questions
-            : [];
-
+          const rawQuestions = Array.isArray(aiResult.questions) ? aiResult.questions : [];
           partQuestions = rawQuestions.map((rq: any, qIdx: number) =>
-            normalizeQuestion(
-              rq,
-              runningQuestionNum + qIdx,
-              partTitle,
-              effectiveSkill
-            )
+            normalizeQuestion(rq, qIdx + 1, partTitle, effectiveSkill)
           );
         }
       } catch (err: any) {
         console.warn(`[parseExamTextWithGroq] Fallback cho phần ${idx + 1}:`, err.message);
-        warnings.push(
-          `Phần ${idx + 1}: Đã dùng bộ phân tích quy tắc dự phòng (${err.message}).`
-        );
+        warnings.push(`Phần ${idx + 1}: Đã kích hoạt bộ phân tích quy tắc dự phòng (${err.message}).`);
       }
     }
 
     if (partQuestions.length === 0) {
-      const fallback = fallbackRuleBasedParse(
-        partTitle,
-        part.content,
-        effectiveSkill,
-        runningQuestionNum
-      );
+      const fallback = fallbackRuleBasedParse(partTitle, part.content, effectiveSkill, 1);
       passageText = fallback.passageText;
       partQuestions = fallback.questions;
     }
 
-    // Đảm bảo số thứ tự câu hỏi không bị trùng lặp trên toàn đề và gán đầy đủ nội dung bài đọc (passageText) vào từng câu hỏi
+    return {
+      partIndex: idx,
+      partTitle,
+      effectiveSkill,
+      passageText,
+      questions: partQuestions,
+      matchingHeadings: aiResult?.matchingHeadings,
+      tables: aiResult?.tables,
+      summaries: aiResult?.summaries,
+    };
+  });
+
+  const partResults = await Promise.all(partTasks);
+
+  // Sắp xếp lại thứ tự câu hỏi xuyên suốt toàn bộ đề thi để không bị trùng lặp
+  const sections: ParsedSection[] = [];
+  const allQuestions: ParsedQuestion[] = [];
+  let runningQuestionNum = 1;
+
+  for (let idx = 0; idx < partResults.length; idx++) {
+    const res = partResults[idx];
     const usedNums = new Set(allQuestions.map((q) => q.questionNumber));
-    partQuestions = partQuestions.map((q) => {
+
+    const adjustedQuestions = res.questions.map((q) => {
       let num = q.questionNumber;
       if (usedNums.has(num) || num <= 0) {
         num = runningQuestionNum;
@@ -550,27 +740,43 @@ export async function parseExamTextWithGroq(params: {
       return {
         ...q,
         questionNumber: num,
-        passageText: passageText || q.passageText || partTitle,
+        passageText: res.passageText || q.passageText || res.partTitle,
       };
     });
 
-    allQuestions.push(...partQuestions);
+    allQuestions.push(...adjustedQuestions);
 
-    const sectionSkill = effectiveSkill;
-    const secId = `${sectionSkill.toLowerCase()}_${idx + 1}`;
+    const secId = `${res.effectiveSkill.toLowerCase()}_${idx + 1}`;
     sections.push({
       id: secId,
-      key: `${sectionSkill}_${idx + 1}`,
-      skill: sectionSkill,
-      title: partTitle.includes(title) ? partTitle : `${title} - ${partTitle}`,
-      durationMinutes: Math.max(
-        15,
-        Math.round(durationMinutes / Math.max(1, rawParts.length))
-      ),
-      audioUrl: sectionSkill === "LISTENING" ? audioUrl : null,
-      passageText,
-      questions: partQuestions,
+      key: `${res.effectiveSkill}_${idx + 1}`,
+      skill: res.effectiveSkill,
+      title: res.partTitle.includes(title) ? res.partTitle : `${title} - ${res.partTitle}`,
+      durationMinutes: Math.max(15, Math.round(durationMinutes / Math.max(1, rawParts.length))),
+      audioUrl: res.effectiveSkill === "LISTENING" ? audioUrl : null,
+      passageText: res.passageText,
+      questions: adjustedQuestions,
     });
+  }
+
+  const allMatchingHeadings: any[] = [];
+  const allTables: any[] = [];
+  const allSummaries: any[] = [];
+
+  for (const r of partResults) {
+    if (r.matchingHeadings) {
+      if (Array.isArray(r.matchingHeadings)) {
+        allMatchingHeadings.push(...r.matchingHeadings);
+      } else {
+        allMatchingHeadings.push(r.matchingHeadings);
+      }
+    }
+    if (r.tables && Array.isArray(r.tables)) {
+      allTables.push(...r.tables);
+    }
+    if (r.summaries && Array.isArray(r.summaries)) {
+      allSummaries.push(...r.summaries);
+    }
   }
 
   return {
@@ -581,6 +787,9 @@ export async function parseExamTextWithGroq(params: {
     passageText: sections[0]?.passageText || cleanedText,
     questions: allQuestions,
     sections: sections.length > 1 || skill === "ALL_SKILLS" ? sections : undefined,
+    matchingHeadings: allMatchingHeadings.length > 0 ? allMatchingHeadings : undefined,
+    tables: allTables.length > 0 ? allTables : undefined,
+    summaries: allSummaries.length > 0 ? allSummaries : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   };
 }

@@ -24,6 +24,8 @@ export const ParsedQuestionSchema = z.object({
   correctAnswer: z.string().default(""),
   explanation: z.string().default(""),
   options: z.array(ParsedOptionSchema).default([]),
+  flowchartGroupTitle: z.string().optional(),
+  flowchartBoxText: z.string().optional(),
 });
 
 export const ParsedSectionSchema = z.object({
@@ -70,6 +72,63 @@ export type ParsedOption = z.infer<typeof ParsedOptionSchema>;
 export type ParsedQuestion = z.infer<typeof ParsedQuestionSchema>;
 export type ParsedSection = z.infer<typeof ParsedSectionSchema>;
 
+export interface FlowchartBox {
+  id: string;
+  title?: string;
+  textTemplate: string;
+  questionNumbers?: number[];
+  isStatic?: boolean;
+  nextBoxIds?: string[];
+}
+
+export interface FlowchartGroup {
+  id: string;
+  title: string;
+  instruction: string;
+  boxes: FlowchartBox[];
+  questionNumbers: number[];
+}
+
+export interface TableCompletionCell {
+  text: string;
+  questionNumber?: number;
+}
+
+export interface TableCompletionGroup {
+  id: string;
+  title?: string;
+  instruction?: string;
+  headers: string[];
+  rows: Array<Array<string | TableCompletionCell>>;
+  questionNumbers: number[];
+}
+
+export interface HeadingItem {
+  id: string;
+  romanNumeral: string;
+  text: string;
+}
+
+export interface MatchingHeadingsGroup {
+  id: string;
+  title?: string;
+  instruction?: string;
+  headings: HeadingItem[];
+  items: Array<{
+    questionNumber: number;
+    paragraphLabel: string;
+  }>;
+  questionNumbers: number[];
+}
+
+export interface SummaryCompletionGroup {
+  id: string;
+  title?: string;
+  instruction?: string;
+  summaryText: string;
+  questionNumbers: number[];
+}
+
 export interface ParsedExamResult {
   title: string;
   skill: string;
@@ -78,5 +137,10 @@ export interface ParsedExamResult {
   passageText: string;
   questions: ParsedQuestion[];
   sections?: ParsedSection[];
+  flowcharts?: FlowchartGroup[];
+  tables?: TableCompletionGroup[];
+  matchingHeadings?: MatchingHeadingsGroup[];
+  summaries?: SummaryCompletionGroup[];
   warnings?: string[];
+  invariantsReport?: any;
 }

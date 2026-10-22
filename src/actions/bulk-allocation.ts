@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { hashPassword } from "@/lib/auth";
 import { generateUserCode } from "@/actions/users";
 import { sendAccountCreatedEmail } from "@/lib/mail";
+import { calculateIeltsOverall, isValidIeltsBandScore } from "@/lib/ielts-calc";
 
 function safeRevalidate(path: string) {
   try {
@@ -16,7 +17,7 @@ function safeRevalidate(path: string) {
 const RFC5322_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 const DEFAULT_IELTS_LEVELS = [
-  { id: "lvl-basic", code: "BASIC", name: "Cơ bản", minScore: 0.0, maxScore: 4.5, targetClassCount: 1, sortOrder: 1, isActive: true },
+  { id: "lvl-basic", code: "BASIC", name: "Cơ bản", minScore: 3.5, maxScore: 4.5, targetClassCount: 1, sortOrder: 1, isActive: true },
   { id: "lvl-medium", code: "MEDIUM", name: "Trung bình", minScore: 4.5, maxScore: 6.5, targetClassCount: 2, sortOrder: 2, isActive: true },
   { id: "lvl-advanced", code: "ADVANCED", name: "Nâng cao", minScore: 6.5, maxScore: 9.0, targetClassCount: 3, sortOrder: 3, isActive: true },
 ];
@@ -44,6 +45,14 @@ export interface ValidatedStudentRow {
   dateOfBirth?: string;
   gender?: "MALE" | "FEMALE" | "OTHER";
   ieltsScore: number;
+  scoreListening?: number;
+  scoreReading?: number;
+  scoreWriting?: number;
+  scoreSpeaking?: number;
+  isBelowCutoff?: boolean;
+  status?: "CHO_XAC_NHAN" | "DONG_Y_HOC" | "TU_CHOI" | "DUOI_DIEM_SAN" | "CAN_XU_LY" | "NGOAI_LE";
+  issueReason?: string;
+  overrideReason?: string;
   levelId: string;
   levelCode: string;
   levelName: string;
@@ -86,7 +95,9 @@ export interface BulkAllocationSuggestion {
     totalLevels: number;
     totalClasses: number;
     totalAllocatedStudents: number;
+    totalBelowCutoff?: number;
   };
+  belowCutoffStudents?: ValidatedStudentRow[];
   levelPlans: LevelAllocationPlan[];
   invalidRows: InvalidStudentRow[];
 }
@@ -130,7 +141,7 @@ export async function parseAndValidateBulkStudentsAction(fileBase64: string) {
     if (colFullName === -1 || colEmail === -1 || colScore === -1) {
       return {
         success: false,
-        error: "Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên', 'Email', 'Điểm IELTS'!",
+        error: "Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên', 'Email', 'Điểm đầu vào'!",
       };
     }
 
@@ -234,20 +245,7 @@ export async function parseAndValidateBulkStudentsAction(fileBase64: string) {
           fullName,
           email: rawEmail,
           rawScore: rawScoreVal,
-          errorReason: "Điểm IELTS phải là số từ 0.0 đến 9.0",
-        });
-        continue;
-      }
-
-      // 4. Tự động xác định Trình độ IELTS từ điểm
-      const matchedLevel = ieltsLevels.find((lvl) => score >= lvl.minScore && score <= lvl.maxScore);
-      if (!matchedLevel) {
-        invalidRows.push({
-          rowNumber,
-          fullName,
-          email: rawEmail,
-          rawScore: score,
-          errorReason: `Điểm IELTS (${score}) không khớp với bất kỳ khoảng trình độ nào đã cấu hình`,
+          errorReason: "Điểm đầu vào phải là số từ 0.0 đến 9.0",
         });
         continue;
       }
@@ -258,6 +256,39 @@ export async function parseAndValidateBulkStudentsAction(fileBase64: string) {
         gender = "FEMALE";
       } else if (rawGender.includes("khác") || rawGender === "other") {
         gender = "OTHER";
+      }
+
+      // 4. Tự động xác định Trình độ IELTS từ điểm & Kiểm tra sàn 3.5
+      const isBelowCutoff = score < 3.5;
+      if (isBelowCutoff) {
+        validRows.push({
+          rowNumber,
+          fullName,
+          email: rawEmail,
+          phoneNumber: rawPhone || undefined,
+          dateOfBirth: rawDob || undefined,
+          gender,
+          ieltsScore: score,
+          isBelowCutoff: true,
+          status: "DUOI_DIEM_SAN",
+          issueReason: "Điểm Overall dưới điểm sàn tuyển sinh (< 3.5)",
+          levelId: "lvl-below-cutoff",
+          levelCode: "BELOW_CUTOFF",
+          levelName: "Dưới điểm sàn",
+        });
+        continue;
+      }
+
+      const matchedLevel = ieltsLevels.find((lvl) => score >= lvl.minScore && score <= lvl.maxScore);
+      if (!matchedLevel) {
+        invalidRows.push({
+          rowNumber,
+          fullName,
+          email: rawEmail,
+          rawScore: score,
+          errorReason: `Điểm đầu vào (${score}) không khớp với bất kỳ khoảng trình độ nào đã cấu hình`,
+        });
+        continue;
       }
 
       validRows.push({
@@ -363,13 +394,17 @@ export async function generateBulkClassSuggestionAction(
       }
     }
 
+    // Tách riêng: Học sinh đủ điều kiện (>= 3.5) được phân lớp, học sinh dưới sàn (< 3.5) giữ riêng
+    const admissibleStudents = validRows.filter((s) => !s.isBelowCutoff && s.ieltsScore >= 3.5);
+    const belowCutoffStudents = validRows.filter((s) => s.isBelowCutoff || s.ieltsScore < 3.5);
+
     // Nhóm học sinh theo level
     const studentsByLevel: Record<string, ValidatedStudentRow[]> = {};
     for (const lvl of levels) {
       studentsByLevel[lvl.id] = [];
     }
 
-    for (const student of validRows) {
+    for (const student of admissibleStudents) {
       if (!studentsByLevel[student.levelId]) {
         studentsByLevel[student.levelId] = [];
       }
@@ -424,9 +459,11 @@ export async function generateBulkClassSuggestionAction(
         totalLevels: levelPlans.length,
         totalClasses,
         totalAllocatedStudents,
+        totalBelowCutoff: belowCutoffStudents.length,
       },
       levelPlans,
       invalidRows: [],
+      belowCutoffStudents,
     };
 
     return { success: true, suggestion };

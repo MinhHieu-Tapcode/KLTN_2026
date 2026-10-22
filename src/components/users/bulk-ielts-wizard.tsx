@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Download, FileSpreadsheet, Loader2, Plus, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
+import { calculateIeltsOverall, isValidIeltsBandScore } from "@/lib/ielts-calc";
 import {
   BulkAllocationSuggestion,
   InvalidStudentRow,
@@ -59,7 +60,7 @@ export function BulkIeltsWizard({
         "Số điện thoại": "0987654321",
         "Ngày sinh": "15/08/2008",
         "Giới tính": "Nam",
-        "Điểm IELTS": 5.5,
+        "Điểm đầu vào": 5.5,
       },
       {
         STT: 2,
@@ -68,7 +69,7 @@ export function BulkIeltsWizard({
         "Số điện thoại": "0912345678",
         "Ngày sinh": "20/11/2008",
         "Giới tính": "Nữ",
-        "Điểm IELTS": 7.0,
+        "Điểm đầu vào": 7.0,
       },
       {
         STT: 3,
@@ -77,7 +78,7 @@ export function BulkIeltsWizard({
         "Số điện thoại": "0901234567",
         "Ngày sinh": "10/05/2008",
         "Giới tính": "Nam",
-        "Điểm IELTS": 3.5,
+        "Điểm đầu vào": 3.5,
       },
       {
         STT: 4,
@@ -86,7 +87,7 @@ export function BulkIeltsWizard({
         "Số điện thoại": "0934567890",
         "Ngày sinh": "12/03/2008",
         "Giới tính": "Nữ",
-        "Điểm IELTS": 5.0,
+        "Điểm đầu vào": 5.0,
       },
       {
         STT: 5,
@@ -95,7 +96,7 @@ export function BulkIeltsWizard({
         "Số điện thoại": "0945678901",
         "Ngày sinh": "25/09/2008",
         "Giới tính": "Nam",
-        "Điểm IELTS": 6.5,
+        "Điểm đầu vào": 6.5,
       },
     ];
     const ws = XLSX.utils.json_to_sheet(sampleData);
@@ -159,7 +160,7 @@ export function BulkIeltsWizard({
           );
 
           if (colFullName === -1 || colEmail === -1 || colScore === -1) {
-            setExcelError("Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên', 'Email', 'Điểm IELTS'!");
+            setExcelError("Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên', 'Email', 'Điểm đầu vào'!");
             return;
           }
 
@@ -167,7 +168,7 @@ export function BulkIeltsWizard({
             ieltsLevels && ieltsLevels.length > 0
               ? ieltsLevels
               : [
-                  { id: "lvl-basic", code: "BASIC", name: "Cơ bản", minScore: 0.0, maxScore: 4.5, targetClassCount: 1 },
+                  { id: "lvl-basic", code: "BASIC", name: "Cơ bản", minScore: 3.5, maxScore: 4.5, targetClassCount: 1 },
                   { id: "lvl-medium", code: "MEDIUM", name: "Trung bình", minScore: 4.5, maxScore: 6.5, targetClassCount: 2 },
                   { id: "lvl-advanced", code: "ADVANCED", name: "Nâng cao", minScore: 6.5, maxScore: 9.0, targetClassCount: 3 },
                 ];
@@ -217,7 +218,30 @@ export function BulkIeltsWizard({
 
             const score = Number(String(rawScoreVal).replace(",", "."));
             if (rawScoreVal === null || rawScoreVal === undefined || isNaN(score) || score < 0 || score > 9.0) {
-              invalidRows.push({ rowNumber, fullName, email: rawEmail, rawScore: rawScoreVal, errorReason: "Điểm IELTS phải là số từ 0.0 đến 9.0" });
+              invalidRows.push({ rowNumber, fullName, email: rawEmail, rawScore: rawScoreVal, errorReason: "Điểm đầu vào phải là số từ 0.0 đến 9.0" });
+              continue;
+            }
+
+            let gender: "MALE" | "FEMALE" | "OTHER" = "MALE";
+            if (rawGender.includes("nữ") || rawGender === "female" || rawGender === "f") gender = "FEMALE";
+            else if (rawGender.includes("khác") || rawGender === "other") gender = "OTHER";
+
+            if (score < 3.5) {
+              validRows.push({
+                rowNumber,
+                fullName,
+                email: rawEmail,
+                phoneNumber: rawPhone || undefined,
+                dateOfBirth: rawDob || undefined,
+                gender,
+                ieltsScore: score,
+                isBelowCutoff: true,
+                status: "DUOI_DIEM_SAN",
+                issueReason: "Điểm Overall dưới điểm sàn tuyển sinh (< 3.5)",
+                levelId: "lvl-below-cutoff",
+                levelCode: "BELOW_CUTOFF",
+                levelName: "Dưới điểm sàn",
+              });
               continue;
             }
 
@@ -226,12 +250,18 @@ export function BulkIeltsWizard({
                 if (idx === activeLevels.length - 1) return score >= lvl.minScore && score <= lvl.maxScore;
                 return score >= lvl.minScore && score < lvl.maxScore;
               }) ||
-              activeLevels.find((lvl: any) => score >= lvl.minScore && score <= lvl.maxScore) ||
-              activeLevels[0];
+              activeLevels.find((lvl: any) => score >= lvl.minScore && score <= lvl.maxScore);
 
-            let gender: "MALE" | "FEMALE" | "OTHER" = "MALE";
-            if (rawGender.includes("nữ") || rawGender === "female" || rawGender === "f") gender = "FEMALE";
-            else if (rawGender.includes("khác") || rawGender === "other") gender = "OTHER";
+            if (!matchedLevel) {
+              invalidRows.push({
+                rowNumber,
+                fullName,
+                email: rawEmail,
+                rawScore: score,
+                errorReason: `Điểm đầu vào (${score}) không khớp với bất kỳ khoảng trình độ nào đã cấu hình`,
+              });
+              continue;
+            }
 
             validRows.push({
               rowNumber,
@@ -271,8 +301,11 @@ export function BulkIeltsWizard({
       if (!sugRes || !sugRes.success || !sugRes.suggestion) {
         const schoolObj = schools.find((s) => s.id === selectedSchoolId);
         const schoolCode = schoolObj ? schoolObj.code.replace(/[^a-zA-Z0-9]/g, "") : "TD";
+        const admissibleRows = res.validRows.filter((s: any) => !s.isBelowCutoff && s.ieltsScore >= 3.5);
+        const belowCutoffRows = res.validRows.filter((s: any) => s.isBelowCutoff || s.ieltsScore < 3.5);
+
         const studentsByLevel: Record<string, any[]> = {};
-        for (const s of res.validRows) {
+        for (const s of admissibleRows) {
           if (!studentsByLevel[s.levelId]) studentsByLevel[s.levelId] = [];
           studentsByLevel[s.levelId].push(s);
         }
@@ -398,7 +431,7 @@ export function BulkIeltsWizard({
               <div>
                 <h4 className="text-xs font-bold text-[#0F172A]">File mẫu Excel chuẩn SIMPACE</h4>
                 <p className="text-[11px] text-[#64748B]">
-                  Gồm các cột: Họ và tên, Email, Điểm IELTS, SĐT, Ngày sinh, Giới tính (Không có Địa chỉ và Trình độ).
+                  Gồm các cột: Họ và tên, Email, Điểm Nghe, Điểm Đọc, Điểm Viết, Điểm Nói, SĐT, Ngày sinh, Giới tính (Overall tự tính).
                 </p>
               </div>
               <div className="mt-2">

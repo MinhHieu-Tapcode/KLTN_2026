@@ -5,6 +5,7 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowRightLeft,
+  Trash2,
   ArrowUpDown,
   CheckCircle2,
   ChevronRight,
@@ -48,6 +49,16 @@ import {
   StudentTransferModal,
 } from "./bulk-ielts-modals";
 import { BulkAllocationDashboard } from "./bulk-allocation-dashboard";
+import { OutOfLevelTab } from "./out-of-level-tab";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Upload, ShieldAlert } from "lucide-react";
 
 export interface BulkAllocationPreviewProps {
   excelFileName: string;
@@ -81,7 +92,10 @@ export function BulkAllocationPreview({
   onCommittedSuccess,
 }: BulkAllocationPreviewProps) {
   // Tabs & filters
-  const [activeTab, setActiveTab] = useState<"all" | "invalid">("all");
+  const [activeTab, setActiveTab] = useState<"classes" | "out_of_level" | "invalid">("classes");
+  const [belowCutoffList, setBelowCutoffList] = useState<ValidatedStudentRow[]>(
+    allocationSuggestion.belowCutoffStudents || []
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [maxCapacity, setMaxCapacity] = useState<number>(30);
   const [filterLevel, setFilterLevel] = useState<string>("all");
@@ -94,6 +108,7 @@ export function BulkAllocationPreview({
   const [transferCurrentClassName, setTransferCurrentClassName] = useState<string>("");
   const [adjustClassLevel, setAdjustClassLevel] = useState<LevelAllocationPlan | null>(null);
   const [deleteTargetClass, setDeleteTargetClass] = useState<ProposedClass | null>(null);
+  const [deleteTargetStudent, setDeleteTargetStudent] = useState<ValidatedStudentRow | null>(null);
   const [confirmCommitOpen, setConfirmCommitOpen] = useState(false);
   const [showInvalidListModal, setShowInvalidListModal] = useState(false);
   const [configureCapacitiesOpen, setConfigureCapacitiesOpen] = useState(false);
@@ -197,21 +212,275 @@ export function BulkAllocationPreview({
   }, [invalidRowsList, searchQuery]);
 
   // Actions
-  const handleInlineClassChange = async (student: ValidatedStudentRow, targetClassTempId: string) => {
-    const currentPlan = allocationSuggestion.levelPlans.find((p) => p.levelId === student.levelId);
-    if (!currentPlan) return;
+  // Xuất file bảng điểm Pha 1 gửi trường
+  const handleExportPhase1 = () => {
+    const exportData = studentRows.map((r, idx) => ({
+      "STT": idx + 1,
+      "Họ và tên": r.student.fullName,
+      "Email": r.student.email,
+      "Số điện thoại": r.student.phoneNumber || "",
+      "Ngày sinh": r.student.dateOfBirth || "",
+      "Giới tính": r.student.gender || "",
+      "Điểm Nghe": r.student.scoreListening ?? "",
+      "Điểm Đọc": r.student.scoreReading ?? "",
+      "Điểm Viết": r.student.scoreWriting ?? "",
+      "Điểm Nói": r.student.scoreSpeaking ?? "",
+      "Điểm đầu vào": r.student.ieltsScore,
+      "Trình độ đề xuất": r.student.levelName,
+      "Trạng thái": r.student.isBelowCutoff ? "Dưới điểm sàn" : "Đủ điều kiện",
+      "Ghi chú": r.student.issueReason || "",
+      "Xác nhận học (Học / Hủy)": r.student.status === "DONG_Y_HOC" ? "Học" : r.student.status === "TU_CHOI" ? "Hủy" : "",
+    }));
 
-    const res = await rebalanceOnStudentTransferAction(currentPlan, student.email, targetClassTempId, schoolCode);
-    if (!res.success || !res.updatedPlan) {
-      onError(res.error || "Lỗi khi chuyển lớp!");
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ket_qua_IELTS_Gui_Truong");
+    XLSX.writeFile(wb, `SIMPACE_Bang_diem_IELTS_${schoolCode}_Pha1.xlsx`);
+    onNotify("Đã xuất file bảng điểm gửi trường THPT thành công!");
+  };
+
+  // Duyệt đặc cách học sinh out trình độ (< 3.5) vào lớp
+  const handleApproveOutOfLevel = (st: ValidatedStudentRow, targetClassId: string, reason: string) => {
+    const targetClass = allClassesList.find((c) => c.tempId === targetClassId);
+    if (!targetClass) return;
+
+    const updatedStudent: ValidatedStudentRow = {
+      ...st,
+      levelId: targetClass.levelId,
+      levelCode: targetClass.levelCode,
+      levelName: targetClass.levelName,
+      status: "NGOAI_LE",
+      overrideReason: `Duyệt vào ${targetClass.name}: ${reason}`,
+    };
+
+    const nextPlans = allocationSuggestion.levelPlans.map((plan) => {
+      const updatedClasses = plan.classes.map((cls) => {
+        if (cls.tempId === targetClassId) {
+          const existingWithout = cls.students.filter((s) => s.email.toLowerCase() !== st.email.toLowerCase());
+          return { ...cls, students: [...existingWithout, updatedStudent] };
+        }
+        return cls;
+      });
+      return {
+        ...plan,
+        classes: updatedClasses,
+        studentCount: updatedClasses.reduce((sum, c) => sum + c.students.length, 0),
+      };
+    });
+
+    onUpdateSuggestion({
+      ...allocationSuggestion,
+      levelPlans: nextPlans,
+      summary: {
+        ...allocationSuggestion.summary,
+        totalAllocatedStudents: allocationSuggestion.summary.totalAllocatedStudents + 1,
+      },
+    });
+
+    setBelowCutoffList((prev) =>
+      prev.map((item) =>
+        item.email.toLowerCase() === st.email.toLowerCase()
+          ? { ...item, status: "NGOAI_LE", overrideReason: `Duyệt vào ${targetClass.name}: ${reason}` }
+          : item
+      )
+    );
+
+    onNotify(`Đã gán học sinh ${st.fullName} vào lớp ${targetClass.name}!`);
+  };
+
+  const handleRejectOutOfLevel = (st: ValidatedStudentRow) => {
+    setBelowCutoffList((prev) =>
+      prev.map((item) =>
+        item.email.toLowerCase() === st.email.toLowerCase()
+          ? { ...item, status: "TU_CHOI", overrideReason: "Từ chối nhập học do dưới điểm sàn" }
+          : item
+      )
+    );
+    onNotify(`Đã xóa học sinh ${st.fullName} khỏi đợt phân lớp!`);
+  };
+
+  // Nạp phản hồi xác nhận học từ trường (Pha 2)
+  const handleApplyFeedback = (feedbackRows: Array<{ identifier: string; confirmedStatus: string }>) => {
+    const feedbackMap = new Map<string, string>();
+    feedbackRows.forEach((fb) => {
+      const key = (fb.identifier || "").trim().toLowerCase();
+      if (key) feedbackMap.set(key, fb.confirmedStatus);
+    });
+
+    let matched = 0;
+    let confirmed = 0;
+    let rejected = 0;
+
+    const nextPlans = allocationSuggestion.levelPlans.map((plan) => {
+      const updatedClasses = plan.classes.map((cls) => {
+        const updatedStudents = cls.students.map((st) => {
+          const emailKey = st.email.toLowerCase();
+          const phoneKey = (st.phoneNumber || "").toLowerCase();
+          const decision = feedbackMap.get(emailKey) || (phoneKey ? feedbackMap.get(phoneKey) : null);
+
+          if (decision) {
+            matched++;
+            const norm = decision.trim().toLowerCase();
+            if (norm.includes("học") || norm.includes("đồng ý") || norm.includes("yes") || norm === "1") {
+              confirmed++;
+              return { ...st, status: "DONG_Y_HOC" as const };
+            } else if (norm.includes("hủy") || norm.includes("từ chối") || norm.includes("no") || norm === "0") {
+              rejected++;
+              return { ...st, status: "TU_CHOI" as const };
+            }
+          }
+          return st;
+        });
+        return { ...cls, students: updatedStudents };
+      });
+      return { ...plan, classes: updatedClasses };
+    });
+
+    onUpdateSuggestion({ ...allocationSuggestion, levelPlans: nextPlans });
+    onNotify(`Đã khớp ${matched} học sinh từ phản hồi của trường: ${confirmed} xác nhận học, ${rejected} hủy học.`);
+  };
+
+  // Duyệt ngoại lệ từ màn hình Cần xử lý
+  const handleConfirmOverride = (
+    candidateIdOrEmail: string,
+    action: "OVERRIDE" | "ASSIGN_CLOSEST" | "REJECT",
+    reason: string,
+    targetLevelId?: string
+  ) => {
+    const nextPlans = allocationSuggestion.levelPlans.map((plan) => {
+      const updatedClasses = plan.classes.map((cls) => {
+        const updatedStudents = cls.students.map((st) => {
+          if (st.email.toLowerCase() === candidateIdOrEmail.toLowerCase()) {
+            if (action === "OVERRIDE") {
+              return {
+                ...st,
+                status: "NGOAI_LE" as const,
+                overrideReason: reason,
+                isBelowCutoff: false,
+              };
+            } else if (action === "REJECT") {
+              return {
+                ...st,
+                status: "TU_CHOI" as const,
+                overrideReason: reason || "Loại bỏ do không đủ điều kiện",
+              };
+            } else if (action === "ASSIGN_CLOSEST") {
+              return {
+                ...st,
+                status: "DONG_Y_HOC" as const,
+                overrideReason: "Xếp vào trình độ Cơ bản theo quy chế",
+                isBelowCutoff: false,
+              };
+            }
+          }
+          return st;
+        });
+        return { ...cls, students: updatedStudents };
+      });
+      return { ...plan, classes: updatedClasses };
+    });
+
+    onUpdateSuggestion({ ...allocationSuggestion, levelPlans: nextPlans });
+    onNotify("Đã cập nhật xử lý ngoại lệ thành công!");
+  };
+
+  const handleInlineClassChange = async (student: ValidatedStudentRow, targetClassTempId: string) => {
+    // 1. Tìm plan nguồn chứa học sinh
+    const sourcePlan =
+      allocationSuggestion.levelPlans.find((p) =>
+        p.classes.some((c) => c.students.some((s) => s.email.toLowerCase() === student.email.toLowerCase()))
+      ) || allocationSuggestion.levelPlans.find((p) => p.levelId === student.levelId);
+
+    if (!sourcePlan) {
+      onError("Không tìm thấy thông tin lớp học hiện tại của học sinh!");
       return;
     }
 
-    const nextPlans = allocationSuggestion.levelPlans.map((p) =>
-      p.levelId === res.updatedPlan!.levelId ? res.updatedPlan! : p
+    // 2. Tìm plan đích chứa targetClassTempId
+    const targetPlan = allocationSuggestion.levelPlans.find((p) =>
+      p.classes.some((c) => c.tempId === targetClassTempId)
     );
-    onUpdateSuggestion({ ...allocationSuggestion, levelPlans: nextPlans });
-    onNotify(res.message || `Đã chuyển lớp cho học sinh ${student.fullName}`);
+
+    if (!targetPlan) {
+      onError("Không tìm thấy lớp học đích!");
+      return;
+    }
+
+    // Nếu cùng một trình độ -> gọi action rebalanceOnStudentTransferAction
+    if (sourcePlan.levelId === targetPlan.levelId) {
+      const res = await rebalanceOnStudentTransferAction(sourcePlan, student.email, targetClassTempId, schoolCode);
+      if (!res.success || !res.updatedPlan) {
+        onError(res.error || "Lỗi khi chuyển lớp!");
+        return;
+      }
+      const nextPlans = allocationSuggestion.levelPlans.map((p) =>
+        p.levelId === res.updatedPlan!.levelId ? res.updatedPlan! : p
+      );
+      onUpdateSuggestion({ ...allocationSuggestion, levelPlans: nextPlans });
+      onNotify(res.message || `Đã chuyển lớp cho học sinh ${student.fullName}`);
+    } else {
+      // Chuyển khác trình độ: Lấy học sinh ra khỏi source, cập nhật level sang targetPlan
+      let movedStudent: ValidatedStudentRow | undefined;
+      let srcClassName = "";
+      let tgtClassName = "";
+
+      const updatedSourceClasses = sourcePlan.classes.map((c) => {
+        const found = c.students.find((s) => s.email.toLowerCase() === student.email.toLowerCase());
+        if (found) {
+          movedStudent = found;
+          srcClassName = c.name;
+          return { ...c, students: c.students.filter((s) => s.email.toLowerCase() !== student.email.toLowerCase()) };
+        }
+        return c;
+      });
+
+      if (!movedStudent) {
+        onError("Không tìm thấy học sinh trong lớp hiện tại!");
+        return;
+      }
+
+      const updatedTargetClasses = targetPlan.classes.map((c) => {
+        if (c.tempId === targetClassTempId) {
+          tgtClassName = c.name;
+          return {
+            ...c,
+            students: [
+              ...c.students,
+              {
+                ...movedStudent!,
+                levelId: targetPlan.levelId,
+                levelCode: targetPlan.levelCode,
+                levelName: targetPlan.levelName,
+                status: "NGOAI_LE" as const,
+                overrideReason: `Chuyển trình độ sang ${c.name} (${targetPlan.levelName})`,
+              },
+            ],
+          };
+        }
+        return c;
+      });
+
+      const nextPlans = allocationSuggestion.levelPlans.map((p) => {
+        if (p.levelId === sourcePlan.levelId) {
+          return {
+            ...p,
+            classes: updatedSourceClasses,
+            studentCount: updatedSourceClasses.reduce((sum, c) => sum + c.students.length, 0),
+          };
+        }
+        if (p.levelId === targetPlan.levelId) {
+          return {
+            ...p,
+            classes: updatedTargetClasses,
+            studentCount: updatedTargetClasses.reduce((sum, c) => sum + c.students.length, 0),
+          };
+        }
+        return p;
+      });
+
+      onUpdateSuggestion({ ...allocationSuggestion, levelPlans: nextPlans });
+      onNotify(`Đã chuyển học sinh ${student.fullName} từ ${srcClassName} sang ${tgtClassName} thành công!`);
+    }
   };
 
   const handleUpdateCapacity = async (newCap: number) => {
@@ -233,6 +502,38 @@ export function BulkAllocationPreview({
     } finally {
       setIsRebalancing(false);
     }
+  };
+
+  
+  const handleDeleteStudentConfirm = () => {
+    if (!deleteTargetStudent) return;
+    const student = deleteTargetStudent;
+
+    const nextPlans = allocationSuggestion.levelPlans.map((plan) => {
+      const updatedClasses = plan.classes.map((cls) => {
+        const nextStudents = cls.students.filter(
+          (s) => s.email.toLowerCase() !== student.email.toLowerCase()
+        );
+        return { ...cls, students: nextStudents };
+      });
+      return {
+        ...plan,
+        classes: updatedClasses,
+        studentCount: updatedClasses.reduce((sum, c) => sum + c.students.length, 0),
+      };
+    });
+
+    onUpdateSuggestion({
+      ...allocationSuggestion,
+      levelPlans: nextPlans,
+      summary: {
+        ...allocationSuggestion.summary,
+        totalAllocatedStudents: Math.max(0, allocationSuggestion.summary.totalAllocatedStudents - 1),
+      },
+    });
+
+    onNotify(`Đã xóa học sinh ${student.fullName} khỏi danh sách phân lớp.`);
+    setDeleteTargetStudent(null);
   };
 
   const handleDeleteClassConfirm = async () => {
@@ -322,7 +623,7 @@ export function BulkAllocationPreview({
       "Dòng Excel": r.rowNumber,
       "Họ và tên": r.fullName || "",
       Email: r.email || "",
-      "Điểm IELTS nhập": r.rawScore ?? "",
+      "Điểm đầu vào nhập": r.rawScore ?? "",
       "Nguyên nhân lỗi": r.errorReason,
     }));
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -361,6 +662,28 @@ export function BulkAllocationPreview({
     }
   };
 
+  const attentionRows = useMemo(() => {
+    return studentRows.filter(
+      (r) =>
+        r.student.isBelowCutoff ||
+        r.student.status === "DUOI_DIEM_SAN" ||
+        r.student.status === "CHO_XAC_NHAN" ||
+        Boolean(r.student.issueReason)
+    );
+  }, [studentRows]);
+
+  const attentionCount = attentionRows.length;
+
+  const warningPlans = useMemo(() => {
+    return sortedLevelPlans.filter((p) => {
+      const confirmedCount = p.classes.reduce(
+        (sum, c) => sum + c.students.filter((s) => s.status !== "TU_CHOI").length,
+        0
+      );
+      return confirmedCount > 0 && confirmedCount < 12;
+    });
+  }, [sortedLevelPlans]);
+
   const totalValid = allocationSuggestion.summary.totalValid;
   const totalAllocated = allocationSuggestion.summary.totalAllocatedStudents;
   const totalInvalid = invalidRowsList.length;
@@ -380,7 +703,7 @@ export function BulkAllocationPreview({
             <ChevronRight className="size-3 text-slate-400" />
             <span className="text-[#EA580C] font-semibold">Nhập hàng loạt</span>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             <h2 className="text-lg font-bold text-slate-900 tracking-tight">Đề xuất phân lớp IELTS</h2>
             <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
               Trường: <b className="text-slate-800">{selectedSchoolName}</b> • Tệp:{" "}
@@ -419,21 +742,39 @@ export function BulkAllocationPreview({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-center">
         <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex flex-col justify-between items-center">
           <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
-            <UserCheck className="size-3.5" /> Học sinh hợp lệ
+            <UserCheck className="size-3.5" /> Đủ điều kiện (≥ 3.5)
           </div>
-          <b className="text-2xl font-black text-emerald-800 my-0.5">{totalValid}</b>
+          <b className="text-2xl font-black text-emerald-800 my-0.5">{studentRows.length}</b>
           <span className="text-[10px] text-emerald-600 font-medium">100% sẵn sàng</span>
+        </div>
+
+        <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 flex flex-col justify-between items-center">
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+            <ShieldAlert className="size-3.5" /> Chưa được gán lớp
+          </div>
+          <b className="text-2xl font-black text-amber-800 my-0.5">{belowCutoffList.length}</b>
+          {belowCutoffList.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab("out_of_level")}
+              className="text-[10px] font-bold text-amber-600 hover:underline"
+            >
+              Xem danh sách →
+            </button>
+          ) : (
+            <span className="text-[10px] text-amber-500 font-medium">Đã gán hết</span>
+          )}
         </div>
 
         <div className="p-3 rounded-2xl bg-rose-50/70 border border-rose-200 flex flex-col justify-between items-center">
           <div className="flex items-center gap-1 text-[11px] font-semibold text-rose-700">
-            <AlertCircle className="size-3.5" /> Dòng lỗi
+            <AlertCircle className="size-3.5" /> Dòng lỗi format
           </div>
           <b className="text-2xl font-black text-rose-800 my-0.5">{totalInvalid}</b>
           {totalInvalid > 0 ? (
             <button
               type="button"
-              onClick={() => setShowInvalidListModal(true)}
+              onClick={() => setActiveTab("invalid")}
               className="text-[10px] font-bold text-rose-600 hover:underline"
             >
               Xem chi tiết lỗi →
@@ -476,25 +817,65 @@ export function BulkAllocationPreview({
         </div>
       </div>
 
+            {/* CẢNH BÁO SĨ SỐ TỐI THIỂU NẾU CÓ */}
+      {warningPlans.length > 0 && (
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-between text-xs text-amber-900">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-5 text-amber-600 shrink-0" />
+            <div>
+              <span className="font-bold">Cảnh báo sĩ số tối thiểu (dưới 12 học sinh/lớp): </span>
+              <span>
+                {warningPlans
+                  .map(
+                    (p) =>
+                      `${p.levelName} (${p.classes.reduce(
+                        (sum, c) => sum + c.students.filter((s) => s.status !== "TU_CHOI").length,
+                        0
+                      )} HS)`
+                  )
+                  .join(", ")}
+                . Đề xuất: Gộp vào trình độ liền kề hoặc Hoãn mở lớp đợt này.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3. SPLIT-VIEW MAIN CONTENT (Ảnh 2) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
         {/* CỘT TRÁI: DATA GRID TABLE (Chiếm 7-8 phần, lấp đầy chiều cao) */}
-        <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col h-full min-h-[680px]">
+        <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col h-full min-h-[500px] lg:min-h-[680px]">
           {/* Thanh công cụ bảng: Tabs & Tìm kiếm & Xuất lỗi */}
           <div className="space-y-2.5 pb-3 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-2.5">
-              {/* 2 Tabs */}
-              <div className="flex items-center p-1 bg-slate-100 rounded-xl">
+              {/* 3 Tabs */}
+              <div className="flex items-center p-1 bg-slate-100 rounded-xl max-w-full overflow-x-auto scrollbar-none">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("all")}
+                  onClick={() => setActiveTab("classes")}
                   className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${
-                    activeTab === "all"
+                    activeTab === "classes"
                       ? "bg-white text-slate-900 shadow-sm"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
-                  Tất cả học sinh ({totalValid})
+                  Danh sách lớp học ({studentRows.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("out_of_level")}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+                    activeTab === "out_of_level"
+                      ? "bg-white text-amber-900 shadow-sm"
+                      : "text-slate-600 hover:text-amber-900"
+                  }`}
+                >
+                  Chưa được gán lớp
+                  {belowCutoffList.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold">
+                      {belowCutoffList.length}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -505,7 +886,7 @@ export function BulkAllocationPreview({
                       : "text-slate-600 hover:text-rose-700"
                   }`}
                 >
-                  Chỉ hiển thị dòng lỗi
+                  Dòng lỗi
                   {totalInvalid > 0 && (
                     <span className="px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 text-[10px] font-extrabold">
                       {totalInvalid}
@@ -542,7 +923,7 @@ export function BulkAllocationPreview({
             </div>
 
             {/* Hàng bộ lọc đa năng: Lọc theo Trình độ, Lọc theo Lớp học & Sắp xếp điểm số */}
-            {activeTab === "all" && (
+            {activeTab === "classes" && (
               <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <div className="flex items-center gap-1 text-slate-500 font-semibold text-[11px]">
                   <Filter className="size-3.5 text-[#EA580C]" />
@@ -613,16 +994,23 @@ export function BulkAllocationPreview({
           </div>
 
           {/* Data Grid Table (Lấp đầy không gian, không để khoảng trống thừa) */}
-          <div className="flex-1 overflow-y-auto min-h-[480px] mt-3 border border-slate-100 rounded-xl">
-            {activeTab === "all" ? (
-              <table className="w-full text-xs text-left">
+          <div className="flex-1 overflow-x-auto overflow-y-auto min-h-[420px] lg:min-h-[480px] mt-3 border border-slate-100 rounded-xl">
+            {activeTab === "out_of_level" ? (
+              <OutOfLevelTab
+                students={belowCutoffList}
+                allClasses={allClassesList}
+                onApprove={handleApproveOutOfLevel}
+                onReject={handleRejectOutOfLevel}
+              />
+            ) : activeTab === "classes" ? (
+              <table className="w-full text-xs text-left min-w-[760px]">
                 <thead className="bg-slate-50 text-slate-500 font-semibold sticky top-0 border-b border-slate-200 z-10">
                   <tr>
                     <th className="py-2.5 px-3 w-10 text-center">STT</th>
                     <th className="py-2.5 px-3">Họ và tên</th>
                     <th className="py-2.5 px-3">Email</th>
-                    <th className="py-2.5 px-3 text-center">Điểm IELTS</th>
-                    <th className="py-2.5 px-3">Trình độ</th>
+                    <th className="py-2.5 px-3 text-center">Điểm đầu vào</th>
+                    <th className="py-2.5 px-3">Trình độ & Trạng thái</th>
                     <th className="py-2.5 px-3 min-w-[280px]">Lớp đề xuất (Tự động)</th>
                     <th className="py-2.5 px-3 text-right">Thao tác</th>
                   </tr>
@@ -697,13 +1085,12 @@ export function BulkAllocationPreview({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                setTransferStudent(r.student);
-                                setTransferCurrentClassName(r.currentClass.name);
-                              }}
-                              className="h-7 px-2 text-[11px] text-[#EA580C] hover:bg-orange-50 font-medium"
+                              onClick={() => setDeleteTargetStudent(r.student)}
+                              className="h-7 px-2.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 font-semibold transition inline-flex items-center gap-1 rounded-lg"
+                              title="Xóa học sinh khỏi danh sách phân lớp"
                             >
-                              <ArrowRightLeft className="size-3 mr-1" /> Chuyển lớp
+                              <Trash2 className="size-3.5" />
+                              Xóa
                             </Button>
                           </td>
                         </tr>
@@ -720,7 +1107,7 @@ export function BulkAllocationPreview({
                     <th className="py-2.5 px-3 w-20">Dòng Excel</th>
                     <th className="py-2.5 px-3">Học sinh</th>
                     <th className="py-2.5 px-3">Email</th>
-                    <th className="py-2.5 px-3 text-center">Điểm IELTS</th>
+                    <th className="py-2.5 px-3 text-center">Điểm đầu vào</th>
                     <th className="py-2.5 px-3">Nguyên nhân lỗi</th>
                   </tr>
                 </thead>
@@ -833,7 +1220,11 @@ export function BulkAllocationPreview({
         currentClassName={transferCurrentClassName}
         availableClasses={
           transferStudent
-            ? allocationSuggestion.levelPlans.find((p) => p.levelId === transferStudent.levelId)?.classes || []
+            ? (
+                allocationSuggestion.levelPlans.find((p) =>
+                  p.classes.some((c) => c.students.some((s) => s.email.toLowerCase() === transferStudent.email.toLowerCase()))
+                ) || allocationSuggestion.levelPlans.find((p) => p.levelId === transferStudent.levelId)
+              )?.classes || []
             : []
         }
         onConfirmTransfer={async (targetClassTempId) => {
@@ -886,6 +1277,53 @@ export function BulkAllocationPreview({
         levelPlans={allocationSuggestion.levelPlans}
         onConfirmSave={handleSaveClassCapacities}
       />
+{/* Modal 8: Xác nhận xóa học sinh khỏi đợt phân lớp */}
+      <Dialog open={Boolean(deleteTargetStudent)} onOpenChange={(v) => !v && setDeleteTargetStudent(null)}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader className="pb-2 border-b border-slate-100">
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2 text-rose-600">
+              <Trash2 className="size-5" />
+              Xác nhận xóa học sinh
+            </DialogTitle>
+          </DialogHeader>
+
+          {deleteTargetStudent && (
+            <div className="py-3 text-xs text-slate-600 space-y-3">
+              <p>
+                Bạn có chắc chắn muốn xóa học sinh <b className="text-slate-900 font-bold">{deleteTargetStudent.fullName}</b> khỏi đợt phân lớp này không?
+              </p>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <div><span className="text-slate-400">Email:</span> <span className="font-semibold text-slate-800">{deleteTargetStudent.email}</span></div>
+                <div><span className="text-slate-400">Điểm đầu vào:</span> <span className="font-bold text-[#EA580C]">{Number(deleteTargetStudent.ieltsScore).toFixed(1)}</span></div>
+                <div><span className="text-slate-400">Trình độ:</span> <span className="font-semibold text-slate-800">{deleteTargetStudent.levelName}</span></div>
+              </div>
+              <p className="text-slate-400 text-[11px] italic">
+                * Học sinh sẽ bị loại bỏ khỏi lớp học đề xuất và sĩ số lớp sẽ tự động giảm đi 1.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="pt-3 border-t border-slate-100 flex gap-2 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteTargetStudent(null)}
+              className="h-8 px-3 text-xs font-semibold"
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleDeleteStudentConfirm}
+              className="h-8 px-4 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              Xác nhận xóa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}
+};

@@ -6,7 +6,9 @@ import { checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import {
   createAssignmentService,
+  updateAssignmentService,
   deleteAssignmentService,
+  regradeAssignmentSubmissionsService,
   getAssignmentDetailService,
   getClassAssignmentsService,
   getSubmissionsForAssignmentService,
@@ -28,14 +30,15 @@ export async function getClassAssignmentsAction(
   classId: string
 ): Promise<{ success: boolean; assignments: any[]; error?: string }> {
   if (!(await isDbAlive())) {
-    return getClassAssignmentsService(classId);
+    const session = await getSession();
+    return getClassAssignmentsService(classId, session?.userId);
   }
   try {
     const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
     if (!auth.ok) {
       return { success: false, error: auth.error, assignments: [] };
     }
-    return await getClassAssignmentsService(classId);
+    return await getClassAssignmentsService(classId, auth.session.userId);
   } catch (err: any) {
     console.error("[getClassAssignmentsAction] Lỗi:", err);
     return {
@@ -71,7 +74,8 @@ export async function getAssignmentDetailAction(
  * Tạo Bài tập mới (Áp dụng cho cả luồng Tạo thủ công và sau khi Bóc tách Ebook)
  */
 export async function createAssignmentAction(data: {
-  classId: string;
+  classId?: string;
+  targetClassIds?: string[];
   title: string;
   description?: string;
   skill: string;
@@ -81,6 +85,10 @@ export async function createAssignmentAction(data: {
   audioUrl?: string | null;
   enableProctoring?: boolean;
   maxTabSwitches?: number;
+  flowcharts?: any[];
+  tables?: any[];
+  matchingHeadings?: any[];
+  summaries?: any[];
   questions: Array<{
     questionNumber: number;
     passageText?: string;
@@ -106,8 +114,11 @@ export async function createAssignmentAction(data: {
       return { success: false, error: "Tiêu đề bài tập không được để trống!" };
     }
 
-    if (!data.classId) {
-      return { success: false, error: "Vui lòng chọn lớp học giao bài!" };
+    const targetClassList = Array.from(
+      new Set([...(data.targetClassIds || []), ...(data.classId ? [data.classId] : [])].filter(Boolean))
+    );
+    if (targetClassList.length === 0) {
+      return { success: false, error: "Vui lòng chọn ít nhất 1 lớp học giao bài!" };
     }
 
     const isListening = data.skill === "LISTENING" || data.skill === "ALL_SKILLS";
@@ -135,15 +146,17 @@ export async function createAssignmentAction(data: {
  * Xóa mềm Bài tập
  */
 export async function deleteAssignmentAction(
-  assignmentId: string
-): Promise<{ success: boolean; error?: string }> {
+  assignmentId: string,
+  classId?: string,
+  deleteFromAll?: boolean
+): Promise<{ success: boolean; deletedFromAll?: boolean; error?: string }> {
   const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
 
   try {
-    const res = await deleteAssignmentService(assignmentId);
+    const res = await deleteAssignmentService(assignmentId, classId, deleteFromAll);
     safeRevalidate();
     return res;
   } catch (err: any) {
@@ -151,6 +164,89 @@ export async function deleteAssignmentAction(
     return { success: false, error: err.message || "Không thể xóa bài tập!" };
   }
 }
+
+/**
+ * Cập nhật nội dung hoặc cài đặt hạn nộp của Bài tập
+ */
+export async function updateAssignmentAction(
+  assignmentId: string,
+  data: {
+    title?: string;
+    description?: string;
+    skill?: string;
+    type?: string;
+    durationMinutes?: number;
+    audioUrl?: string | null;
+    classId?: string;
+    updateAllClasses?: boolean;
+    dueDate?: string | null;
+    startDate?: string | null;
+    enableProctoring?: boolean;
+    maxTabSwitches?: number;
+    questions?: Array<any>;
+  }
+): Promise<{
+  success: boolean;
+  submissionCount?: number;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const auth = checkRole(
+      await getSession(),
+      ROLE_GROUPS.EXAM_CREATORS,
+      "Chỉ Giáo viên và Quản trị viên mới có quyền cập nhật bài tập!",
+      "Vui lòng đăng nhập!"
+    );
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
+    }
+
+    const res = await updateAssignmentService(assignmentId, data);
+    safeRevalidate();
+    return res;
+  } catch (err: any) {
+    console.error("[updateAssignmentAction] Lỗi:", err);
+    return { success: false, error: err.message || "Cập nhật bài tập thất bại!" };
+  }
+}
+
+/**
+ * Tự động chấm lại toàn bộ bài nộp trắc nghiệm khi sửa đáp án
+ */
+export async function regradeAssignmentSubmissionsAction(
+  assignmentId: string,
+  classId?: string
+): Promise<{
+  success: boolean;
+  regradedCount: number;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const auth = checkRole(
+      await getSession(),
+      ROLE_GROUPS.EXAM_CREATORS,
+      "Chỉ Giáo viên và Quản trị viên mới có quyền chấm lại bài tập!",
+      "Vui lòng đăng nhập!"
+    );
+    if (!auth.ok) {
+      return { success: false, regradedCount: 0, error: auth.error };
+    }
+
+    const res = await regradeAssignmentSubmissionsService(assignmentId, classId);
+    safeRevalidate();
+    return res;
+  } catch (err: any) {
+    console.error("[regradeAssignmentSubmissionsAction] Lỗi:", err);
+    return {
+      success: false,
+      regradedCount: 0,
+      error: err.message || "Chấm lại bài tập thất bại!",
+    };
+  }
+}
+
 
 /**
  * Bóc tách Đề thi IELTS từ tệp PDF / Word (.docx) sang cấu trúc Ebook 2 cột
@@ -181,7 +277,7 @@ export async function parseIeltsExamAction(
     const excelAnswersRaw = formData.get("excelAnswers")?.toString() || "";
     const pdfTextRaw = formData.get("pdfText")?.toString() || "";
     const rawFile = formData.get("file");
-    const file = rawFile instanceof File ? rawFile : null;
+    const file = (rawFile && typeof rawFile === "object" && "size" in rawFile && (rawFile as any).size > 0) ? (rawFile as File) : null;
 
     const parsedData = await parseIeltsExamContent({
       title,
@@ -225,6 +321,10 @@ export async function createMultipleAssignmentsAction(
     audioUrl?: string | null;
     enableProctoring?: boolean;
     maxTabSwitches?: number;
+    flowcharts?: any[];
+    tables?: any[];
+  matchingHeadings?: any[];
+  summaries?: any[];
     questions: Array<any>;
   }>
 ): Promise<{ success: boolean; count?: number; assignmentIds?: string[]; error?: string }> {

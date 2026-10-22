@@ -97,7 +97,7 @@ export function SingleUserTab({
     if (selectedRole === "STUDENT") {
       parsedScore = parseFloat(entryIeltsScoreInput);
       if (isNaN(parsedScore) || parsedScore < 0 || parsedScore > 9) {
-        setErrorMsg("Học sinh bắt buộc phải có Điểm IELTS đầu vào hợp lệ từ 0.0 đến 9.0!");
+        setErrorMsg("Học sinh bắt buộc phải có Điểm đầu vào hợp lệ từ 0.0 đến 9.0!");
         return;
       }
       if (!detectedManualLevel) {
@@ -266,7 +266,7 @@ export function SingleUserTab({
           {selectedRole === "STUDENT" ? (
             <div>
               <label className="text-sm font-semibold text-[#0F172A] block mb-1.5">
-                Điểm IELTS đầu vào *
+                Điểm đầu vào *
               </label>
               <input
                 type="number"
@@ -316,7 +316,7 @@ export function SingleUserTab({
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-800 rounded-lg text-xs">
                     {entryIeltsScoreInput
                       ? "Chưa có trình độ khớp khoảng điểm này trong Cài đặt"
-                      : "Vui lòng nhập điểm IELTS để hệ thống tự xác định trình độ"}
+                      : "Vui lòng nhập điểm đầu vào để hệ thống tự xác định trình độ"}
                   </span>
                 )}
               </div>

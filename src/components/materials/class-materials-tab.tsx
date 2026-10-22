@@ -17,6 +17,7 @@ import {
   Lock,
   Search,
   BookOpen,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,12 +42,16 @@ interface ClassMaterialsTabProps {
     role: string;
     fullName?: string;
   };
+  onBack?: () => void;
+  mode?: "inside-class" | "inside-global";
 }
 
 export function ClassMaterialsTab({
   classId,
   className,
   currentUser,
+  onBack,
+  mode = "inside-class",
 }: ClassMaterialsTabProps) {
   const [folders, setFolders] = useState<any[]>([]);
   const [currentFolder, setCurrentFolder] = useState<any | null>(null);
@@ -224,25 +229,37 @@ export function ClassMaterialsTab({
           </div>
 
           {/* Cụm nút tác vụ (Ẩn với Học sinh) */}
-          {canManage && !isStudent && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {onBack && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setIsCreateFolderOpen(true)}
-                className="text-xs rounded-xl border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold gap-1.5 h-9"
+                onClick={onBack}
+                className="text-xs rounded-xl border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold gap-1.5 h-9"
               >
-                <FolderPlus className="size-3.5 text-amber-500" /> Tạo thư mục
+                <ArrowLeft className="size-3.5" /> Quay lại danh sách lớp
               </Button>
-              <Button
-                size="sm"
-                onClick={() => setIsUploadOpen(true)}
-                className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold gap-1.5 h-9 shadow-sm"
-              >
-                <UploadCloud className="size-4" /> Tải lên tài liệu
-              </Button>
-            </div>
-          )}
+            )}
+            {canManage && !isStudent && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsCreateFolderOpen(true)}
+                  className="text-xs rounded-xl border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold gap-1.5 h-9"
+                >
+                  <FolderPlus className="size-3.5 text-amber-500" /> Tạo thư mục
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setIsUploadOpen(true)}
+                  className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold gap-1.5 h-9 shadow-sm"
+                >
+                  <UploadCloud className="size-4" /> Tải lên tài liệu
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

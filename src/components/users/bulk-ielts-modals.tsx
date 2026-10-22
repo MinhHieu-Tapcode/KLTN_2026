@@ -49,7 +49,7 @@ export function ClassDetailModal({
                 <th className="py-2.5 px-3 w-12 text-center">STT</th>
                 <th className="py-2.5 px-3">Họ và tên</th>
                 <th className="py-2.5 px-3">Email</th>
-                <th className="py-2.5 px-3 text-center">Điểm IELTS</th>
+                <th className="py-2.5 px-3 text-center">Điểm đầu vào</th>
                 <th className="py-2.5 px-3 text-right">Thao tác</th>
               </tr>
             </thead>
@@ -131,7 +131,7 @@ export function StudentTransferModal({
           </div>
           <div className="flex items-center gap-4 text-center shrink-0 pr-2">
             <div>
-              <span className="block text-[10px] text-slate-400 uppercase font-medium">IELTS</span>
+              <span className="block text-[10px] text-slate-400 uppercase font-medium">Điểm đầu vào</span>
               <b className="text-sm text-slate-800">{Number(student.ieltsScore).toFixed(1)}</b>
             </div>
             <div>
@@ -415,7 +415,7 @@ export function InvalidRowsModal({
                 const reason = row.errorReason || "";
                 if (reason.toLowerCase().includes("email")) fieldError = "Email";
                 else if (reason.toLowerCase().includes("điểm") || reason.toLowerCase().includes("ielts"))
-                  fieldError = "Điểm IELTS";
+                  fieldError = "Điểm đầu vào";
                 else if (reason.toLowerCase().includes("số điện thoại") || reason.toLowerCase().includes("sđt"))
                   fieldError = "Số điện thoại";
                 else if (reason.toLowerCase().includes("tên")) fieldError = "Họ và tên";

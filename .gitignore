@@ -47,3 +47,7 @@ Thumbs.db
 # Mockup & Design folder
 lovable-design/
 scratch/
+
+# Temporary screenshots & root excel samples
+screenshot*.png
+/SIMPACE_*.xlsx

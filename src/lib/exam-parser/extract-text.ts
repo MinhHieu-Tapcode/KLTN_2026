@@ -214,6 +214,17 @@ export function cleanAndReflowPages(pages: string[]): string {
         return false;
       }
 
+      // Bỏ dòng chân trang chứa link website, watermark, bản quyền tải đề (ví dụ: "http: //ieltscuecard.trendinggyan.com/ Page 3")
+      if (
+        /^(https?:\s*\/|\/\/[a-z0-9\-\.]+\.[a-z]{2,}|www\.[a-z0-9\-]+|[a-z0-9\-\.]+\.(?:com|org|net|edu|vn|in)\/)/i.test(
+          line
+        ) ||
+        /(?:https?:\s*\/|\/\/[a-z0-9\-\.]+\.[a-z]{2,}).*page\s*\d+/i.test(line) ||
+        /^(copyright|all\s+rights\s+reserved|downloaded\s+from)\b/i.test(line)
+      ) {
+        return false;
+      }
+
       // Bỏ dòng Header/Footer lặp ở nhiều trang (nhưng không bỏ các tiêu đề câu hỏi/kỹ năng)
       if (
         pages.length >= 2 &&
@@ -231,7 +242,28 @@ export function cleanAndReflowPages(pages: string[]): string {
     return filtered.join("\n");
   });
 
-  let merged = cleanedPages.join("\n\n");
+  let merged = "";
+  for (let i = 0; i < cleanedPages.length; i++) {
+    const page = cleanedPages[i].trim();
+    if (!page) continue;
+    if (!merged) {
+      merged = page;
+    } else {
+      const lastLineOfPrev = merged.split(/\r?\n/).pop()?.trim() || "";
+      const firstLineOfNext = page.split(/\r?\n/)[0]?.trim() || "";
+
+      // Nếu dòng cuối trang trước chưa hết câu và dòng đầu trang sau bắt đầu bằng chữ thường
+      // thì nối mềm bằng \n thay vì \n\n để không bị ngắt đoạn giữa chừng câu văn
+      const prevEndsSentence = /[.?!:]$/.test(lastLineOfPrev);
+      const nextStartsWithLower = /^[a-z]/.test(firstLineOfNext);
+
+      if (!prevEndsSentence || nextStartsWithLower) {
+        merged += "\n" + page;
+      } else {
+        merged += "\n\n" + page;
+      }
+    }
+  }
 
   // 1. De-hyphenation: nối từ bị gạch nối ở cuối dòng (ví dụ: "organi-\nsation" -> "organisation")
   merged = merged.replace(/([a-zA-Z]{2,})-\s*\r?\n\s*([a-z]{2,})/g, "$1$2");
@@ -253,21 +285,47 @@ export function cleanAndReflowPages(pages: string[]): string {
     if (t.startsWith("|") && t.endsWith("|")) return true;
     // Tiêu đề phần / kỹ năng / câu hỏi / đoạn văn
     if (
-      /^(reading\s+passage|passage\s+(?:\d+|one|two|three|i|ii|iii)|listening|writing\s+task|speaking|part\s+(?:\d+|one|two|three|four|i|ii|iii|iv)|section\s+(?:\d+|one|two|three|four|i|ii|iii|iv)|questions?\s+\d+|task\s+(?:\d+|one|two)|paragraph\s+[a-z])\b/i.test(
+      /^(reading\s+passage|passage\s+(?:\d+|one|two|three|i|ii|iii|[a-d])|listening|writing\s+task|speaking|part\s+(?:\d+|one|two|three|four|i|ii|iii|iv|[a-d])|section\s+(?:\d+|one|two|three|four|i|ii|iii|iv|[a-d])|questions?\s+\d+|task\s+(?:\d+|one|two)|paragraph\s+[a-z])\b/i.test(
         t
       )
     ) {
       return true;
     }
-    // Câu hỏi đánh số, phương án A., B., C., D., nhãn đoạn văn (A Once..., B The...) hoặc gạch đầu dòng
+
+    // Nếu dòng bắt đầu bằng gạch ngang/em-dash nhưng theo sau là chữ thường (ví dụ: "— as animals in a sociological experiment...")
+    // Đây là mệnh đề chêm xen trong câu văn xuôi, KHÔNG phải bullet point hay câu hỏi độc lập!
+    if (/^[-–—]\s*[a-z]/.test(t)) {
+      return false;
+    }
+
+    // Câu hỏi đánh số (1-999), nhãn câu hỏi [Question 1], (1), phương án A., B., C., D., nhãn đoạn văn (A Once..., B The...) hoặc bullet point thực sự
     if (
-      /^(\d{1,2}[\.\)\s]|\[?question\s*\d+\]?|\(\d{1,2}\)|[A-H][\.\)]\s|\-|\•|\*)/i.test(t) ||
+      /^(\d{1,3}[\.\)\s]|\[?question\s*\d+\]?|\(\d{1,3}\)|[A-H][\.\)]\s|•|\*|[-–—]\s+[A-Z0-9])/i.test(
+        t
+      ) ||
       /^[A-Z]\s+[A-Z]/.test(t)
     ) {
       return true;
     }
-    // Dòng chứa biểu mẫu điền từ (có dấu hai chấm hoặc chỗ trống ___)
-    if (/(:|___+|\.\.\.+|\[question\s*\d+\]|\[\d+\])/i.test(t)) {
+    // Matching Headings số La Mã (i. ii. iii. iv. v. vi. vii. viii. ix. x.)
+    if (/^(?:[ivxlc]+)[\.\)]\s/i.test(t)) {
+      return true;
+    }
+    // Dòng Tiêu đề bài đọc ngắn (Passage Title: dưới 70 ký tự, không kết thúc bằng dấu chấm/phẩy)
+    if (
+      t.length <= 70 &&
+      t.length >= 3 &&
+      !/[.,:;]$/.test(t) &&
+      (/^[A-Z][A-Za-z0-9\s,'"-]+$/.test(t) || t === t.toUpperCase()) &&
+      !/^(the|a|an|in|on|at|by|for|with|and|but|or)\b/i.test(t)
+    ) {
+      return true;
+    }
+    // Dòng chứa biểu mẫu điền từ (có chỗ trống ___ hoặc ...) hoặc nhãn ngắn có dấu hai chấm (Name: ...)
+    if (
+      /(___+|\.{3,}|\[question\s*\d+\]|\[\d+\])/i.test(t) ||
+      /^[A-Za-z\s]{2,30}:\s*/.test(t)
+    ) {
       return true;
     }
     // Dòng in hoa toàn bộ (Heading)
@@ -312,9 +370,11 @@ export function splitIntoExamParts(cleanedText: string): Array<{
   detectedSkill?: "READING" | "LISTENING" | "WRITING" | "SPEAKING";
   content: string;
 }> {
-  const numToken = "(?:\\d+|ONE|TWO|THREE|FOUR|I|II|III|IV)";
+  const numToken = "(?:\\d+|ONE|TWO|THREE|FOUR|I|II|III|IV|[A-D])";
+  // CHỈ chia Phần thi khi gặp tiêu đề Phần thi / Bài đọc lớn (Passage 1, 2, 3 hoặc Section 1, 2, 3, 4 hoặc Writing Task 1, 2)
+  // TUYỆT ĐỐI KHÔNG chia theo nhóm câu hỏi con (như Questions 1-4, Questions 5-10) vì chúng thuộc chung 1 bài đọc
   const headingRegex = new RegExp(
-    `(?:^|\\n)(?=(?:PART\\s*${numToken}\\s*[-–:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s*${numToken}|PASSAGE\\s*${numToken}\\b|LISTENING\\s+(?:SECTION|PART)\\s*${numToken}|SECTION\\s*${numToken}\\b|WRITING\\s+TASK\\s*${numToken}|SPEAKING\\s+PART\\s*${numToken})\\b)`,
+    `(?:^|\\n)(?=(?:PART\\s*${numToken}\\s*[-–:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s*${numToken}\\b|PASSAGE\\s*${numToken}\\b|LISTENING\\s+(?:SECTION|PART)\\s*${numToken}\\b|SECTION\\s*${numToken}\\b|WRITING\\s+TASK\\s*${numToken}\\b|SPEAKING\\s+PART\\s*${numToken}\\b)\\b)`,
     "gi"
   );
 
@@ -322,7 +382,7 @@ export function splitIntoExamParts(cleanedText: string): Array<{
   let match: RegExpExecArray | null;
   while ((match = headingRegex.exec(cleanedText)) !== null) {
     const pos = match.index + (cleanedText[match.index] === "\n" ? 1 : 0);
-    if (indices.length === 0 || pos - indices[indices.length - 1] > 250) {
+    if (indices.length === 0 || pos - indices[indices.length - 1] > 350) {
       indices.push(pos);
     }
   }

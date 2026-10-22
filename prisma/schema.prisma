@@ -191,6 +191,7 @@ model Class {
   enrollments ClassEnrollment[] // Danh sách Học sinh theo học
   materialFolders MaterialFolder[]
   classAssignmentsList Assignment[]
+  assignmentLinks AssignmentClass[]
 
   @@index([schoolId])
   @@index([code])
@@ -402,6 +403,7 @@ model Assignment {
   updatedAt          DateTime             @updatedAt
 
   class              Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
+  assignedClasses    AssignmentClass[]
   questions          AssignmentQuestion[]
   submissions        AssignmentSubmission[]
 
@@ -409,6 +411,29 @@ model Assignment {
   @@index([dueDate])
   @@map("assignments")
 }
+
+model AssignmentClass {
+  id                 String               @id @default(uuid())
+  assignmentId       String               // Thuộc bài tập nào (bản gốc)
+  classId            String               // Giao cho lớp học nào
+  dueDate            DateTime?            // Hạn chót nộp bài riêng của lớp
+  startDate          DateTime?            // Thời điểm bắt đầu mở bài cho lớp
+  enableProctoring   Boolean              @default(true)
+  maxTabSwitches     Int                  @default(3)
+  isActive           Boolean              @default(true) // Xóa mềm theo lớp
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  assignment         Assignment           @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  class              Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
+  submissions        AssignmentSubmission[]
+
+  @@unique([assignmentId, classId])
+  @@index([assignmentId])
+  @@index([classId])
+  @@map("assignment_classes")
+}
+
 
 model AssignmentQuestion {
   id               String               @id @default(uuid())
@@ -462,13 +487,18 @@ model AssignmentSubmission {
   isCheatingFlagged  Boolean            @default(false)
   autoSubmittedReason String?           // Lý do tự nộp: "VIOLATED_TAB_SWITCH_LIMIT", "TIME_EXPIRED"
 
+  classId            String?            // Lớp học cụ thể học sinh nộp bài
+  assignmentClassId  String?            // Liên kết bảng nối AssignmentClass
   assignment         Assignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentClass    AssignmentClass?   @relation(fields: [assignmentClassId], references: [id], onDelete: SetNull)
   student            User               @relation(fields: [studentId], references: [id], onDelete: Cascade)
   answers            SubmissionAnswer[]
 
   @@unique([assignmentId, studentId, attemptNumber])
   @@index([assignmentId])
   @@index([studentId])
+  @@index([classId])
+  @@index([assignmentClassId])
   @@map("assignment_submissions")
 }
 
