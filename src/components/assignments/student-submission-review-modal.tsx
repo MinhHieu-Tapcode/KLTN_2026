@@ -21,8 +21,16 @@ import {
   Clock,
   BookOpen,
   Volume2,
+  EyeOff,
+  FileText,
 } from "lucide-react";
 import { getAssignmentDetailAction } from "@/actions/assignments";
+import {
+  CRITERION_COLOR_MAP,
+  SPEAKING_CRITERIA,
+  WRITING_CRITERIA,
+} from "@/lib/ielts-report-config";
+import { InlineAnnotationCanvas } from "./inline-annotation-canvas";
 
 export interface StudentSubmissionReviewModalProps {
   open: boolean;
@@ -64,11 +72,12 @@ export function StudentSubmissionReviewModal({
 
   const submission = assignment?.latestSubmission;
   const isGraded = submission?.status === "GRADED";
+  const skill = (assignment?.skill || "READING").toUpperCase();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 bg-white">
-        <DialogHeader className="border-b border-slate-100 pb-3">
+      <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl p-6 bg-[#F4F5F7]">
+        <DialogHeader className="border-b border-slate-200 pb-3 bg-white -mx-6 -mt-6 p-6 rounded-t-2xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -76,14 +85,14 @@ export function StudentSubmissionReviewModal({
                 <span>Chi tiết bài làm: {assignment?.title || "Đang tải..."}</span>
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500">
-                Xem lại câu trả lời, đáp án chuẩn và lời phê của giáo viên
+                Xem lại bài làm, các ghi chú sửa bài trực tiếp trên văn bản, điểm 4 tiêu chí và lời giải thích chi tiết
               </DialogDescription>
             </div>
 
             {submission && (
               <div className="flex items-center gap-2">
                 {isGraded ? (
-                  <Badge className="bg-emerald-600 text-white text-xs px-2.5 py-1">
+                  <Badge className="bg-emerald-600 text-white text-xs px-3 py-1 font-bold">
                     Đã chấm: {submission.score ?? 0} / {submission.totalPoints ?? assignment?.totalPoints} điểm
                   </Badge>
                 ) : (
@@ -97,26 +106,26 @@ export function StudentSubmissionReviewModal({
         </DialogHeader>
 
         {isLoading ? (
-          <div className="p-12 text-center space-y-2">
+          <div className="p-12 text-center space-y-2 bg-white rounded-2xl border border-slate-200">
             <Loader2 className="size-6 text-[#EA580C] animate-spin mx-auto" />
             <p className="text-xs text-slate-500">Đang tải kết quả bài làm...</p>
           </div>
         ) : !assignment || !submission ? (
-          <div className="p-8 text-center text-slate-500 space-y-2">
+          <div className="p-8 text-center text-slate-500 space-y-2 bg-white rounded-2xl border border-slate-200">
             <HelpCircle className="size-8 text-slate-400 mx-auto" />
             <p className="text-xs font-semibold">Chưa tìm thấy dữ liệu bài nộp của bạn cho bài tập này.</p>
           </div>
         ) : (
-          <div className="space-y-4 py-2">
-            {/* Lời phê tổng quan của giáo viên */}
+          <div className="space-y-5 py-2">
+            {/* Lời nhận xét tổng quan của giáo viên */}
             {submission.teacherFeedback && (
-              <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl space-y-1.5">
-                <b className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                  <MessageSquare className="size-4 text-blue-600" />
-                  <span>Lời nhận xét của Giáo viên:</span>
+              <div className="p-4 bg-white border border-slate-200 border-l-4 border-l-[#EA580C] rounded-2xl space-y-1.5 shadow-2xs">
+                <b className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <MessageSquare className="size-4 text-[#EA580C]" />
+                  <span>Nhận xét tổng quát của Giáo viên:</span>
                 </b>
-                <p className="text-xs text-blue-800 leading-relaxed italic bg-white/70 p-2.5 rounded-xl border border-blue-100">
-                  "{submission.teacherFeedback}"
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  {submission.teacherFeedback}
                 </p>
               </div>
             )}
@@ -131,94 +140,178 @@ export function StudentSubmissionReviewModal({
               </div>
             )}
 
-            {/* Danh sách từng câu hỏi */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-700">Chi tiết các câu hỏi ({assignment.questions?.length || 0} câu):</h4>
-
+            {/* Danh sách từng câu hỏi / phần thi */}
+            <div className="space-y-5">
               {assignment.questions?.map((q: any, idx: number) => {
                 const ans = (submission.answers || []).find((a: any) => a.questionId === q.id);
-                const isSubjective = q.type === "ESSAY" || q.type === "SPEAKING_RECORD";
+                const isSpeaking = q.type === "SPEAKING_RECORD" || skill === "SPEAKING";
+                const isWriting = q.type === "ESSAY" || skill === "WRITING";
+                const isSubjective = isSpeaking || isWriting;
                 const isCorrect = ans?.isCorrect;
 
+                if (isSubjective) {
+                  const criteriaDefs = isSpeaking ? SPEAKING_CRITERIA : WRITING_CRITERIA;
+                  const critScoresList: any[] = ans?.criteriaScores || [];
+                  const annotations = ans?.gradingAnnotations?.annotations || [];
+                  const speakingTranscript = ans?.gradingAnnotations?.speakingTranscript || null;
+                  const canShowTranscript =
+                    !isSpeaking || (speakingTranscript && speakingTranscript.isVisibleToStudent !== false);
+                  const displayText = isSpeaking
+                    ? speakingTranscript?.rawText || ans?.studentAnswer || ""
+                    : ans?.studentAnswer || "";
+
+                  return (
+                    <div
+                      key={q.id || idx}
+                      className="space-y-4 bg-white/60 p-4 rounded-2xl border border-slate-200"
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-slate-900">
+                          {q.groupTitle || `Phần ${q.questionNumber || idx + 1}`}: {q.prompt}
+                        </span>
+                        <Badge className="bg-slate-900 text-white text-xs font-mono">
+                          Band phần này: {ans?.awardedPoints ?? "—"} / {q.points || 9}
+                        </Badge>
+                      </div>
+
+                      {/* Trình phát Audio cho bài Speaking */}
+                      {isSpeaking && (ans?.audioUrl || ans?.studentAnswer?.startsWith("http")) && (
+                        <div className="p-3.5 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                            <Volume2 className="size-4 text-[#EA580C]" />
+                            <span>Bản thu âm bài nói của bạn:</span>
+                          </div>
+                          <audio
+                            controls
+                            className="h-9 w-full sm:w-96"
+                            src={ans?.audioUrl || ans?.studentAnswer}
+                          />
+                        </div>
+                      )}
+
+                      {/* Bảng điểm & Nhận xét riêng của 4 tiêu chí IELTS */}
+                      {critScoresList.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          {criteriaDefs.map((def) => {
+                            const found = critScoresList.find(
+                              (cs: any) => (cs.criterion || cs.criterionCode) === def.code
+                            );
+                            const scoreVal =
+                              typeof found?.score === "number" ? found.score : found?.bandScore;
+                            const colorCfg =
+                              CRITERION_COLOR_MAP[def.code] || CRITERION_COLOR_MAP.TA_TR;
+
+                            return (
+                              <div
+                                key={def.code}
+                                className={`bg-white border border-slate-200 border-t-4 ${colorCfg.borderTopClass} rounded-xl p-3 space-y-1.5 shadow-2xs`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <b className="text-xs text-slate-900">{def.shortLabel}</b>
+                                  <span
+                                    style={{ color: colorCfg.hex }}
+                                    className="text-lg font-extrabold font-mono"
+                                  >
+                                    {scoreVal != null ? Number(scoreVal).toFixed(1) : "—"}
+                                  </span>
+                                </div>
+                                <span className="block text-[10.5px] text-slate-500">
+                                  {def.label}
+                                </span>
+                                {found?.comment && (
+                                  <p className="text-xs text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100 leading-relaxed">
+                                    {found.comment}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Bài viết / Bản phiên âm kèm ghi chú trực tiếp (Inline Annotations) */}
+                      {isSpeaking && !canShowTranscript ? (
+                        <div className="p-4 bg-white rounded-2xl border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
+                          <EyeOff className="size-4 text-slate-400 shrink-0" />
+                          <span>
+                            Giáo viên đã ẩn bản ghi chữ tự động cho phần nói này. Bạn vui lòng nghe lại file thu âm và xem nhận xét theo 4 tiêu chí ở trên.
+                          </span>
+                        </div>
+                      ) : (
+                        <InlineAnnotationCanvas
+                          headerTitle={
+                            isSpeaking
+                              ? "Bản ghi chữ bài nói & Sửa lỗi của Giáo viên"
+                              : "Bài viết của bạn & Ghi chú sửa bài của Giáo viên"
+                          }
+                          promptText={q.passageText}
+                          contentText={displayText}
+                          annotations={annotations}
+                          criteriaDefs={criteriaDefs}
+                          readOnly={true}
+                          speakingWords={isSpeaking ? speakingTranscript?.words : undefined}
+                        />
+                      )}
+                    </div>
+                  );
+                }
+
+                // Câu hỏi khách quan Reading / Listening
                 return (
                   <div
                     key={q.id || idx}
-                    className={`p-3.5 rounded-2xl border text-xs space-y-2 transition ${
-                      isSubjective
-                        ? "bg-slate-50 border-slate-200"
-                        : isCorrect === true
-                        ? "bg-emerald-50/40 border-emerald-200"
+                    className={`p-4 rounded-2xl border text-xs space-y-2.5 bg-white shadow-2xs ${
+                      isCorrect === true
+                        ? "border-emerald-200"
                         : isCorrect === false
-                        ? "bg-rose-50/40 border-rose-200"
-                        : "bg-slate-50 border-slate-200"
+                        ? "border-rose-200"
+                        : "border-slate-200"
                     }`}
                   >
-                    {/* Header câu hỏi */}
                     <div className="flex items-start justify-between gap-2">
                       <span className="font-bold text-slate-900">
                         Câu {q.questionNumber || idx + 1}: {q.prompt}
                       </span>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {isSubjective ? (
-                          <span className="text-[11px] font-mono text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200 font-bold">
-                            {ans?.awardedPoints ?? 0} / {q.points}đ
-                          </span>
-                        ) : isCorrect === true ? (
-                          <Badge className="bg-emerald-600 text-white text-[10px] gap-1">
-                            <CheckCircle2 className="size-3" /> Đúng (+{q.points}đ)
-                          </Badge>
-                        ) : isCorrect === false ? (
-                          <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 text-[10px] gap-1">
-                            <XCircle className="size-3 text-rose-600" /> Chưa đúng (0đ)
-                          </Badge>
-                        ) : (
-                          <span className="text-[11px] font-mono text-slate-500">
-                            {q.points}đ
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Câu trả lời của học sinh */}
-                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                      <span className="text-[10px] font-semibold text-slate-400 block">
-                        Câu trả lời của bạn:
-                      </span>
-                      {q.type === "SPEAKING_RECORD" && ans?.audioUrl ? (
-                        <div className="space-y-1 pt-1">
-                          <audio controls className="w-full h-8" src={ans.audioUrl} />
-                          <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                            <Volume2 className="size-3" /> Bản ghi âm bài nói của bạn
-                          </span>
-                        </div>
+                      {isCorrect === true ? (
+                        <Badge className="bg-emerald-600 text-white text-[10px] gap-1 shrink-0">
+                          <CheckCircle2 className="size-3" /> Đúng (+{q.points}đ)
+                        </Badge>
                       ) : (
-                        <p className={`font-semibold ${isCorrect === false ? "text-rose-700" : "text-slate-800"}`}>
-                          {ans?.studentAnswer || "(Chưa có câu trả lời)"}
-                        </p>
+                        <Badge
+                          variant="outline"
+                          className="bg-rose-50 text-rose-700 border-rose-300 text-[10px] gap-1 shrink-0"
+                        >
+                          <XCircle className="size-3 text-rose-600" /> Chưa đúng (0đ)
+                        </Badge>
                       )}
                     </div>
 
-                    {/* Đáp án chuẩn (với trắc nghiệm/điền từ nếu đã có) */}
-                    {!isSubjective && q.correctAnswer && (
-                      <div className="text-[11px] text-emerald-800 bg-emerald-50/70 p-2 rounded-xl border border-emerald-200 flex items-center gap-2">
-                        <b className="shrink-0 text-emerald-900">Đáp án chuẩn:</b>
-                        <span className="font-mono font-bold">{q.correctAnswer}</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span className="text-[10px] font-semibold text-slate-400 block">
+                          Câu trả lời của bạn:
+                        </span>
+                        <b className={isCorrect === false ? "text-rose-700" : "text-slate-900"}>
+                          {ans?.studentAnswer || "(Chưa trả lời)"}
+                        </b>
                       </div>
-                    )}
+                      {q.correctAnswer && (
+                        <div className="p-2.5 bg-emerald-50/70 rounded-xl border border-emerald-200">
+                          <span className="text-[10px] font-semibold text-emerald-700 block">
+                            Đáp án chuẩn:
+                          </span>
+                          <b className="font-mono text-emerald-900">{q.correctAnswer}</b>
+                        </div>
+                      )}
+                    </div>
 
-                    {/* Lời giải thích */}
                     {q.explanation && (
-                      <div className="text-[11px] text-slate-600 bg-white/80 p-2 rounded-xl border border-slate-200 space-y-0.5">
-                        <b className="text-slate-700">Giải thích chi tiết:</b>
-                        <p>{q.explanation}</p>
-                      </div>
-                    )}
-
-                    {/* Lời phê riêng của giáo viên cho câu này */}
-                    {ans?.teacherComment && (
-                      <div className="text-[11px] text-purple-800 bg-purple-50/70 p-2 rounded-xl border border-purple-200 space-y-0.5">
-                        <b className="text-purple-900">Nhận xét của Giáo viên cho câu này:</b>
-                        <p className="italic">{ans.teacherComment}</p>
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                        <b className="text-slate-800 flex items-center gap-1.5 text-[11.5px]">
+                          <FileText className="size-3.5 text-[#EA580C]" />
+                          <span>Giải thích chi tiết đáp án:</span>
+                        </b>
+                        <p className="text-slate-600 leading-relaxed">{q.explanation}</p>
                       </div>
                     )}
                   </div>
@@ -228,7 +321,7 @@ export function StudentSubmissionReviewModal({
           </div>
         )}
 
-        <DialogFooter className="pt-2 border-t border-slate-100">
+        <DialogFooter className="pt-3 border-t border-slate-200">
           <Button
             size="sm"
             onClick={() => onOpenChange(false)}

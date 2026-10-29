@@ -16,6 +16,8 @@ import {
   submitAssignmentService,
 } from "@/services/assignment.service";
 import { parseIeltsExamContent } from "@/services/ielts-parser.service";
+import { transcribeSpeakingAudioService } from "@/services/speaking-transcript.service";
+import { SpeakingTranscriptPayload } from "@/lib/ielts-report-config";
 
 function safeRevalidate(path: string = "/") {
   try {
@@ -56,7 +58,8 @@ export async function getAssignmentDetailAction(
   assignmentId: string
 ): Promise<{ success: boolean; assignment?: any; error?: string }> {
   if (!(await isDbAlive())) {
-    return getAssignmentDetailService(assignmentId, "demo-student-1");
+    const session = await getSession();
+    return getAssignmentDetailService(assignmentId, session?.userId || "demo-student-1");
   }
   try {
     const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
@@ -82,6 +85,8 @@ export async function createAssignmentAction(data: {
   type?: string;
   durationMinutes?: number;
   dueDate?: string | null;
+  startDate?: string | null;
+  maxAttempts?: number;
   audioUrl?: string | null;
   enableProctoring?: boolean;
   maxTabSwitches?: number;
@@ -94,6 +99,8 @@ export async function createAssignmentAction(data: {
     passageText?: string;
     prompt: string;
     type: string;
+    ieltsQuestionType?: string | null;
+    groupTitle?: string | null;
     points: number;
     correctAnswer?: string;
     explanation?: string;
@@ -247,7 +254,6 @@ export async function regradeAssignmentSubmissionsAction(
   }
 }
 
-
 /**
  * Bóc tách Đề thi IELTS từ tệp PDF / Word (.docx) sang cấu trúc Ebook 2 cột
  */
@@ -277,7 +283,10 @@ export async function parseIeltsExamAction(
     const excelAnswersRaw = formData.get("excelAnswers")?.toString() || "";
     const pdfTextRaw = formData.get("pdfText")?.toString() || "";
     const rawFile = formData.get("file");
-    const file = (rawFile && typeof rawFile === "object" && "size" in rawFile && (rawFile as any).size > 0) ? (rawFile as File) : null;
+    const file =
+      rawFile && typeof rawFile === "object" && "size" in rawFile && (rawFile as any).size > 0
+        ? (rawFile as File)
+        : null;
 
     const parsedData = await parseIeltsExamContent({
       title,
@@ -318,13 +327,14 @@ export async function createMultipleAssignmentsAction(
     type?: string;
     durationMinutes?: number;
     dueDate?: string | null;
+    startDate?: string | null;
     audioUrl?: string | null;
     enableProctoring?: boolean;
     maxTabSwitches?: number;
     flowcharts?: any[];
     tables?: any[];
-  matchingHeadings?: any[];
-  summaries?: any[];
+    matchingHeadings?: any[];
+    summaries?: any[];
     questions: Array<any>;
   }>
 ): Promise<{ success: boolean; count?: number; assignmentIds?: string[]; error?: string }> {
@@ -352,6 +362,7 @@ export async function createMultipleAssignmentsAction(
  */
 export async function submitAssignmentAction(data: {
   assignmentId: string;
+  classId?: string;
   answers: Array<{
     questionId: string;
     studentAnswer?: string;
@@ -414,17 +425,24 @@ export async function getSubmissionsForAssignmentAction(
 }
 
 /**
- * Giáo viên chấm điểm bài tự luận / bài nói & ghi nhận xét
+ * Giáo viên chấm điểm bài tự luận / bài nói (hỗ trợ chấm 4 tiêu chí IELTS BR-07, inline annotations & lưu nháp)
  */
 export async function gradeSubmissionAction(data: {
   submissionId: string;
+  isDraft?: boolean;
   gradedAnswers: Array<{
     answerId: string;
     awardedPoints: number;
     teacherComment?: string;
+    criteriaScores?: Array<{
+      criterion: string;
+      score: number;
+      comment?: string;
+    }>;
+    gradingAnnotations?: any;
   }>;
   teacherFeedback?: string;
-}): Promise<{ success: boolean; totalScore?: number; error?: string }> {
+}): Promise<{ success: boolean; totalScore?: number | null; status?: string; error?: string }> {
   try {
     const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để chấm bài!");
     if (!auth.ok) {
@@ -437,5 +455,33 @@ export async function gradeSubmissionAction(data: {
   } catch (err: any) {
     console.error("[gradeSubmissionAction] Lỗi:", err);
     return { success: false, error: err.message || "Không thể lưu kết quả chấm bài!" };
+  }
+}
+
+/**
+ * Tạo bản ghi chữ (AI Transcript) theo yêu cầu (On-demand) từ file ghi âm Speaking của học viên
+ */
+export async function transcribeSpeakingAnswerAction(params: {
+  audioUrl?: string | null;
+  questionPrompt?: string;
+}): Promise<{
+  success: boolean;
+  transcript?: SpeakingTranscriptPayload;
+  source?: "GROQ_WHISPER";
+  error?: string;
+}> {
+  try {
+    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để tạo bản ghi chữ!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
+    }
+
+    return await transcribeSpeakingAudioService(params);
+  } catch (err: any) {
+    console.error("[transcribeSpeakingAnswerAction] Lỗi:", err);
+    return {
+      success: false,
+      error: err.message || "Không thể tạo bản ghi chữ từ tệp âm thanh!",
+    };
   }
 }

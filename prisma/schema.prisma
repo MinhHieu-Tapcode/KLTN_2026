@@ -97,6 +97,8 @@ model User {
   importLogs         ImportLog[]          // Lịch sử các đợt Import Excel
   passwordResetTokens PasswordResetToken[]
   submissions        AssignmentSubmission[]
+  studentReportComments ReportComment[] @relation("StudentReportComments")
+  authoredReportComments ReportComment[] @relation("AuthorReportComments")
 
   @@index([roleId])
   @@index([email])
@@ -192,6 +194,7 @@ model Class {
   materialFolders MaterialFolder[]
   classAssignmentsList Assignment[]
   assignmentLinks AssignmentClass[]
+  reportComments  ReportComment[]
 
   @@index([schoolId])
   @@index([code])
@@ -445,6 +448,8 @@ model AssignmentQuestion {
   points           Float                @default(1.0) // Điểm số của câu
   correctAnswer    String?              // Đáp án đúng (đối với Trắc nghiệm / Điền từ)
   explanation      String?              // Lời giải thích / Giải đề chi tiết
+  ieltsQuestionType String?             // Dạng câu hỏi IELTS chuẩn (10 dạng Reading, 6 dạng Listening, Task 1/2, Part 1/2/3)
+  groupTitle       String?              // Nhóm câu hỏi (VD: "Questions 1-5")
   orderIndex       Int                  @default(0)
 
   assignment       Assignment           @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
@@ -503,22 +508,72 @@ model AssignmentSubmission {
 }
 
 model SubmissionAnswer {
-  id             String             @id @default(uuid())
-  submissionId   String
-  questionId     String
-  studentAnswer  String?            // Câu trả lời dạng text / A, B, C / bài luận
-  audioUrl       String?            // File ghi âm câu trả lời speaking (nếu có)
-  isCorrect      Boolean?           // Kết quả trắc nghiệm tự chấm
-  awardedPoints  Float?             // Điểm thực tế đạt được
-  teacherComment String?            // Nhận xét chi tiết cho từng câu
+  id                 String             @id @default(uuid())
+  submissionId       String
+  questionId         String
+  studentAnswer      String?            // Câu trả lời dạng text / A, B, C / bài luận
+  audioUrl           String?            // File ghi âm câu trả lời speaking (nếu có)
+  isCorrect          Boolean?           // Kết quả trắc nghiệm tự chấm
+  awardedPoints      Float?             // Điểm thực tế đạt được
+  teacherComment     String?            // Nhận xét chi tiết cho từng câu
+  gradingAnnotations Json?              // Ghi chú bôi đen trực tiếp (Google Docs style) & Transcript Speaking
 
-  submission     AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  question       AssignmentQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  submission         AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question           AssignmentQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  criteriaScores     SubmissionCriteriaScore[]
 
   @@index([submissionId])
   @@index([questionId])
   @@map("submission_answers")
 }
+
+// ==========================================
+// 10. MODULE BÁO CÁO & CHẤM TIÊU CHÍ (REPORTS & CRITERIA)
+// ==========================================
+
+enum ReportCommentScope {
+  CLASS
+  STUDENT
+}
+
+model SubmissionCriteriaScore {
+  id                 String           @id @default(uuid())
+  submissionAnswerId String
+  criterion          String           // TA_TR, CC, LR, GRA (Writing) | FC, LR, GRA, P (Speaking)
+  score              Float            // Điểm Band tiêu chí (0.0 - 9.0, bước 0.5)
+  comment            String?          // Nhận xét riêng cho tiêu chí
+
+  submissionAnswer   SubmissionAnswer @relation(fields: [submissionAnswerId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionAnswerId, criterion])
+  @@index([submissionAnswerId])
+  @@map("submission_criteria_scores")
+}
+
+model ReportComment {
+  id              String             @id @default(uuid())
+  scope           ReportCommentScope @default(STUDENT)
+  classId         String
+  studentId       String?            // Null nếu là nhận xét chung của lớp (scope = CLASS)
+  periodKey       String             @default("30_DAYS")
+  periodFrom      DateTime?
+  periodTo        DateTime?
+  authorId        String
+  content         String
+  isReadByStudent Boolean            @default(false)
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  class           Class              @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student         User?              @relation("StudentReportComments", fields: [studentId], references: [id], onDelete: Cascade)
+  author          User               @relation("AuthorReportComments", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([classId, periodKey])
+  @@index([studentId, periodKey])
+  @@map("report_comments")
+}
+
 
 
 

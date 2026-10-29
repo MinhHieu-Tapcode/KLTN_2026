@@ -13,42 +13,106 @@ export {
 
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { isAnswerCorrect, isObjectiveOnly as allObjective, isObjectiveType } from "@/lib/grading";
-import { AssignmentSkill, AssignmentType, QuestionType } from "@prisma/client";
+import {
+  calculateCriteriaBand,
+  estimateAcademicBand,
+  buildWordTokensFromRawText,
+} from "@/lib/ielts-report-config";
+import { resolveIeltsQuestionType } from "./assignment-mutation.service";
+
+const DEMO_STORE_VERSION = "v2026-real-audio-2";
 
 const globalAssignmentsStore = globalThis as unknown as {
   demoAssignments?: any[];
+  demoAssignmentsVersion?: string;
 };
 
-if (!globalAssignmentsStore.demoAssignments) {
+if (
+  !globalAssignmentsStore.demoAssignments ||
+  globalAssignmentsStore.demoAssignmentsVersion !== DEMO_STORE_VERSION
+) {
+  globalAssignmentsStore.demoAssignmentsVersion = DEMO_STORE_VERSION;
+  const nowMs = Date.now();
+  const teaPassage =
+    "READING PASSAGE: THE HISTORY OF TEA CULTURE\n\nParagraph A: According to Chinese legend, tea was first discovered in 2737 BC by Emperor Shennong, a renowned herbalist and scholar. While boiling drinking water in the shade of a wild tea tree, a light breeze blew a few leaves into the pot, infusing the water with a delicate aroma and refreshing flavour.\n\nParagraph B: During the Han dynasty (202 BC – 220 AD), tea was primarily used as a medicinal concoction by royal physicians and Daoist monks to promote alertness and aid digestion. It was not until the Tang dynasty that tea drinking evolved into a widespread cultural art form across East Asia.\n\nParagraph C: In the 17th century, Dutch and Portuguese merchants introduced tea to Europe, where it quickly became a status symbol among the aristocracy in Britain and France.";
+
+  const buildSeedAnnotation = (
+    fullText: string,
+    quote: string,
+    meta: {
+      id: string;
+      type: "comment" | "delete" | "replace" | "insert";
+      criterion: string;
+      text: string;
+      timestampSec?: number | null;
+    }
+  ) => {
+    const startOffset = Math.max(0, fullText.indexOf(quote));
+    return {
+      id: meta.id,
+      startOffset,
+      endOffset: startOffset + quote.length,
+      quote,
+      type: meta.type,
+      criterion: meta.criterion,
+      text: meta.text,
+      timestampSec: meta.timestampSec ?? null,
+    };
+  };
+
+  const anSpokenRaw =
+    "Well, I would like to talk about my laptop which I bought two years ago. Um, it is a very useful device for my studies. I use it almost every day, mostly for writing essays and doing research. Actually, it helps me to save a lot of time because I can find information quickly. In addition, I also use it to watch online lessons and practice my listening. I think technology is very important for students nowadays.";
+  const sampleSpeakingTranscriptAn = {
+    rawText: anSpokenRaw,
+    words: buildWordTokensFromRawText(anSpokenRaw, 32),
+    durationSec: 32,
+    isVisibleToStudent: true,
+    generatedAt: new Date(Date.now() - 86400000).toISOString(),
+  };
+  const anTask1Essay =
+    "The provided table illustrates the percentage of city dwellers across four Asian nations from 1970 to 2020, alongside forecasts for 2040. Overall, all four countries experienced a steady upward trajectory in urbanization, with Malaysia recording the highest urban ratio throughout the period.";
+  const anTask2Essay =
+    "Over the past few decades, rural-to-urban migration among young adults has accelerated dramatically. This essay argues that while metropolitan centers offer superior educational and career prospects, the resulting pressure on urban infrastructure requires balanced regional policies.";
+  const lanTask1Essay =
+    "The table compares the urban population percentages in four Asian countries between 1970 and 2040. Overall, urbanization increased significantly in all surveyed nations, especially in Malaysia and Indonesia where more than two-thirds of citizens will reside in cities by 2040.";
+  const lanTask2Essay =
+    "Nowadays, an increasing number of young people choose to relocate from the countryside to major metropolitan areas. The primary drivers are prestigious universities and higher-paying jobs in the technology and service sectors. Despite traffic congestion and high living costs, I believe the long-term career benefits is more important than the drawbacks.";
+
   globalAssignmentsStore.demoAssignments = [
     {
       id: "demo-assign-1",
       classId: "demo-class-1",
       title: "IELTS Reading Practice: The History of Tea Culture",
-      description: "Đọc đoạn văn và hoàn thành 10 câu hỏi Trắc nghiệm & Điền từ.",
+      description: "Đọc bài khóa học thuật và hoàn thành 4 câu hỏi thuộc các dạng MCQ, True/False/Not Given và Summary Completion.",
       skill: "READING",
       type: "HOMEWORK",
       durationMinutes: 45,
-      dueDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+      dueDate: new Date(nowMs + 7 * 86400000).toISOString(),
+      startDate: new Date(nowMs - 6 * 86400000).toISOString(),
+      maxAttempts: 2,
       audioUrl: null,
       enableProctoring: true,
       maxTabSwitches: 3,
       passingScore: 5.0,
-      createdById: "teacher-1",
-      totalPoints: 10,
-      submittedCount: 2,
+      createdById: "demo-staff-1",
+      totalPoints: 4,
+      submittedCount: 3,
       flaggedCount: 1,
       isActive: true,
       questions: [
         {
-          id: "q-1",
+          id: "q-r1",
           questionNumber: 1,
           questionType: "MULTIPLE_CHOICE",
-          passageText:
-            "READING PASSAGE: THE HISTORY OF TEA CULTURE\n\nParagraph A: According to Chinese legend, tea was first discovered in 2737 BC by Emperor Shennong, a renowned herbalist and scholar. While boiling drinking water in the shade of a wild tea tree, a light breeze blew a few leaves into the pot, infusing the water with a delicate aroma and refreshing flavour.\n\nParagraph B: During the Han dynasty (202 BC – 220 AD), tea was primarily used as a medicinal concoction by royal physicians and Daoist monks to promote alertness and aid digestion. It was not until the Tang dynasty that tea drinking evolved into a widespread cultural art form across East Asia.",
+          type: "MULTIPLE_CHOICE",
+          ieltsQuestionType: "READING_MCQ",
+          groupTitle: "Questions 1–2 (Multiple Choice)",
+          passageText: teaPassage,
           prompt: "Where was tea first discovered according to Chinese legend?",
           points: 1,
           correctAnswer: "B",
+          explanation:
+            "Đoạn A nêu rõ: 'While boiling drinking water in the shade of a wild tea tree, a light breeze blew a few leaves into the pot...' (Khi Hoàng đế Thần Nông đang đun nước dưới bóng cây trà dại, lá trà bay vào nồi nước).",
           options: [
             { id: "opt-1", optionLabel: "A", content: "In an ancient forest in Yunnan", isCorrect: false },
             { id: "opt-2", optionLabel: "B", content: "Under Emperor Shennong's boiling water", isCorrect: true },
@@ -57,14 +121,18 @@ if (!globalAssignmentsStore.demoAssignments) {
           ],
         },
         {
-          id: "q-2",
+          id: "q-r2",
           questionNumber: 2,
           questionType: "MULTIPLE_CHOICE",
-          passageText:
-            "READING PASSAGE: THE HISTORY OF TEA CULTURE\n\nParagraph A: According to Chinese legend, tea was first discovered in 2737 BC by Emperor Shennong, a renowned herbalist and scholar. While boiling drinking water in the shade of a wild tea tree, a light breeze blew a few leaves into the pot, infusing the water with a delicate aroma and refreshing flavour.\n\nParagraph B: During the Han dynasty (202 BC – 220 AD), tea was primarily used as a medicinal concoction by royal physicians and Daoist monks to promote alertness and aid digestion. It was not until the Tang dynasty that tea drinking evolved into a widespread cultural art form across East Asia.",
+          type: "MULTIPLE_CHOICE",
+          ieltsQuestionType: "READING_MCQ",
+          groupTitle: "Questions 1–2 (Multiple Choice)",
+          passageText: teaPassage,
           prompt: "What was tea primarily used for during the Han dynasty?",
           points: 1,
           correctAnswer: "A",
+          explanation:
+            "Đoạn B khẳng định: 'During the Han dynasty (202 BC – 220 AD), tea was primarily used as a medicinal concoction by royal physicians and Daoist monks' (Trà chủ yếu được dùng làm thuốc thảo dược).",
           options: [
             { id: "opt-21", optionLabel: "A", content: "As a medicinal concoction", isCorrect: true },
             { id: "opt-22", optionLabel: "B", content: "As a daily breakfast beverage", isCorrect: false },
@@ -72,41 +140,121 @@ if (!globalAssignmentsStore.demoAssignments) {
             { id: "opt-24", optionLabel: "D", content: "As currency in foreign trade", isCorrect: false },
           ],
         },
+        {
+          id: "q-r3",
+          questionNumber: 3,
+          questionType: "TRUE_FALSE_NOT_GIVEN",
+          type: "TRUE_FALSE_NOT_GIVEN",
+          ieltsQuestionType: "READING_TFNG",
+          groupTitle: "Question 3 (True / False / Not Given)",
+          passageText: teaPassage,
+          prompt: "Tea drinking became a popular cultural art form across East Asia during the Han dynasty.",
+          points: 1,
+          correctAnswer: "FALSE",
+          explanation:
+            "Đoạn B ghi: 'It was not until the Tang dynasty that tea drinking evolved into a widespread cultural art form across East Asia' (Mãi đến thời nhà Đường trà mới trở thành nghệ thuật văn hóa phổ biến, không phải thời nhà Hán → FALSE).",
+          options: [],
+        },
+        {
+          id: "q-r4",
+          questionNumber: 4,
+          questionType: "GAP_FILL",
+          type: "GAP_FILL",
+          ieltsQuestionType: "READING_SUMMARY_COMPLETION",
+          groupTitle: "Question 4 (Summary Completion)",
+          passageText: teaPassage,
+          prompt: "In the 17th century, tea was introduced to Europe by Dutch and Portuguese ________.",
+          points: 1,
+          correctAnswer: "merchants",
+          explanation:
+            "Đoạn C ghi: 'In the 17th century, Dutch and Portuguese merchants introduced tea to Europe' → Từ cần điền vào chỗ trống là 'merchants'.",
+          options: [],
+        },
       ],
       submissions: [
         {
-          id: "sub-1",
+          id: "sub-r-an-1",
           assignmentId: "demo-assign-1",
-          studentId: "st-1",
-          studentName: "Trần Thị Lan",
-          studentEmail: "hv001@simpace.vn",
+          classId: "demo-class-1",
+          studentId: "demo-student-1",
+          studentName: "Nguyễn Văn An",
+          studentEmail: "student@simpace.vn",
+          attemptNumber: 1,
           status: "GRADED",
-          score: 8.5,
-          totalPoints: 10,
-          tabSwitchCount: 1,
+          score: 3,
+          totalPoints: 4,
+          tabSwitchCount: 0,
           isCheatingFlagged: false,
-          submittedAt: new Date().toISOString(),
+          submittedAt: new Date(nowMs - 4 * 86400000).toISOString(),
           answers: [
-            { id: "ans-1", questionId: "q-1", studentAnswer: "B", isCorrect: true, awardedPoints: 1 },
-            { id: "ans-2", questionId: "q-2", studentAnswer: "A", isCorrect: true, awardedPoints: 1 },
+            { id: "ans-ra1-1", questionId: "q-r1", studentAnswer: "B", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-ra1-2", questionId: "q-r2", studentAnswer: "A", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-ra1-3", questionId: "q-r3", studentAnswer: "TRUE", isCorrect: false, awardedPoints: 0, criteriaScores: [] },
+            { id: "ans-ra1-4", questionId: "q-r4", studentAnswer: "merchants", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
           ],
         },
         {
-          id: "sub-2",
+          id: "sub-r-an-2",
           assignmentId: "demo-assign-1",
+          classId: "demo-class-1",
+          studentId: "demo-student-1",
+          studentName: "Nguyễn Văn An",
+          studentEmail: "student@simpace.vn",
+          attemptNumber: 2,
+          status: "GRADED",
+          score: 4,
+          totalPoints: 4,
+          tabSwitchCount: 0,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 3 * 86400000).toISOString(),
+          answers: [
+            { id: "ans-ra2-1", questionId: "q-r1", studentAnswer: "B", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-ra2-2", questionId: "q-r2", studentAnswer: "A", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-ra2-3", questionId: "q-r3", studentAnswer: "FALSE", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-ra2-4", questionId: "q-r4", studentAnswer: "merchants", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+          ],
+        },
+        {
+          id: "sub-r-lan",
+          assignmentId: "demo-assign-1",
+          classId: "demo-class-1",
+          studentId: "st-1",
+          studentName: "Trần Thị Lan",
+          studentEmail: "hv001@simpace.vn",
+          attemptNumber: 1,
+          status: "GRADED",
+          score: 3,
+          totalPoints: 4,
+          tabSwitchCount: 1,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 3 * 86400000).toISOString(),
+          answers: [
+            { id: "ans-rl-1", questionId: "q-r1", studentAnswer: "B", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-rl-2", questionId: "q-r2", studentAnswer: "A", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-rl-3", questionId: "q-r3", studentAnswer: "FALSE", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-rl-4", questionId: "q-r4", studentAnswer: "traders", isCorrect: false, awardedPoints: 0, criteriaScores: [] },
+          ],
+        },
+        {
+          id: "sub-r-long",
+          assignmentId: "demo-assign-1",
+          classId: "demo-class-1",
           studentId: "st-2",
           studentName: "Lê Hoàng Long",
           studentEmail: "hv002@simpace.vn",
-          status: "SUBMITTED",
-          score: 7.0,
-          totalPoints: 10,
+          attemptNumber: 1,
+          status: "GRADED",
+          score: 1,
+          totalPoints: 4,
           tabSwitchCount: 4,
           isCheatingFlagged: true,
-          autoSubmittedReason: "Vượt quá 3 lần chuyển tab (4 lần vi phạm) - Tự động nộp bài và cảnh báo giáo viên.",
-          submittedAt: new Date().toISOString(),
+          autoSubmittedReason: "VIOLATED_TAB_SWITCH_LIMIT",
+          submittedAt: new Date(nowMs - 2 * 86400000).toISOString(),
           answers: [
-            { id: "ans-3", questionId: "q-1", studentAnswer: "B", isCorrect: true, awardedPoints: 1 },
-            { id: "ans-4", questionId: "q-2", studentAnswer: "C", isCorrect: false, awardedPoints: 0 },
+            { id: "ans-rlg-1", questionId: "q-r1", studentAnswer: "B", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-rlg-2", questionId: "q-r2", studentAnswer: "C", isCorrect: false, awardedPoints: 0, criteriaScores: [] },
+            { id: "ans-rlg-3", questionId: "q-r3", studentAnswer: "TRUE", isCorrect: false, awardedPoints: 0, criteriaScores: [] },
+            { id: "ans-rlg-4", questionId: "q-r4", studentAnswer: "sailors", isCorrect: false, awardedPoints: 0, criteriaScores: [] },
           ],
         },
       ],
@@ -114,28 +262,651 @@ if (!globalAssignmentsStore.demoAssignments) {
     {
       id: "demo-assign-2",
       classId: "demo-class-1",
-      title: "IELTS Listening Practice Test 1 - Section 1 & 2",
-      description: "Nghe audio và trả lời các câu hỏi về cuộc trò chuyện qua điện thoại.",
+      title: "IELTS Listening Practice: Campus Accommodation & Library Tour",
+      description: "Nghe audio và hoàn thành 3 câu hỏi Form Completion, Multiple Choice & Map Labeling.",
       skill: "LISTENING",
-      type: "TEST",
+      type: "QUIZ",
       durationMinutes: 30,
-      dueDate: new Date(Date.now() + 5 * 86400000).toISOString(),
+      dueDate: new Date(nowMs + 5 * 86400000).toISOString(),
+      startDate: new Date(nowMs - 5 * 86400000).toISOString(),
+      maxAttempts: 2,
       audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
       enableProctoring: true,
       maxTabSwitches: 3,
       passingScore: 6.0,
-      createdById: "teacher-1",
-      totalPoints: 10,
-      submittedCount: 0,
+      createdById: "demo-staff-1",
+      totalPoints: 3,
+      submittedCount: 2,
       flaggedCount: 0,
       isActive: true,
-      questions: [],
-      submissions: [],
+      questions: [
+        {
+          id: "q-l1",
+          questionNumber: 1,
+          questionType: "GAP_FILL",
+          type: "GAP_FILL",
+          ieltsQuestionType: "LISTENING_FORM_NOTE_TABLE",
+          groupTitle: "Question 1 (Form Completion)",
+          passageText: "SECTION 1: Student Accommodation Application Form",
+          prompt: "Preferred room type: Single ________ room with balcony.",
+          points: 1,
+          correctAnswer: "ensuite",
+          explanation:
+            "Trong băng nghe (00:42), sinh viên nói: 'I would prefer a single ensuite room with a small balcony overlooking the courtyard' → Điền 'ensuite'.",
+          options: [],
+        },
+        {
+          id: "q-l2",
+          questionNumber: 2,
+          questionType: "MULTIPLE_CHOICE",
+          type: "MULTIPLE_CHOICE",
+          ieltsQuestionType: "LISTENING_MCQ",
+          groupTitle: "Question 2 (Multiple Choice)",
+          passageText: "SECTION 2: University Library Orientation",
+          prompt: "Which floor of the library is reserved for silent postgraduate study?",
+          points: 1,
+          correctAnswer: "C",
+          explanation:
+            "Thủ thư giải thích (01:55): 'While the Second Floor allows group discussion, the entire Fourth Floor is strictly designated for silent postgraduate research' → Chọn C.",
+          options: [
+            { id: "opt-l1", optionLabel: "A", content: "Ground Floor", isCorrect: false },
+            { id: "opt-l2", optionLabel: "B", content: "Second Floor", isCorrect: false },
+            { id: "opt-l3", optionLabel: "C", content: "Fourth Floor", isCorrect: true },
+          ],
+        },
+        {
+          id: "q-l3",
+          questionNumber: 3,
+          questionType: "GAP_FILL",
+          type: "GAP_FILL",
+          ieltsQuestionType: "LISTENING_MAP_PLAN_DIAGRAM",
+          groupTitle: "Question 3 (Map Labeling)",
+          passageText: "SECTION 2: Campus Map Labeling",
+          prompt: "The Multimedia Lab is located next to the Main ________.",
+          points: 1,
+          correctAnswer: "Auditorium",
+          explanation:
+            "Hướng dẫn viên chỉ trên sơ đồ (02:38): 'Walk past the cafeteria, and you will see the Multimedia Lab right beside the Main Auditorium' → Điền 'Auditorium'.",
+          options: [],
+        },
+      ],
+      submissions: [
+        {
+          id: "sub-l-an",
+          assignmentId: "demo-assign-2",
+          classId: "demo-class-1",
+          studentId: "demo-student-1",
+          studentName: "Nguyễn Văn An",
+          studentEmail: "student@simpace.vn",
+          attemptNumber: 1,
+          status: "GRADED",
+          score: 3,
+          totalPoints: 3,
+          tabSwitchCount: 0,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 2 * 86400000).toISOString(),
+          answers: [
+            { id: "ans-la-1", questionId: "q-l1", studentAnswer: "ensuite", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-la-2", questionId: "q-l2", studentAnswer: "C", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-la-3", questionId: "q-l3", studentAnswer: "Auditorium", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+          ],
+        },
+        {
+          id: "sub-l-lan",
+          assignmentId: "demo-assign-2",
+          classId: "demo-class-1",
+          studentId: "st-1",
+          studentName: "Trần Thị Lan",
+          studentEmail: "hv001@simpace.vn",
+          attemptNumber: 1,
+          status: "GRADED",
+          score: 2,
+          totalPoints: 3,
+          tabSwitchCount: 0,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 2 * 86400000).toISOString(),
+          answers: [
+            { id: "ans-ll-1", questionId: "q-l1", studentAnswer: "ensuite", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-ll-2", questionId: "q-l2", studentAnswer: "C", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-ll-3", questionId: "q-l3", studentAnswer: "Cafeteria", isCorrect: false, awardedPoints: 0, criteriaScores: [] },
+          ],
+        },
+      ],
+    },
+    {
+      id: "demo-assign-3",
+      classId: "demo-class-1",
+      title: "IELTS Academic Writing Test: Task 1 & Task 2 (Urbanization)",
+      description: "Bài thi Writing gồm Task 1 (150 từ) và Task 2 (250 từ). Chấm theo 4 tiêu chí chuẩn IELTS: TA/TR, CC, LR, GRA.",
+      skill: "WRITING",
+      type: "EXAM",
+      durationMinutes: 60,
+      dueDate: new Date(nowMs + 4 * 86400000).toISOString(),
+      startDate: new Date(nowMs - 4 * 86400000).toISOString(),
+      maxAttempts: 1,
+      audioUrl: null,
+      enableProctoring: true,
+      maxTabSwitches: 3,
+      passingScore: 6.0,
+      createdById: "demo-staff-1",
+      totalPoints: 18,
+      submittedCount: 3,
+      flaggedCount: 0,
+      isActive: true,
+      questions: [
+        {
+          id: "q-w1",
+          questionNumber: 1,
+          questionType: "ESSAY",
+          type: "ESSAY",
+          ieltsQuestionType: "WRITING_TASK_1",
+          groupTitle: "Writing Task 1 (Report - 150 words)",
+          passageText:
+            "WRITING TASK 1:\nThe table below shows the proportion of the population living in urban areas in four Asian countries between 1970 and 2020, with projections for 2040.\nSummarise the information by selecting and reporting the main features, and make comparisons where relevant.",
+          prompt: "Write at least 150 words summarizing the main trends in urban population growth.",
+          points: 9,
+          correctAnswer: null,
+          options: [],
+        },
+        {
+          id: "q-w2",
+          questionNumber: 2,
+          questionType: "ESSAY",
+          type: "ESSAY",
+          ieltsQuestionType: "WRITING_TASK_2",
+          groupTitle: "Writing Task 2 (Essay - 250 words)",
+          passageText:
+            "WRITING TASK 2:\nIn many countries, young people are leaving rural areas to study and work in major cities.\nWhat are the reasons for this trend, and do the advantages outweigh the disadvantages?",
+          prompt: "Write at least 250 words presenting your arguments and relevant examples.",
+          points: 9,
+          correctAnswer: null,
+          options: [],
+        },
+      ],
+      submissions: [
+        {
+          id: "sub-w-an",
+          assignmentId: "demo-assign-3",
+          classId: "demo-class-1",
+          studentId: "demo-student-1",
+          studentName: "Nguyễn Văn An",
+          studentEmail: "student@simpace.vn",
+          attemptNumber: 1,
+          status: "GRADED",
+          score: 13.5,
+          totalPoints: 18,
+          gradedById: "demo-staff-1",
+          gradedAt: new Date(nowMs - 1 * 86400000).toISOString(),
+          tabSwitchCount: 0,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 2 * 86400000).toISOString(),
+          feedback: "Bài viết mạch lạc, Task 2 lập luận chặt chẽ và dùng từ vựng học thuật tốt. Cần chú ý đa dạng hóa cấu trúc câu phức ở Task 1.",
+          teacherFeedback:
+            "Bài viết mạch lạc, Task 2 lập luận chặt chẽ và dùng từ vựng học thuật tốt. Cần chú ý đa dạng hóa cấu trúc câu phức và thêm số liệu đối chiếu cụ thể ở Task 1.",
+          answers: [
+            {
+              id: "ans-wa-1",
+              questionId: "q-w1",
+              studentAnswer: anTask1Essay,
+              isCorrect: true,
+              awardedPoints: 6.5,
+              teacherComment: "Bố cục Overview rõ ràng, số liệu đối chiếu chính xác.",
+              criteriaScores: [
+                {
+                  criterion: "TA_TR",
+                  criterionCode: "TA_TR",
+                  score: 6.5,
+                  bandScore: 6.5,
+                  comment: "Trả lời đúng trọng tâm bảng số liệu, có đoạn Overview rõ xu hướng tăng của 4 quốc gia.",
+                },
+                {
+                  criterion: "CC",
+                  criterionCode: "CC",
+                  score: 6.5,
+                  bandScore: 6.5,
+                  comment: "Sử dụng từ nối liên kết tốt ('Overall', 'alongside', 'with Malaysia recording...').",
+                },
+                {
+                  criterion: "LR",
+                  criterionCode: "LR",
+                  score: 6.5,
+                  bandScore: 6.5,
+                  comment: "Paraphrase đề bài tốt ('city dwellers', 'steady upward trajectory').",
+                },
+                {
+                  criterion: "GRA",
+                  criterionCode: "GRA",
+                  score: 6.5,
+                  bandScore: 6.5,
+                  comment: "Cấu trúc phân từ 'with + N + V-ing' dùng chính xác.",
+                },
+              ],
+              gradingAnnotations: {
+                annotations: [
+                  buildSeedAnnotation(anTask1Essay, "Overall, all four countries", {
+                    id: "ann-wa1-1",
+                    type: "comment",
+                    criterion: "TA_TR",
+                    text: "Overview tốt, nêu bật được xu hướng chung của cả 4 quốc gia.",
+                  }),
+                  buildSeedAnnotation(anTask1Essay, "steady upward trajectory", {
+                    id: "ann-wa1-2",
+                    type: "comment",
+                    criterion: "LR",
+                    text: "Collocation học thuật rất đắt giá (Band 7.0+).",
+                  }),
+                  buildSeedAnnotation(anTask1Essay, "urban ratio", {
+                    id: "ann-wa1-3",
+                    type: "replace",
+                    criterion: "LR",
+                    text: "urbanization rate",
+                  }),
+                ],
+              },
+            },
+            {
+              id: "ans-wa-2",
+              questionId: "q-w2",
+              studentAnswer: anTask2Essay,
+              isCorrect: true,
+              awardedPoints: 7.0,
+              teacherComment: "Luận điểm thuyết phục, từ vựng C1 phong phú.",
+              criteriaScores: [
+                {
+                  criterion: "TA_TR",
+                  criterionCode: "TA_TR",
+                  score: 7.0,
+                  bandScore: 7.0,
+                  comment: "Nêu rõ nguyên nhân (giáo dục, nghề nghiệp) và lập trường cân bằng.",
+                },
+                {
+                  criterion: "CC",
+                  criterionCode: "CC",
+                  score: 7.0,
+                  bandScore: 7.0,
+                  comment: "Mạch văn tự nhiên, chuyển ý mượt bằng mệnh đề nhượng bộ 'while...'.",
+                },
+                {
+                  criterion: "LR",
+                  criterionCode: "LR",
+                  score: 7.5,
+                  bandScore: 7.5,
+                  comment: "Dùng từ vựng học thuật xuất sắc: 'rural-to-urban migration', 'accelerated dramatically'.",
+                },
+                {
+                  criterion: "GRA",
+                  criterionCode: "GRA",
+                  score: 6.5,
+                  bandScore: 6.5,
+                  comment: "Câu phức đa dạng, không mắc lỗi ngữ pháp cơ bản.",
+                },
+              ],
+              gradingAnnotations: {
+                annotations: [
+                  buildSeedAnnotation(anTask2Essay, "accelerated dramatically", {
+                    id: "ann-wa2-1",
+                    type: "comment",
+                    criterion: "LR",
+                    text: "Cụm động từ + trạng từ mức độ rất tự nhiên và học thuật.",
+                  }),
+                  buildSeedAnnotation(anTask2Essay, "while metropolitan centers", {
+                    id: "ann-wa2-2",
+                    type: "comment",
+                    criterion: "CC",
+                    text: "Cấu trúc câu ghép nhượng bộ mở đầu Thesis Statement rất mạch lạc.",
+                  }),
+                ],
+              },
+            },
+          ],
+        },
+        {
+          id: "sub-w-lan-pending",
+          assignmentId: "demo-assign-3",
+          classId: "demo-class-1",
+          studentId: "st-1",
+          studentName: "Trần Thị Lan",
+          studentEmail: "hv001@simpace.vn",
+          attemptNumber: 1,
+          status: "SUBMITTED",
+          score: null,
+          totalPoints: 18,
+          tabSwitchCount: 1,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 6 * 3600000).toISOString(),
+          answers: [
+            {
+              id: "ans-wl-1",
+              questionId: "q-w1",
+              studentAnswer: lanTask1Essay,
+              isCorrect: null,
+              awardedPoints: null,
+              criteriaScores: [],
+              gradingAnnotations: {
+                annotations: [
+                  buildSeedAnnotation(lanTask1Essay, "Overall,", {
+                    id: "ann-wl1-1",
+                    type: "comment",
+                    criterion: "TA_TR",
+                    text: "Overview tốt, nhưng cần nêu rõ nước cao nhất / thấp nhất.",
+                  }),
+                  buildSeedAnnotation(lanTask1Essay, "increased significantly", {
+                    id: "ann-wl1-2",
+                    type: "comment",
+                    criterion: "LR",
+                    text: "Dùng tốt. Có thể nâng cấp: “rose markedly”.",
+                  }),
+                  buildSeedAnnotation(lanTask1Essay, "citizens will reside", {
+                    id: "ann-wl1-3",
+                    type: "replace",
+                    criterion: "LR",
+                    text: "residents will live",
+                  }),
+                ],
+              },
+            },
+            {
+              id: "ans-wl-2",
+              questionId: "q-w2",
+              studentAnswer: lanTask2Essay,
+              isCorrect: null,
+              awardedPoints: null,
+              criteriaScores: [],
+              gradingAnnotations: {
+                annotations: [
+                  buildSeedAnnotation(
+                    lanTask2Essay,
+                    "Despite traffic congestion and high living costs",
+                    {
+                      id: "ann-wl2-1",
+                      type: "comment",
+                      criterion: "CC",
+                      text: "Câu mở đoạn nhượng bộ ổn; cần câu chốt ý rõ hơn ở cuối đoạn.",
+                    }
+                  ),
+                  buildSeedAnnotation(lanTask2Essay, "is more important", {
+                    id: "ann-wl2-2",
+                    type: "replace",
+                    criterion: "GRA",
+                    text: "are more important",
+                  }),
+                ],
+              },
+            },
+          ],
+        },
+        {
+          id: "sub-w-long-pending",
+          assignmentId: "demo-assign-3",
+          classId: "demo-class-1",
+          studentId: "st-2",
+          studentName: "Lê Hoàng Long",
+          studentEmail: "hv002@simpace.vn",
+          attemptNumber: 1,
+          status: "SUBMITTED",
+          score: null,
+          totalPoints: 18,
+          tabSwitchCount: 2,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 3 * 3600000).toISOString(),
+          answers: [
+            {
+              id: "ans-wlg-1",
+              questionId: "q-w1",
+              studentAnswer:
+                "Looking at the chart, we can see that the number of people living in cities went up from 1970 to 2020 and will keep rising in 2040 in all four countries.",
+              isCorrect: null,
+              awardedPoints: null,
+              criteriaScores: [],
+            },
+            {
+              id: "ans-wlg-2",
+              questionId: "q-w2",
+              studentAnswer:
+                "Many young people move to big cities because there are more jobs and modern hospitals. However, cities are becoming too crowded and polluted, so governments should invest more in rural areas.",
+              isCorrect: null,
+              awardedPoints: null,
+              criteriaScores: [],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "demo-assign-4",
+      classId: "demo-class-1",
+      title: "IELTS Speaking Mock Test: Part 2 & Part 3 (Technology in Education)",
+      description: "Bài thi Speaking thu âm trực tiếp. Giáo viên chấm theo 4 tiêu chí chuẩn IELTS: FC, LR, GRA, P.",
+      skill: "SPEAKING",
+      type: "EXAM",
+      durationMinutes: 15,
+      dueDate: new Date(nowMs + 5 * 86400000).toISOString(),
+      startDate: new Date(nowMs - 4 * 86400000).toISOString(),
+      maxAttempts: 1,
+      audioUrl: null,
+      enableProctoring: false,
+      maxTabSwitches: 3,
+      passingScore: 6.0,
+      createdById: "demo-staff-1",
+      totalPoints: 9,
+      submittedCount: 2,
+      flaggedCount: 0,
+      isActive: true,
+      questions: [
+        {
+          id: "q-s1",
+          questionNumber: 1,
+          questionType: "SPEAKING_RECORD",
+          type: "SPEAKING_RECORD",
+          ieltsQuestionType: "SPEAKING_PART_2",
+          groupTitle: "Speaking Part 2 (Cue Card - 2 minutes)",
+          passageText:
+            "SPEAKING PART 2 CUE CARD:\nDescribe a piece of technology (not a phone) that you find particularly useful for your studies.\nYou should say:\n- what it is and when you got it\n- how often you use it\n- what you use it for\nand explain why it helps you study effectively.",
+          prompt: "Record a 2-minute talk describing this piece of technology and follow-up Part 3 discussion.",
+          points: 9,
+          correctAnswer: null,
+          options: [],
+        },
+      ],
+      submissions: [
+        {
+          id: "sub-s-an",
+          assignmentId: "demo-assign-4",
+          classId: "demo-class-1",
+          studentId: "demo-student-1",
+          studentName: "Nguyễn Văn An",
+          studentEmail: "student@simpace.vn",
+          attemptNumber: 1,
+          status: "GRADED",
+          score: 6.5,
+          totalPoints: 9,
+          gradedById: "demo-staff-1",
+          gradedAt: new Date(nowMs - 1 * 86400000).toISOString(),
+          tabSwitchCount: 0,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 2 * 86400000).toISOString(),
+          feedback: "Phát âm rõ ràng, trôi chảy, sử dụng tốt các cụm collocations về công nghệ giáo dục.",
+          teacherFeedback:
+            "Phát âm rõ ràng, trôi chảy, sử dụng tốt các cụm collocations về công nghệ giáo dục. Chú ý chia động từ ngôi thứ 3 số ít và danh từ số nhiều.",
+          answers: [
+            {
+              id: "ans-sa-1",
+              questionId: "q-s1",
+              studentAnswer: "",
+              audioUrl: "/uploads/speaking/speaking-an-part2.wav",
+              isCorrect: true,
+              awardedPoints: 6.5,
+              teacherComment: "Fluency & Coherence đạt 6.5, phát âm có ngữ điệu tự nhiên.",
+              criteriaScores: [
+                {
+                  criterion: "FC",
+                  criterionCode: "FC",
+                  score: 6.5,
+                  bandScore: 6.5,
+                  comment: "Trình bày mạch lạc, dùng từ nối 'Actually', 'In addition' tự nhiên; đôi chỗ còn ngập ngừng 'Um'.",
+                },
+                {
+                  criterion: "LR",
+                  criterionCode: "LR",
+                  score: 6.5,
+                  bandScore: 6.5,
+                  comment: "Từ vựng phù hợp chủ đề học tập ('useful device', 'doing research', 'online lessons').",
+                },
+                {
+                  criterion: "GRA",
+                  criterionCode: "GRA",
+                  score: 6.0,
+                  bandScore: 6.0,
+                  comment: "Có dùng mệnh đề quan hệ ('which I bought...'), cấu trúc câu đa dạng.",
+                },
+                {
+                  criterion: "P",
+                  criterionCode: "P",
+                  score: 7.0,
+                  bandScore: 7.0,
+                  comment: "Phát âm rõ âm cuối, ngữ điệu nhấn nhá tự nhiên dễ nghe.",
+                },
+              ],
+              gradingAnnotations: {
+                speakingTranscript: sampleSpeakingTranscriptAn,
+                annotations: [
+                  buildSeedAnnotation(sampleSpeakingTranscriptAn.rawText, "bought", {
+                    id: "ann-sa1-1",
+                    type: "replace",
+                    criterion: "LR",
+                    text: "purchased",
+                    timestampSec: 4.2,
+                  }),
+                  buildSeedAnnotation(sampleSpeakingTranscriptAn.rawText, "Um,", {
+                    id: "ann-sa1-2",
+                    type: "delete",
+                    criterion: "FC",
+                    text: "Từ đệm “Um” – ngập ngừng, ảnh hưởng độ trôi chảy.",
+                    timestampSec: 6.1,
+                  }),
+                  buildSeedAnnotation(sampleSpeakingTranscriptAn.rawText, "save a lot of time", {
+                    id: "ann-sa1-3",
+                    type: "comment",
+                    criterion: "LR",
+                    text: "Cụm từ tự nhiên, có thể nâng cấp thành 'conserve considerable time'.",
+                    timestampSec: 17.5,
+                  }),
+                ],
+              },
+            },
+          ],
+        },
+        {
+          id: "sub-s-lan-pending",
+          assignmentId: "demo-assign-4",
+          classId: "demo-class-1",
+          studentId: "st-1",
+          studentName: "Trần Thị Lan",
+          studentEmail: "hv001@simpace.vn",
+          attemptNumber: 1,
+          status: "SUBMITTED",
+          score: null,
+          totalPoints: 9,
+          tabSwitchCount: 0,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 4 * 3600000).toISOString(),
+          answers: [
+            {
+              id: "ans-sl-1",
+              questionId: "q-s1",
+              studentAnswer: "",
+              audioUrl: "/uploads/speaking/speaking-lan-part2.wav",
+              isCorrect: null,
+              awardedPoints: null,
+              criteriaScores: [],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "demo-assign-5",
+      classId: "demo-class-1",
+      title: "IELTS Reading Intensive: Renewable Energy (Bài tập đã quá hạn)",
+      description: "Bài tập đã qua hạn nộp để kiểm tra quy tắc khóa nút nộp bài (BR-05, BR-06) và cảnh báo học sinh quá hạn.",
+      skill: "READING",
+      type: "HOMEWORK",
+      durationMinutes: 30,
+      dueDate: new Date(nowMs - 2 * 86400000).toISOString(),
+      startDate: new Date(nowMs - 10 * 86400000).toISOString(),
+      maxAttempts: 1,
+      audioUrl: null,
+      enableProctoring: true,
+      maxTabSwitches: 3,
+      passingScore: 5.0,
+      createdById: "demo-staff-1",
+      totalPoints: 2,
+      submittedCount: 1,
+      flaggedCount: 0,
+      isActive: true,
+      questions: [
+        {
+          id: "q-ro1",
+          questionNumber: 1,
+          questionType: "TRUE_FALSE_NOT_GIVEN",
+          type: "TRUE_FALSE_NOT_GIVEN",
+          ieltsQuestionType: "READING_YES_NO_NG",
+          groupTitle: "Questions 1–2",
+          passageText: "Solar and wind power have grown exponentially over the last decade.",
+          prompt: "Solar energy is currently cheaper than coal in every country worldwide.",
+          points: 1,
+          correctAnswer: "NOT GIVEN",
+          explanation:
+            "Bài đọc chỉ đề cập năng lượng mặt trời và gió tăng trưởng mạnh trong thập kỷ qua, hoàn toàn không có thông tin so sánh chi phí với than đá ở mọi quốc gia → NOT GIVEN.",
+          options: [],
+        },
+        {
+          id: "q-ro2",
+          questionNumber: 2,
+          questionType: "MULTIPLE_CHOICE",
+          type: "MULTIPLE_CHOICE",
+          ieltsQuestionType: "READING_MATCHING_HEADINGS",
+          groupTitle: "Questions 1–2",
+          passageText: "Solar and wind power have grown exponentially over the last decade.",
+          prompt: "Choose the most suitable heading for the paragraph.",
+          points: 1,
+          correctAnswer: "A",
+          explanation:
+            "Cụm 'grown exponentially over the last decade' tương ứng trực tiếp với tiêu đề A: 'The rapid rise of clean energy'.",
+          options: [
+            { id: "opt-ro1", optionLabel: "A", content: "The rapid rise of clean energy", isCorrect: true },
+            { id: "opt-ro2", optionLabel: "B", content: "The decline of hydroelectric dams", isCorrect: false },
+          ],
+        },
+      ],
+      submissions: [
+        {
+          id: "sub-ro-an",
+          assignmentId: "demo-assign-5",
+          classId: "demo-class-1",
+          studentId: "demo-student-1",
+          studentName: "Nguyễn Văn An",
+          studentEmail: "student@simpace.vn",
+          attemptNumber: 1,
+          status: "GRADED",
+          score: 2,
+          totalPoints: 2,
+          tabSwitchCount: 0,
+          isCheatingFlagged: false,
+          submittedAt: new Date(nowMs - 5 * 86400000).toISOString(),
+          answers: [
+            { id: "ans-roa-1", questionId: "q-ro1", studentAnswer: "NOT GIVEN", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+            { id: "ans-roa-2", questionId: "q-ro2", studentAnswer: "A", isCorrect: true, awardedPoints: 1, criteriaScores: [] },
+          ],
+        },
+      ],
     },
   ];
 }
 
 export async function getClassAssignmentsService(classId: string, currentUserId?: string) {
+  const now = new Date();
+
   if (!(await isDbAlive())) {
     const list = (globalAssignmentsStore.demoAssignments || []).filter(
       (a) =>
@@ -147,7 +918,9 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
     );
     const formatted = list.map((a) => {
       const classLink = (a.assignedClasses || []).find((ac: any) => ac.classId === classId);
-      const dueDate = classLink?.dueDate || a.dueDate;
+      const dueDate = classLink?.dueDate || a.dueDate || null;
+      const startDate = classLink?.startDate || a.startDate || a.createdAt || null;
+      const isOverdue = Boolean(dueDate && new Date(dueDate) < now);
       const enableProctoring =
         classLink?.enableProctoring !== undefined ? classLink.enableProctoring : a.enableProctoring;
       const maxTabSwitches =
@@ -156,36 +929,53 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
         (sum: number, q: any) => sum + (Number(q.points) || 1),
         0
       );
-      const submittedCount = (a.submissions || []).filter(
-        (s: any) =>
-          (!classId || !s.classId || s.classId === classId) &&
-          (s.status === "SUBMITTED" || s.status === "GRADED")
+      const classSubs = (a.submissions || []).filter(
+        (s: any) => !classId || !s.classId || s.classId === classId
+      );
+      const submittedCount = classSubs.filter(
+        (s: any) => s.status === "SUBMITTED" || s.status === "GRADED"
       ).length;
-      const flaggedCount = (a.submissions || []).filter(
-        (s: any) => (!classId || !s.classId || s.classId === classId) && s.isCheatingFlagged
-      ).length;
+      const pendingGradingCount = classSubs.filter((s: any) => s.status === "SUBMITTED").length;
+      const flaggedCount = classSubs.filter((s: any) => s.isCheatingFlagged).length;
 
-      const mySub = currentUserId
-        ? (a.submissions || []).find((s: any) => s.studentId === currentUserId)
-        : null;
-      const mySubmission = mySub
+      const mySubs = currentUserId
+        ? classSubs.filter((s: any) => s.studentId === currentUserId)
+        : [];
+      // BR-09: Ưu tiên hiển thị lần có điểm cao nhất
+      const bestSub =
+        mySubs.length > 0
+          ? [...mySubs].sort((x, y) => (Number(y.score) || -1) - (Number(x.score) || -1))[0]
+          : null;
+      const mySubmission = bestSub
         ? {
-            id: mySub.id,
-            status: mySub.status,
-            score: mySub.score,
-            totalPoints: mySub.totalPoints || totalPoints,
-            submittedAt: mySub.submittedAt,
-            isCheatingFlagged: mySub.isCheatingFlagged,
+            id: bestSub.id,
+            status: bestSub.status,
+            score: bestSub.score,
+            totalPoints: bestSub.totalPoints || totalPoints,
+            submittedAt: bestSub.submittedAt,
+            isCheatingFlagged: bestSub.isCheatingFlagged,
+            attemptNumber: bestSub.attemptNumber || 1,
+            estimatedBand: estimateAcademicBand(
+              a.skill,
+              Number(bestSub.score) || 0,
+              (a.questions || []).length
+            ),
           }
         : null;
 
       return {
         ...a,
         dueDate,
+        startDate,
+        isOverdue,
+        maxAttempts: a.maxAttempts || 2,
+        myAttemptCount: mySubs.length,
         enableProctoring,
         maxTabSwitches,
+        questionCount: (a.questions || []).length,
         totalPoints,
         submittedCount,
+        pendingGradingCount,
         flaggedCount,
         mySubmission,
         assignedClassCount: Array.isArray(a.assignedClasses)
@@ -212,20 +1002,19 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
         },
       },
       questions: {
-        select: { id: true, points: true },
+        select: { id: true, points: true, ieltsQuestionType: true },
       },
       submissions: {
         where: {
-          OR: [
-            { classId },
-            { classId: null },
-          ],
+          OR: [{ classId }, { classId: null }],
         },
         select: {
           id: true,
           studentId: true,
+          attemptNumber: true,
           status: true,
           score: true,
+          totalPoints: true,
           tabSwitchCount: true,
           isCheatingFlagged: true,
           submittedAt: true,
@@ -241,30 +1030,42 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
     const submittedCount = a.submissions.filter(
       (s) => s.status === "SUBMITTED" || s.status === "GRADED"
     ).length;
+    const pendingGradingCount = a.submissions.filter((s) => s.status === "SUBMITTED").length;
     const flaggedCount = a.submissions.filter((s) => s.isCheatingFlagged).length;
 
-    const dueDate = classLink?.dueDate
-      ? classLink.dueDate.toISOString()
-      : a.dueDate
-      ? a.dueDate.toISOString()
-      : null;
+    const dueDateObj = classLink?.dueDate || a.dueDate || null;
+    const startDateObj = classLink?.startDate || a.createdAt || null;
+    const dueDate = dueDateObj ? dueDateObj.toISOString() : null;
+    const startDate = startDateObj ? startDateObj.toISOString() : null;
+    const isOverdue = Boolean(dueDateObj && dueDateObj < now);
 
     const enableProctoring =
       classLink?.enableProctoring !== undefined ? classLink.enableProctoring : a.enableProctoring;
     const maxTabSwitches =
       classLink?.maxTabSwitches !== undefined ? classLink.maxTabSwitches : a.maxTabSwitches;
 
-    const mySub = currentUserId
-      ? a.submissions.find((s) => s.studentId === currentUserId)
-      : null;
-    const mySubmission = mySub
+    const mySubs = currentUserId
+      ? a.submissions.filter((s) => s.studentId === currentUserId)
+      : [];
+    // BR-09: Lấy lần có điểm cao nhất làm đại diện KPI
+    const bestSub =
+      mySubs.length > 0
+        ? [...mySubs].sort((x, y) => (Number(y.score) ?? -1) - (Number(x.score) ?? -1))[0]
+        : null;
+    const mySubmission = bestSub
       ? {
-          id: mySub.id,
-          status: mySub.status,
-          score: mySub.score,
-          totalPoints,
-          submittedAt: mySub.submittedAt ? mySub.submittedAt.toISOString() : null,
-          isCheatingFlagged: mySub.isCheatingFlagged,
+          id: bestSub.id,
+          status: bestSub.status,
+          score: bestSub.score,
+          totalPoints: bestSub.totalPoints || totalPoints,
+          submittedAt: bestSub.submittedAt ? bestSub.submittedAt.toISOString() : null,
+          isCheatingFlagged: bestSub.isCheatingFlagged,
+          attemptNumber: bestSub.attemptNumber,
+          estimatedBand: estimateAcademicBand(
+            a.skill,
+            Number(bestSub.score) || 0,
+            a.questions.length
+          ),
         }
       : null;
 
@@ -278,6 +1079,10 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
       type: a.type,
       durationMinutes: a.durationMinutes,
       dueDate,
+      startDate,
+      isOverdue,
+      maxAttempts: a.maxAttempts || 1,
+      myAttemptCount: mySubs.length,
       audioUrl: a.audioUrl,
       enableProctoring,
       maxTabSwitches,
@@ -285,6 +1090,7 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
       totalPoints,
       submissionCount: a.submissions.length,
       submittedCount,
+      pendingGradingCount,
       flaggedCount,
       mySubmission,
       assignedClassCount: Math.max(a.assignedClasses.length, 1),
@@ -367,8 +1173,7 @@ export async function getAssignmentDetailService(
                 },
                 {
                   id: "box-5",
-                  textTemplate:
-                    "- obeyed only at _______\n- can cause lack of _______",
+                  textTemplate: "- obeyed only at _______\n- can cause lack of _______",
                   questionNumbers: [21, 22],
                   isStatic: false,
                   nextBoxIds: [],
@@ -386,6 +1191,11 @@ export async function getAssignmentDetailService(
           ];
         }
       }
+      const studentSubs = (found.submissions || [])
+        .filter((s: any) => s.studentId === studentId)
+        .sort((a: any, b: any) => (b.attemptNumber || 1) - (a.attemptNumber || 1));
+      const demoLatestSub = studentSubs[0] || (found.submissions || [])[0] || null;
+
       return {
         success: true,
         assignment: {
@@ -398,6 +1208,22 @@ export async function getAssignmentDetailService(
             ...q,
             passageText: resolveLegacyShortPassageText(q.passageText, found.title),
           })),
+          latestSubmission: demoLatestSub
+            ? {
+                ...demoLatestSub,
+                teacherFeedback: demoLatestSub.teacherFeedback || demoLatestSub.feedback || null,
+                answers: (demoLatestSub.answers || []).map((ans: any) => ({
+                  ...ans,
+                  teacherComment: ans.teacherComment || ans.feedback || null,
+                  criteriaScores: (ans.criteriaScores || []).map((cs: any) => ({
+                    criterion: cs.criterion || cs.criterionCode,
+                    score: typeof cs.score === "number" ? cs.score : cs.bandScore,
+                    comment: cs.comment || "",
+                  })),
+                  gradingAnnotations: ans.gradingAnnotations || null,
+                })),
+              }
+            : null,
         },
       };
     }
@@ -416,7 +1242,9 @@ export async function getAssignmentDetailService(
       submissions: {
         where: { studentId },
         include: {
-          answers: true,
+          answers: {
+            include: { criteriaScores: true },
+          },
         },
         orderBy: { attemptNumber: "desc" },
         take: 1,
@@ -484,8 +1312,7 @@ export async function getAssignmentDetailService(
             },
             {
               id: "box-5",
-              textTemplate:
-                "- obeyed only at _______\n- can cause lack of _______",
+              textTemplate: "- obeyed only at _______\n- can cause lack of _______",
               questionNumbers: [21, 22],
               isStatic: false,
               nextBoxIds: [],
@@ -519,6 +1346,7 @@ export async function getAssignmentDetailService(
       type: assignment.type,
       durationMinutes: assignment.durationMinutes,
       dueDate: assignment.dueDate ? assignment.dueDate.toISOString() : null,
+      maxAttempts: assignment.maxAttempts,
       audioUrl: assignment.audioUrl,
       enableProctoring: assignment.enableProctoring,
       maxTabSwitches: assignment.maxTabSwitches,
@@ -528,6 +1356,10 @@ export async function getAssignmentDetailService(
         passageText: resolveLegacyShortPassageText(q.passageText, assignment.title),
         prompt: q.prompt,
         type: q.type,
+        ieltsQuestionType:
+          q.ieltsQuestionType ||
+          resolveIeltsQuestionType(null, q.type, assignment.skill, q.questionNumber),
+        groupTitle: q.groupTitle,
         points: q.points,
         correctAnswer: q.correctAnswer,
         explanation: q.explanation,
@@ -555,14 +1387,18 @@ export async function getAssignmentDetailService(
               isCorrect: ans.isCorrect,
               awardedPoints: ans.awardedPoints,
               teacherComment: ans.teacherComment,
+              criteriaScores: (ans.criteriaScores || []).map((cs) => ({
+                criterion: cs.criterion,
+                score: cs.score,
+                comment: cs.comment,
+              })),
+              gradingAnnotations: (ans as any).gradingAnnotations || null,
             })),
           }
         : null,
     },
   };
 }
-
-// createAssignmentService & deleteAssignmentService are now exported from ./assignment-mutation.service
 
 export async function submitAssignmentService(
   data: {
@@ -586,6 +1422,8 @@ export async function submitAssignmentService(
   isCheatingFlagged?: boolean;
   error?: string;
 }> {
+  const now = new Date();
+
   if (!(await isDbAlive())) {
     const assign =
       (globalAssignmentsStore.demoAssignments || []).find(
@@ -596,8 +1434,21 @@ export async function submitAssignmentService(
       return { success: false, error: "Bài tập không tồn tại!" };
     }
 
+    const classLink = (assign.assignedClasses || []).find(
+      (ac: any) => ac.classId === data.classId && ac.isActive !== false
+    );
+    const effectiveDueDate = classLink?.dueDate || assign.dueDate;
+    // BR-05 & BR-06: Hết hạn nộp của lớp thì học sinh không được nộp nữa
+    if (effectiveDueDate && new Date(effectiveDueDate) < now) {
+      return {
+        success: false,
+        error: "Đã hết hạn nộp bài của lớp, hệ thống không nhận thêm bài nộp (Quy tắc BR-05)!",
+      };
+    }
+
     let totalScore = 0;
     let maxScore = 0;
+
     const formattedAnswers = data.answers.map((ans, idx) => {
       const q = (assign.questions || []).find((quest: any) => quest.id === ans.questionId);
       const pts = q?.points ? Number(q.points) : 1;
@@ -618,6 +1469,7 @@ export async function submitAssignmentService(
         prompt: q?.prompt || "",
         passageText: q?.passageText || null,
         type: q?.type || "MULTIPLE_CHOICE",
+        ieltsQuestionType: q?.ieltsQuestionType || null,
         points: pts,
         correctAnswer: q?.correctAnswer || "",
         studentAnswer: ans.studentAnswer || null,
@@ -625,23 +1477,29 @@ export async function submitAssignmentService(
         isCorrect,
         awardedPoints,
         teacherComment: null,
+        criteriaScores: [],
       };
     });
 
     const isObjectiveOnly = allObjective(assign.questions || []);
+    const maxTabLimit = classLink?.maxTabSwitches ?? assign.maxTabSwitches ?? 3;
     const isCheating = Boolean(
-      data.isCheatingFlagged || data.tabSwitchCount > (assign.maxTabSwitches || 3)
+      data.isCheatingFlagged || data.tabSwitchCount > maxTabLimit
     );
+
+    const myPrevCount = (assign.submissions || []).filter(
+      (s: any) => s.studentId === (studentInfo.userId || "demo-student-1")
+    ).length;
 
     const submissionId = `sub-${Date.now()}`;
     const newSub = {
       id: submissionId,
       studentId: studentInfo.userId || "demo-student-1",
-      classId: data.classId || null,
+      classId: data.classId || assign.classId || null,
       studentName: studentInfo.fullName || "Trần Thị Lan",
       studentEmail: studentInfo.email || "hv001@simpace.vn",
-      attemptNumber: (assign.submissions || []).length + 1,
-      submittedAt: new Date().toISOString(),
+      attemptNumber: myPrevCount + 1,
+      submittedAt: now.toISOString(),
       status: isObjectiveOnly ? "GRADED" : "SUBMITTED",
       score: isObjectiveOnly ? totalScore : null,
       totalPoints: maxScore,
@@ -671,11 +1529,28 @@ export async function submitAssignmentService(
 
   const assignment = await prisma.assignment.findUnique({
     where: { id: data.assignmentId },
-    include: { questions: true },
+    include: {
+      questions: true,
+      assignedClasses: {
+        where: { isActive: true },
+      },
+    },
   });
 
   if (!assignment) {
     return { success: false, error: "Bài tập không tồn tại!" };
+  }
+
+  const targetClassId = data.classId || assignment.classId;
+  const classLink = assignment.assignedClasses.find((ac) => ac.classId === targetClassId);
+  const effectiveDueDate = classLink?.dueDate || assignment.dueDate;
+
+  // BR-05 & BR-06: Chặn nộp bài sau dueDate của lớp
+  if (effectiveDueDate && effectiveDueDate < now) {
+    return {
+      success: false,
+      error: "Đã hết hạn nộp bài của lớp, hệ thống không nhận thêm bài nộp (Quy tắc BR-05)!",
+    };
   }
 
   let totalScore = 0;
@@ -720,30 +1595,22 @@ export async function submitAssignmentService(
   });
 
   const isObjectiveOnly = allObjective(assignment.questions);
-
-  let assignmentClassId: string | null = null;
-  if (data.classId) {
-    const ac = await prisma.assignmentClass.findFirst({
-      where: { assignmentId: data.assignmentId, classId: data.classId, isActive: true },
-      select: { id: true },
-    });
-    if (ac) assignmentClassId = ac.id;
-  }
+  const maxTabLimit = classLink?.maxTabSwitches ?? assignment.maxTabSwitches ?? 3;
 
   const submission = await prisma.assignmentSubmission.create({
     data: {
       assignmentId: data.assignmentId,
       studentId: studentInfo.userId,
-      classId: data.classId || null,
-      assignmentClassId,
+      classId: targetClassId || null,
+      assignmentClassId: classLink?.id || null,
       attemptNumber: previousSubmissionsCount + 1,
-      submittedAt: new Date(),
+      submittedAt: now,
       status: isObjectiveOnly ? "GRADED" : "SUBMITTED",
       score: isObjectiveOnly ? totalScore : null,
       totalPoints: maxScore,
       tabSwitchCount: data.tabSwitchCount || 0,
       isCheatingFlagged:
-        data.isCheatingFlagged || data.tabSwitchCount > assignment.maxTabSwitches,
+        Boolean(data.isCheatingFlagged) || (data.tabSwitchCount || 0) > maxTabLimit,
       autoSubmittedReason: data.autoSubmittedReason || null,
       answers: {
         create: answersToCreate,
@@ -767,9 +1634,41 @@ export async function getSubmissionsForAssignmentService(assignmentId: string) {
         (a: any) => a.id === assignmentId
       ) || (globalAssignmentsStore.demoAssignments || [])[0];
 
+    const questionsMap = new Map<string, any>();
+    (assign?.questions || []).forEach((q: any) => {
+      questionsMap.set(q.id, q);
+    });
+
+    const enrichedSubmissions = (assign?.submissions || []).map((s: any) => ({
+      ...s,
+      teacherFeedback: s.teacherFeedback ?? s.feedback ?? "",
+      answers: (s.answers || []).map((a: any, idx: number) => {
+        const q = questionsMap.get(a.questionId);
+        return {
+          ...a,
+          questionNumber: a.questionNumber ?? q?.questionNumber ?? idx + 1,
+          prompt: a.prompt ?? q?.prompt ?? "",
+          passageText: a.passageText ?? q?.passageText ?? null,
+          groupTitle: a.groupTitle ?? q?.groupTitle ?? null,
+          type: a.type ?? q?.type ?? q?.questionType ?? "ESSAY",
+          ieltsQuestionType: a.ieltsQuestionType ?? q?.ieltsQuestionType ?? null,
+          points: a.points ?? q?.points ?? 9,
+          correctAnswer: a.correctAnswer ?? q?.correctAnswer ?? null,
+          explanation: a.explanation ?? q?.explanation ?? null,
+          teacherComment: a.teacherComment ?? a.feedback ?? "",
+          criteriaScores: (a.criteriaScores || []).map((cs: any) => ({
+            criterion: cs.criterion || cs.criterionCode,
+            score: typeof cs.score === "number" ? cs.score : cs.bandScore,
+            comment: cs.comment || "",
+          })),
+          gradingAnnotations: a.gradingAnnotations || null,
+        };
+      }),
+    }));
+
     return {
       success: true,
-      submissions: assign?.submissions || [],
+      submissions: enrichedSubmissions,
     };
   }
 
@@ -789,6 +1688,7 @@ export async function getSubmissionsForAssignmentService(assignmentId: string) {
       answers: {
         include: {
           question: true,
+          criteriaScores: true,
         },
       },
     },
@@ -815,14 +1715,23 @@ export async function getSubmissionsForAssignmentService(assignmentId: string) {
       questionNumber: a.question.questionNumber,
       prompt: a.question.prompt,
       passageText: a.question.passageText,
+      groupTitle: a.question.groupTitle,
       type: a.question.type,
+      ieltsQuestionType: a.question.ieltsQuestionType,
       points: a.question.points,
       correctAnswer: a.question.correctAnswer,
+      explanation: a.question.explanation,
       studentAnswer: a.studentAnswer,
       audioUrl: a.audioUrl,
       isCorrect: a.isCorrect,
       awardedPoints: a.awardedPoints,
       teacherComment: a.teacherComment,
+      criteriaScores: a.criteriaScores.map((cs) => ({
+        criterion: cs.criterion,
+        score: cs.score,
+        comment: cs.comment,
+      })),
+      gradingAnnotations: (a as any).gradingAnnotations || null,
     })),
   }));
 
@@ -832,59 +1741,196 @@ export async function getSubmissionsForAssignmentService(assignmentId: string) {
 export async function gradeSubmissionService(
   data: {
     submissionId: string;
+    isDraft?: boolean;
     gradedAnswers: Array<{
       answerId: string;
       awardedPoints: number;
       teacherComment?: string;
+      criteriaScores?: Array<{
+        criterion: string;
+        score: number;
+        comment?: string;
+      }>;
+      gradingAnnotations?: any;
     }>;
     teacherFeedback?: string;
   },
   gradedById: string
-): Promise<{ success: boolean; totalScore?: number; error?: string }> {
+): Promise<{ success: boolean; totalScore?: number | null; status?: string; error?: string }> {
+  const isDraftMode = Boolean(data.isDraft);
+
   if (!(await isDbAlive())) {
     let calculatedTotalScore = 0;
     for (const assign of globalAssignmentsStore.demoAssignments || []) {
       const sub = (assign.submissions || []).find((s: any) => s.id === data.submissionId);
       if (sub) {
+        let allSubjectiveComplete = true;
         for (const item of data.gradedAnswers) {
           const ans = (sub.answers || []).find((a: any) => a.id === item.answerId);
-          if (ans) {
-            ans.awardedPoints = Number(item.awardedPoints) || 0;
-            ans.teacherComment = item.teacherComment?.trim() || null;
+          const q = (assign.questions || []).find((quest: any) => quest.id === ans?.questionId);
+          const isSubjective =
+            ans?.type === "ESSAY" ||
+            ans?.type === "SPEAKING_RECORD" ||
+            q?.type === "ESSAY" ||
+            q?.type === "SPEAKING_RECORD" ||
+            assign.skill === "WRITING" ||
+            assign.skill === "SPEAKING";
+
+          if (ans && item.gradingAnnotations !== undefined) {
+            ans.gradingAnnotations = item.gradingAnnotations;
           }
-          calculatedTotalScore += Number(item.awardedPoints) || 0;
+
+          if (isSubjective) {
+            const critList = item.criteriaScores || [];
+            if (critList.length < 4) {
+              allSubjectiveComplete = false;
+            }
+            const band = calculateCriteriaBand(critList.map((c) => c.score));
+            if (band === null) {
+              allSubjectiveComplete = false;
+            }
+            if (ans) {
+              ans.criteriaScores = critList.map((c) => ({
+                criterion: c.criterion,
+                criterionCode: c.criterion,
+                score: c.score,
+                bandScore: c.score,
+                comment: c.comment?.trim() || "",
+              }));
+              ans.awardedPoints = band ?? (Number(item.awardedPoints) || 0);
+              ans.teacherComment = item.teacherComment?.trim() || null;
+              ans.feedback = item.teacherComment?.trim() || null;
+            }
+            calculatedTotalScore += band ?? (Number(item.awardedPoints) || 0);
+          } else {
+            if (ans) {
+              ans.awardedPoints = Number(item.awardedPoints) || 0;
+              ans.teacherComment = item.teacherComment?.trim() || null;
+            }
+            calculatedTotalScore += Number(item.awardedPoints) || 0;
+          }
         }
+
+        sub.teacherFeedback = data.teacherFeedback?.trim() || null;
+        sub.feedback = data.teacherFeedback?.trim() || null;
+
+        if (isDraftMode) {
+          return {
+            success: true,
+            totalScore: sub.score ?? null,
+            status: sub.status,
+          };
+        }
+
+        if (!allSubjectiveComplete) {
+          sub.status = "SUBMITTED";
+          sub.score = null;
+          return {
+            success: false,
+            status: "SUBMITTED",
+            error:
+              "Bài Writing/Speaking bắt buộc phải nhập đủ điểm của cả 4 tiêu chí IELTS trước khi hoàn tất chấm (Quy tắc BR-07)!",
+          };
+        }
+
         sub.score = calculatedTotalScore;
         sub.status = "GRADED";
-        sub.teacherFeedback = data.teacherFeedback?.trim() || null;
-        return { success: true, totalScore: calculatedTotalScore };
+        sub.gradedById = gradedById;
+        sub.gradedAt = new Date().toISOString();
+        return { success: true, totalScore: calculatedTotalScore, status: "GRADED" };
       }
     }
-    return { success: true, totalScore: 0 };
+    return { success: true, totalScore: 0, status: isDraftMode ? "SUBMITTED" : "GRADED" };
+  }
+
+  const existingSub = await prisma.assignmentSubmission.findUnique({
+    where: { id: data.submissionId },
+    include: {
+      assignment: true,
+      answers: {
+        include: { question: true },
+      },
+    },
+  });
+
+  if (!existingSub) {
+    return { success: false, error: "Không tìm thấy bài nộp để chấm điểm!" };
   }
 
   let calculatedTotalScore = 0;
 
   for (const item of data.gradedAnswers) {
-    await prisma.submissionAnswer.update({
+    const dbAns = existingSub.answers.find((a) => a.id === item.answerId);
+    const qType = dbAns?.question?.type;
+    const isSubjective = qType === "ESSAY" || qType === "SPEAKING_RECORD";
+
+    let finalAwardedPoints = Number(item.awardedPoints) || 0;
+
+    if (isSubjective && item.criteriaScores !== undefined) {
+      const band = calculateCriteriaBand(item.criteriaScores.map((c) => Number(c.score)));
+      if (!isDraftMode && band === null) {
+        return {
+          success: false,
+          status: "SUBMITTED",
+          error:
+            "Bài Writing/Speaking bắt buộc phải nhập đủ cả 4 tiêu chí IELTS (0.0 - 9.0) để chuyển trạng thái Đã chấm (Quy tắc BR-07)!",
+        };
+      }
+      if (band !== null) {
+        finalAwardedPoints = band;
+      }
+
+      // Lưu chi tiết 4 tiêu chí vào bảng submission_criteria_scores
+      for (const crit of item.criteriaScores) {
+        await prisma.submissionCriteriaScore.upsert({
+          where: {
+            submissionAnswerId_criterion: {
+              submissionAnswerId: item.answerId,
+              criterion: crit.criterion,
+            },
+          },
+          update: {
+            score: Number(crit.score),
+            comment: crit.comment?.trim() || null,
+          },
+          create: {
+            submissionAnswerId: item.answerId,
+            criterion: crit.criterion,
+            score: Number(crit.score),
+            comment: crit.comment?.trim() || null,
+          },
+        });
+      }
+    }
+
+    const updateData: any = {
+      awardedPoints: finalAwardedPoints,
+      teacherComment: item.teacherComment?.trim() || null,
+    };
+    if (item.gradingAnnotations !== undefined) {
+      updateData.gradingAnnotations = item.gradingAnnotations;
+    }
+
+    await (prisma.submissionAnswer as any).update({
       where: { id: item.answerId },
-      data: {
-        awardedPoints: Number(item.awardedPoints) || 0,
-        teacherComment: item.teacherComment?.trim() || null,
-      },
+      data: updateData,
     });
-    calculatedTotalScore += Number(item.awardedPoints) || 0;
+    calculatedTotalScore += finalAwardedPoints;
   }
 
   await prisma.assignmentSubmission.update({
     where: { id: data.submissionId },
     data: {
-      score: calculatedTotalScore,
-      status: "GRADED",
+      score: isDraftMode ? existingSub.score : calculatedTotalScore,
+      status: isDraftMode ? existingSub.status : "GRADED",
       teacherFeedback: data.teacherFeedback?.trim() || null,
       gradedById,
     },
   });
 
-  return { success: true, totalScore: calculatedTotalScore };
+  return {
+    success: true,
+    totalScore: isDraftMode ? existingSub.score : calculatedTotalScore,
+    status: isDraftMode ? existingSub.status : "GRADED",
+  };
 }

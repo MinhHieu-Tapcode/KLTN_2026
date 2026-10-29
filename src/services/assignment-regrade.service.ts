@@ -1,5 +1,5 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
-import { isAnswerCorrect, isObjectiveType } from "@/lib/grading";
+import { isAnswerCorrect, isObjectiveOnly, isObjectiveType } from "@/lib/grading";
 
 const globalAssignmentsStore = globalThis as unknown as {
   demoAssignments?: any[];
@@ -7,7 +7,7 @@ const globalAssignmentsStore = globalThis as unknown as {
 
 /**
  * Tự động chấm lại toàn bộ bài nộp trắc nghiệm khi Giáo viên/Admin sửa đáp án
- * Hỗ trợ lọc theo lớp học cụ thể hoặc áp dụng cho toàn bộ các lớp đã giao bài.
+ * Bảo toàn trạng thái SUBMITTED của bài có câu tự luận/nói chưa chấm xong (BR-07, BR-08, BR-13).
  */
 export async function regradeAssignmentSubmissionsService(
   assignmentId: string,
@@ -26,6 +26,7 @@ export async function regradeAssignmentSubmissionsService(
       return { success: false, regradedCount: 0, error: "Không tìm thấy bài tập để chấm lại!" };
     }
 
+    const objectiveOnly = isObjectiveOnly(assign.questions || []);
     let count = 0;
     const submissions = (assign.submissions || []).filter((s: any) => {
       if (!classId) return true;
@@ -48,8 +49,10 @@ export async function regradeAssignmentSubmissionsService(
           totalScore += ans.awardedPoints;
         }
       }
-      sub.score = totalScore;
-      sub.status = "GRADED";
+      if (objectiveOnly || sub.status === "GRADED") {
+        sub.score = totalScore;
+        sub.status = "GRADED";
+      }
       count++;
     }
 
@@ -72,6 +75,8 @@ export async function regradeAssignmentSubmissionsService(
   if (!assignment) {
     return { success: false, regradedCount: 0, error: "Không tìm thấy bài tập để chấm lại!" };
   }
+
+  const objectiveOnly = isObjectiveOnly(assignment.questions);
 
   const whereSubmissions: any = {
     assignmentId,
@@ -116,11 +121,12 @@ export async function regradeAssignmentSubmissionsService(
       }
     }
 
+    const shouldBeGraded = objectiveOnly || sub.status === "GRADED";
     await prisma.assignmentSubmission.update({
       where: { id: sub.id },
       data: {
-        score: recalculatedScore,
-        status: "GRADED",
+        score: shouldBeGraded ? recalculatedScore : null,
+        status: shouldBeGraded ? "GRADED" : "SUBMITTED",
       },
     });
     count++;

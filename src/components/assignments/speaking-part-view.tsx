@@ -6,7 +6,7 @@ interface SpeakingPartViewProps {
   part: "PART_1" | "PART_2" | "PART_3";
   questionText: string;
   cueCardBulletPoints?: string[];
-  onRecordingComplete?: (audioBlob: Blob, durationSec: number) => void;
+  onRecordingComplete?: (audioBlob: Blob, durationSec: number, dataUrl?: string) => void;
   disabled?: boolean;
 }
 export function SpeakingPartView({
@@ -70,9 +70,13 @@ export function SpeakingPartView({
       };
       recorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        const url = URL.createObjectURL(audioBlob);
-        setAudioUrl(url);
-        onRecordingComplete?.(audioBlob, recordSeconds);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const dataUrl = typeof reader.result === "string" ? reader.result : URL.createObjectURL(audioBlob);
+          setAudioUrl(dataUrl);
+          onRecordingComplete?.(audioBlob, recordSeconds, dataUrl);
+        };
+        reader.readAsDataURL(audioBlob);
       };
       recorder.start();
       setIsRecording(true);
@@ -118,85 +122,6 @@ export function SpeakingPartView({
                 {questionText || "Do you live in a house or an apartment? Why do you prefer it?"}
               </p>
             </div>
-          </div>
-          {/* Khung ghi âm micro với sóng âm */}
-          <div className="p-5 rounded-2xl border border-slate-200 bg-white text-center space-y-3.5 shadow-2xs">
-            {/* Hiệu ứng sóng âm */}
-            <div className="flex items-center justify-center gap-1.5 h-12">
-              {[4, 8, 14, 22, 16, 26, 12, 18, 24, 10, 6, 16, 20, 8].map((height, i) => (
-                <div
-                  key={i}
-                  style={{ height: isRecording ? `${Math.max(6, (height * (recordSeconds % 3 + 1)) % 32)}px` : "6px" }}
-                  className={`w-1 rounded-full transition-all duration-200 ${
-                    isRecording ? "bg-[#EA580C]" : "bg-slate-200"
-                  }`}
-                />
-              ))}
-            </div>
-            <div className="text-xs font-semibold text-slate-600">
-              {isRecording ? (
-                <span className="text-[#EA580C] animate-pulse font-bold">● Đang ghi âm bài nói...</span>
-              ) : audioUrl ? (
-                <span className="text-emerald-700 font-bold">Đã ghi âm xong bài nói</span>
-              ) : (
-                <span>Nhấn nút bên dưới để bắt đầu trả lời</span>
-              )}
-            </div>
-            <div className="text-sm font-mono font-bold text-slate-800">
-              {formatTimer(recordSeconds)} / 02:00
-            </div>
-            {/* Nút thao tác ghi âm */}
-            <div className="flex items-center justify-center gap-2 pt-1">
-              {!isRecording ? (
-                <Button
-                  type="button"
-                  onClick={startRecording}
-                  disabled={disabled}
-                  className="bg-[#EA580C] hover:bg-[#c2410c] text-white text-xs font-bold rounded-xl px-4 py-2 gap-1.5 shadow-sm"
-                >
-                  <Mic className="size-3.5" />
-                  Bắt đầu ghi âm
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={stopRecording}
-                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl px-4 py-2 gap-1.5 shadow-sm"
-                >
-                  <Square className="size-3.5 fill-white" />
-                  Dừng ghi âm
-                </Button>
-              )}
-              {audioUrl && !isRecording && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    if (playbackAudioRef.current) {
-                      if (isPlayingBack) {
-                        playbackAudioRef.current.pause();
-                        setIsPlayingBack(false);
-                      } else {
-                        playbackAudioRef.current.play();
-                        setIsPlayingBack(true);
-                      }
-                    }
-                  }}
-                  className="border-slate-300 text-xs font-semibold rounded-xl px-3 gap-1.5 text-slate-700 hover:bg-slate-50"
-                >
-                  {isPlayingBack ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                  {isPlayingBack ? "Tạm dừng" : "Nghe lại"}
-                </Button>
-              )}
-            </div>
-            {audioUrl && (
-              <audio
-                ref={playbackAudioRef}
-                src={audioUrl}
-                onEnded={() => setIsPlayingBack(false)}
-                className="hidden"
-              />
-            )}
           </div>
         </div>
       ) : (
@@ -268,6 +193,88 @@ export function SpeakingPartView({
           </div>
         </div>
       )}
+
+      {/* Khung ghi âm micro dùng chung cho cả Part 1, Part 2 và Part 3 */}
+      <div className="p-5 rounded-2xl border border-slate-200 bg-white text-center space-y-3.5 shadow-2xs">
+        <div className="flex items-center justify-center gap-1.5 h-12">
+          {[4, 8, 14, 22, 16, 26, 12, 18, 24, 10, 6, 16, 20, 8].map((height, i) => (
+            <div
+              key={i}
+              style={{
+                height: isRecording
+                  ? `${Math.max(6, (height * ((recordSeconds % 3) + 1)) % 32)}px`
+                  : "6px",
+              }}
+              className={`w-1 rounded-full transition-all duration-200 ${
+                isRecording ? "bg-[#EA580C]" : "bg-slate-200"
+              }`}
+            />
+          ))}
+        </div>
+        <div className="text-xs font-semibold text-slate-600">
+          {isRecording ? (
+            <span className="text-[#EA580C] animate-pulse font-bold">● Đang ghi âm bài nói...</span>
+          ) : audioUrl ? (
+            <span className="text-emerald-700 font-bold">Đã ghi âm xong bài nói</span>
+          ) : (
+            <span>Nhấn nút bên dưới để bắt đầu thu âm trả lời</span>
+          )}
+        </div>
+        <div className="text-sm font-mono font-bold text-slate-800">
+          {formatTimer(recordSeconds)} / 02:00
+        </div>
+        <div className="flex items-center justify-center gap-2 pt-1">
+          {!isRecording ? (
+            <Button
+              type="button"
+              onClick={startRecording}
+              disabled={disabled}
+              className="bg-[#EA580C] hover:bg-[#c2410c] text-white text-xs font-bold rounded-xl px-4 py-2 gap-1.5 shadow-sm"
+            >
+              <Mic className="size-3.5" />
+              Bắt đầu ghi âm
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={stopRecording}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl px-4 py-2 gap-1.5 shadow-sm"
+            >
+              <Square className="size-3.5 fill-white" />
+              Dừng ghi âm
+            </Button>
+          )}
+          {audioUrl && !isRecording && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (playbackAudioRef.current) {
+                  if (isPlayingBack) {
+                    playbackAudioRef.current.pause();
+                    setIsPlayingBack(false);
+                  } else {
+                    playbackAudioRef.current.play();
+                    setIsPlayingBack(true);
+                  }
+                }
+              }}
+              className="border-slate-300 text-xs font-semibold rounded-xl px-3 gap-1.5 text-slate-700 hover:bg-slate-50"
+            >
+              {isPlayingBack ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+              {isPlayingBack ? "Tạm dừng" : "Nghe lại"}
+            </Button>
+          )}
+        </div>
+        {audioUrl && (
+          <audio
+            ref={playbackAudioRef}
+            src={audioUrl}
+            onEnded={() => setIsPlayingBack(false)}
+            className="hidden"
+          />
+        )}
+      </div>
     </div>
   );
 }

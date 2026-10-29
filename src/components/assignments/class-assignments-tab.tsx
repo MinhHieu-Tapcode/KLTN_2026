@@ -1,54 +1,24 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useRef } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import {
   FileText,
   Plus,
   Clock,
   Calendar,
-  AlertTriangle,
   ShieldAlert,
   ShieldCheck,
-  CheckCircle2,
-  Music,
   Eye,
   Trash2,
-  Edit3,
   Loader2,
-  FileSpreadsheet,
-  Upload,
   BookOpen,
-  Send,
   Sparkles,
-  ArrowRight,
   ArrowLeft,
-  Volume2,
-  Check,
-  AlertCircle,
-  X,
   UserCheck,
-  Copy,
-  Headphones,
-  HelpCircle,
-  Download,
-  Layers,
-  Mic,
-  PenTool,
   RefreshCw,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   getClassAssignmentsAction,
   getAssignmentDetailAction,
@@ -63,6 +33,24 @@ import { IeltsExamPlayer } from "@/components/assignments/ielts-exam-player";
 import { SmartParserModal } from "@/components/assignments/exam-parser";
 import { StudentSubmissionReviewModal } from "@/components/assignments/student-submission-review-modal";
 import { IeltsTemplatesShowcase } from "@/components/assignments/ielts-templates-showcase";
+import {
+  IELTS_QUESTION_TYPES,
+  ManualAssignmentBuilderModal,
+} from "@/components/assignments/manual-assignment-builder-modal";
+import {
+  TeacherGradingAnswerState,
+  TeacherGradingModal,
+} from "@/components/assignments/teacher-grading-modal";
+import {
+  AssignmentAlertModal,
+  ConfirmDeleteAssignmentModal,
+  ConfirmRegradeAssignmentModal,
+  CreateModeChoiceModal,
+  ExamResultModal,
+  TabSwitchWarningModal,
+} from "@/components/assignments/assignment-action-modals";
+
+export { IELTS_QUESTION_TYPES };
 
 interface ClassAssignmentsTabProps {
   classId: string;
@@ -76,17 +64,6 @@ interface ClassAssignmentsTabProps {
   mode?: "inside-class" | "inside-global";
 }
 
-// 7 Dạng câu hỏi IELTS chuẩn quốc tế
-export const IELTS_QUESTION_TYPES = [
-  { value: "MULTIPLE_CHOICE", label: "Trắc nghiệm 1 đáp án (A, B, C, D)" },
-  { value: "MULTIPLE_CHOICE_MULTI", label: "Trắc nghiệm nhiều đáp án (Chọn 2-3 đáp án)" },
-  { value: "TRUE_FALSE_NG", label: "True / False / Not Given" },
-  { value: "FILL_IN_BLANK", label: "Điền từ vào chỗ trống (Fill in the Blank)" },
-  { value: "MATCHING", label: "Nối thông tin / Tiêu đề (Matching Headings)" },
-  { value: "ESSAY", label: "Tự luận Viết (Writing Task 1 & 2)" },
-  { value: "SPEAKING_RECORD", label: "Ghi âm Nói (Speaking Part 1, 2, 3)" },
-];
-
 export function ClassAssignmentsTab({
   classId,
   className,
@@ -98,7 +75,6 @@ export function ClassAssignmentsTab({
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
 
-  // Custom Alert & Confirm Modals (thay thế hoàn toàn alert/confirm native)
   const [alertModal, setAlertModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -130,27 +106,30 @@ export function ClassAssignmentsTab({
     setAlertModal({ isOpen: true, title, message, type });
   };
 
-  // Mode chọn cách tạo bài mới: null | "choice" | "manual" | "smart_parser"
   const [createMode, setCreateMode] = useState<null | "choice" | "manual" | "smart_parser">(null);
   const [isTemplatesShowcaseOpen, setIsTemplatesShowcaseOpen] = useState(false);
 
   // Form State: Tạo bài thủ công (Manual Builder)
   const [manualTitle, setManualTitle] = useState("");
   const [manualDesc, setManualDesc] = useState("");
-  const [manualSkill, setManualSkill] = useState<"READING" | "LISTENING" | "WRITING" | "SPEAKING" | "ALL_SKILLS">("READING");
-  const [manualType, setManualType] = useState<"HOMEWORK" | "QUIZ" | "MIDTERM" | "MOCK_EXAM">("HOMEWORK");
+  const [manualSkill, setManualSkill] = useState<
+    "READING" | "LISTENING" | "WRITING" | "SPEAKING" | "ALL_SKILLS"
+  >("READING");
+  const [manualType] = useState<"HOMEWORK" | "QUIZ" | "MIDTERM" | "MOCK_EXAM">("HOMEWORK");
   const [manualDuration, setManualDuration] = useState<number>(60);
   const [manualDueDate, setManualDueDate] = useState("");
+  const [manualStartDate, setManualStartDate] = useState("");
   const [manualAudioUrl, setManualAudioUrl] = useState("");
   const [manualAudioFileName, setManualAudioFileName] = useState("");
   const [manualAudioFileSize, setManualAudioFileSize] = useState("");
   const [manualAudioSourceType, setManualAudioSourceType] = useState<"file" | "url">("file");
-  const [manualEnableProctoring, setManualEnableProctoring] = useState(true);
-  const [manualMaxTabSwitches, setManualMaxTabSwitches] = useState(3);
+  const [manualEnableProctoring] = useState(true);
+  const [manualMaxTabSwitches] = useState(3);
   const [manualQuestions, setManualQuestions] = useState<any[]>([
     {
       questionNumber: 1,
-      passageText: "Đoạn văn tham chiếu: Architecture has always been an accurate reflection of cultural values...",
+      passageText:
+        "Đoạn văn tham chiếu: Architecture has always been an accurate reflection of cultural values...",
       prompt: "What is considered an accurate reflection of cultural values in human history?",
       type: "MULTIPLE_CHOICE",
       points: 1.0,
@@ -165,8 +144,10 @@ export function ClassAssignmentsTab({
     },
     {
       questionNumber: 2,
-      passageText: "Lưu ý: Choose TRUE if the statement agrees with the information, FALSE if it contradicts, or NOT GIVEN if there is no information.",
-      prompt: "The concept 'form follows function' was championed by Le Corbusier in the early twentieth century.",
+      passageText:
+        "Lưu ý: Choose TRUE if the statement agrees with the information, FALSE if it contradicts, or NOT GIVEN if there is no information.",
+      prompt:
+        "The concept 'form follows function' was championed by Le Corbusier in the early twentieth century.",
       type: "TRUE_FALSE_NG",
       points: 1.0,
       correctAnswer: "TRUE",
@@ -192,7 +173,9 @@ export function ClassAssignmentsTab({
   const [gradingAssignment, setGradingAssignment] = useState<any | null>(null);
   const [submissionsList, setSubmissionsList] = useState<any[]>([]);
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
-  const [teacherGradingAnswers, setTeacherGradingAnswers] = useState<Record<string, { points: number; comment: string }>>({});
+  const [teacherGradingAnswers, setTeacherGradingAnswers] = useState<
+    Record<string, TeacherGradingAnswerState>
+  >({});
   const [overallFeedback, setOverallFeedback] = useState("");
 
   const canManage =
@@ -200,7 +183,6 @@ export function ClassAssignmentsTab({
     currentUser.role === "TEACHER" ||
     currentUser.role === "SCHOOL_MANAGER";
 
-  // Tải danh sách bài tập
   const loadAssignments = async () => {
     setIsLoading(true);
     const res = await getClassAssignmentsAction(classId);
@@ -214,7 +196,6 @@ export function ClassAssignmentsTab({
     loadAssignments();
   }, [classId]);
 
-  // Xử lý Xóa bài tập (Hỗ trợ phân tách xóa 1 lớp vs xóa tất cả các lớp)
   const handleDeleteAssignment = (assignment: any) => {
     setConfirmDeleteModal({
       isOpen: true,
@@ -254,7 +235,6 @@ export function ClassAssignmentsTab({
     });
   };
 
-  // Xử lý Chấm lại bài nộp trắc nghiệm theo đáp án mới
   const handlePromptRegrade = (item: any) => {
     setRegradeModal({
       isOpen: true,
@@ -280,12 +260,15 @@ export function ClassAssignmentsTab({
     });
   };
 
-  // Xử lý tải tệp Audio nghe từ máy tính cho Manual Builder
   const handleManualAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.includes("audio") && !file.name.match(/\.(mp3|wav|m4a|aac|ogg)$/i)) {
-      showAlert("Định dạng không hợp lệ", "Vui lòng chọn tệp âm thanh định dạng .mp3, .wav, .m4a hoặc .aac!", "warning");
+      showAlert(
+        "Định dạng không hợp lệ",
+        "Vui lòng chọn tệp âm thanh định dạng .mp3, .wav, .m4a hoặc .aac!",
+        "warning"
+      );
       return;
     }
     const blobUrl = URL.createObjectURL(file);
@@ -294,7 +277,6 @@ export function ClassAssignmentsTab({
     setManualAudioFileSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
   };
 
-  // Lưu tạo bài thủ công
   const handleSaveManualAssignment = () => {
     if (!manualTitle.trim()) {
       showAlert("Thiếu tiêu đề bài tập", "Vui lòng nhập tên/tiêu đề cho bài tập!", "warning");
@@ -325,6 +307,7 @@ export function ClassAssignmentsTab({
         type: manualType,
         durationMinutes: manualDuration,
         dueDate: manualDueDate || null,
+        startDate: manualStartDate || null,
         audioUrl: manualAudioUrl.trim() || null,
         enableProctoring: manualEnableProctoring,
         maxTabSwitches: manualMaxTabSwitches,
@@ -346,6 +329,8 @@ export function ClassAssignmentsTab({
     setManualTitle("");
     setManualDesc("");
     setManualSkill("READING");
+    setManualDueDate("");
+    setManualStartDate("");
     setManualAudioUrl("");
     setManualAudioFileName("");
     setManualAudioFileSize("");
@@ -368,7 +353,6 @@ export function ClassAssignmentsTab({
     ]);
   };
 
-  // Thêm một câu hỏi mới vào danh sách Manual
   const handleAddQuestion = (type: string = "MULTIPLE_CHOICE") => {
     const nextNum = manualQuestions.length + 1;
     let initialOptions: any[] = [];
@@ -415,7 +399,6 @@ export function ClassAssignmentsTab({
     ]);
   };
 
-  // Nhân bản câu hỏi
   const handleDuplicateQuestion = (idx: number) => {
     const target = manualQuestions[idx];
     const duplicated = {
@@ -426,7 +409,6 @@ export function ClassAssignmentsTab({
     setManualQuestions([...manualQuestions, duplicated]);
   };
 
-  // Xóa câu hỏi
   const handleDeleteQuestion = (idx: number) => {
     if (manualQuestions.length <= 1) {
       showAlert("Không thể xóa", "Bài tập phải có tối thiểu 1 câu hỏi!", "warning");
@@ -438,7 +420,6 @@ export function ClassAssignmentsTab({
     setManualQuestions(updated);
   };
 
-  // Mở màn hình làm bài cho học viên
   const handleStartExam = async (assignmentId: string) => {
     setIsLoading(true);
     const res = await getAssignmentDetailAction(assignmentId);
@@ -454,7 +435,6 @@ export function ClassAssignmentsTab({
     setIsLoading(false);
   };
 
-  // Giám sát chuyển tab (Anti-cheating / Page Visibility API)
   useEffect(() => {
     if (!examAssignment || isExamFinished || !examAssignment.enableProctoring) return;
 
@@ -463,7 +443,6 @@ export function ClassAssignmentsTab({
         setTabSwitchCount((prev) => {
           const nextCount = prev + 1;
           setShowWarningModal(true);
-          // Không tự động thu bài khi làm bài tập, chỉ ghi nhận số lần out tab
           return nextCount;
         });
       }
@@ -473,7 +452,6 @@ export function ClassAssignmentsTab({
       setTabSwitchCount((prev) => {
         const nextCount = prev + 1;
         setShowWarningModal(true);
-        // Không tự động thu bài khi làm bài tập, chỉ ghi nhận số lần out tab
         return nextCount;
       });
     };
@@ -487,23 +465,32 @@ export function ClassAssignmentsTab({
     };
   }, [examAssignment, isExamFinished]);
 
-  // Nộp bài thi
-  const handleSubmitExam = (forceCheatingCount?: number, reason?: string, customAnswers?: Record<string, any>) => {
+  const handleSubmitExam = (
+    forceCheatingCount?: number,
+    reason?: string,
+    customAnswers?: Record<string, any>
+  ) => {
     if (!examAssignment) return;
 
     const activeAnswers = customAnswers || studentAnswers;
-    const answersArray = examAssignment.questions.map((q: any) => ({
-      questionId: q.id,
-      studentAnswer: activeAnswers[q.id] || activeAnswers[`q_${q.questionNumber}`] || "",
-    }));
+    const answersArray = examAssignment.questions.map((q: any) => {
+      const rawVal = activeAnswers[q.id] || activeAnswers[`q_${q.questionNumber}`] || "";
+      const isSpeaking = q.type === "SPEAKING_RECORD" || examAssignment.skill === "SPEAKING";
+      return {
+        questionId: q.id,
+        studentAnswer: isSpeaking ? "" : rawVal,
+        audioUrl: isSpeaking ? rawVal : undefined,
+      };
+    });
 
     const finalTabCount = forceCheatingCount !== undefined ? forceCheatingCount : tabSwitchCount;
-    // Không gắn cờ gian lận / khóa bài đối với bài tập luyện tập, chỉ lưu số lần chuyển tab để giáo viên theo dõi
-    const isCheated = false;
+    const maxTabs = examAssignment.maxTabSwitches || 3;
+    const isCheated = Boolean(finalTabCount > maxTabs || reason === "VIOLATED_TAB_SWITCH_LIMIT");
 
     startTransition(async () => {
       const res = await submitAssignmentAction({
         assignmentId: examAssignment.id,
+        classId,
         answers: answersArray,
         tabSwitchCount: finalTabCount,
         isCheatingFlagged: isCheated,
@@ -526,19 +513,24 @@ export function ClassAssignmentsTab({
     });
   };
 
-  const handleAutoSubmit = (violationCount: number, reason: string) => {
-    handleSubmitExam(violationCount, reason);
-  };
-
-  // Mở màn hình chấm bài của giáo viên
-  const handleOpenGradingView = async (assignment: any) => {
+  const handleOpenGradingView = async (assignment: any, preferredNextAfterId?: string) => {
     setGradingAssignment(assignment);
     setIsLoading(true);
     const res = await getSubmissionsForAssignmentAction(assignment.id);
     if (res.success) {
-      setSubmissionsList(res.submissions || []);
-      if (res.submissions && res.submissions.length > 0) {
-        selectSubmissionForGrading(res.submissions[0]);
+      const list = res.submissions || [];
+      setSubmissionsList(list);
+      if (list.length > 0) {
+        if (preferredNextAfterId) {
+          const nextPending = list.find(
+            (s: any) => s.id !== preferredNextAfterId && s.status !== "GRADED"
+          );
+          const currentUpdated = list.find((s: any) => s.id === preferredNextAfterId);
+          selectSubmissionForGrading(nextPending || currentUpdated || list[0]);
+        } else {
+          const firstPending = list.find((s: any) => s.status !== "GRADED");
+          selectSubmissionForGrading(firstPending || list[0]);
+        }
       }
     }
     setIsLoading(false);
@@ -546,43 +538,87 @@ export function ClassAssignmentsTab({
 
   const selectSubmissionForGrading = (sub: any) => {
     setSelectedSubmission(sub);
-    const initialGrading: Record<string, { points: number; comment: string }> = {};
+    const initialGrading: Record<string, TeacherGradingAnswerState> = {};
     (sub.answers || []).forEach((ans: any) => {
+      const critMap: Record<string, number | null> = {};
+      const critCommentsMap: Record<string, string> = {};
+      if (Array.isArray(ans.criteriaScores)) {
+        ans.criteriaScores.forEach((cs: any) => {
+          const code = cs?.criterion || cs?.criterionCode;
+          const scoreVal = typeof cs?.score === "number" ? cs.score : cs?.bandScore;
+          if (code && typeof scoreVal === "number") {
+            critMap[code] = scoreVal;
+          }
+          if (code && cs?.comment) {
+            critCommentsMap[code] = cs.comment;
+          }
+        });
+      }
       initialGrading[ans.id] = {
         points: ans.awardedPoints || 0,
         comment: ans.teacherComment || "",
+        criteriaScores: critMap,
+        criteriaComments: critCommentsMap,
+        annotations: ans.gradingAnnotations?.annotations || [],
+        speakingTranscript: ans.gradingAnnotations?.speakingTranscript || null,
       };
     });
     setTeacherGradingAnswers(initialGrading);
     setOverallFeedback(sub.teacherFeedback || "");
   };
 
-  const handleSaveGrading = () => {
+  const handleSaveGrading = (isDraft: boolean = false) => {
     if (!selectedSubmission) return;
 
     startTransition(async () => {
-      const gradedArray = Object.entries(teacherGradingAnswers).map(([ansId, val]) => ({
-        answerId: ansId,
-        awardedPoints: Number(val.points) || 0,
-        teacherComment: val.comment,
-      }));
+      const gradedArray = Object.entries(teacherGradingAnswers).map(([ansId, val]) => {
+        const critEntries = Object.entries(val.criteriaScores || {}).filter(
+          ([, s]) => typeof s === "number" && Number.isFinite(s)
+        ) as Array<[string, number]>;
+        return {
+          answerId: ansId,
+          awardedPoints: Number(val.points) || 0,
+          teacherComment: val.comment,
+          criteriaScores:
+            critEntries.length > 0
+              ? critEntries.map(([criterion, score]) => ({
+                  criterion,
+                  score,
+                  comment: val.criteriaComments?.[criterion] || "",
+                }))
+              : undefined,
+          gradingAnnotations: {
+            annotations: val.annotations || [],
+            speakingTranscript: val.speakingTranscript || null,
+          },
+        };
+      });
 
       const res = await gradeSubmissionAction({
         submissionId: selectedSubmission.id,
+        isDraft,
         gradedAnswers: gradedArray,
         teacherFeedback: overallFeedback,
       });
 
       if (res.success) {
-        showAlert("Đã lưu chấm bài", "Kết quả chấm điểm và nhận xét của giáo viên đã được cập nhật thành công!", "success");
-        handleOpenGradingView(gradingAssignment);
+        showAlert(
+          isDraft ? "Đã lưu nháp" : "Đã hoàn tất chấm bài",
+          isDraft
+            ? "Đã lưu nháp điểm, nhận xét và các ghi chú trên bài làm!"
+            : "Kết quả chấm điểm 4 tiêu chí và các ghi chú trên bài đã được lưu thành công!",
+          "success"
+        );
+        handleOpenGradingView(
+          gradingAssignment,
+          isDraft ? undefined : selectedSubmission.id
+        );
       } else {
         showAlert("Lỗi lưu điểm", res.error || "Lưu kết quả chấm bài thất bại!", "error");
       }
     });
   };
 
-  // Badge Kỹ năng
   const renderSkillBadge = (skill: string) => {
     switch (skill) {
       case "READING":
@@ -600,9 +636,7 @@ export function ClassAssignmentsTab({
 
   return (
     <div className="space-y-6">
-      {/* ========================================================
-          1. HEADER & THỐNG KÊ NHANH
-          ======================================================== */}
+      {/* 1. HEADER & THỐNG KÊ NHANH */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <h2 className="text-lg font-bold text-slate-900">
@@ -624,7 +658,7 @@ export function ClassAssignmentsTab({
               <ArrowLeft className="size-3.5" /> Quay lại danh sách lớp
             </Button>
           )}
-                    <Button
+          <Button
             size="sm"
             variant="outline"
             onClick={() => setIsTemplatesShowcaseOpen(true)}
@@ -645,7 +679,7 @@ export function ClassAssignmentsTab({
         </div>
       </div>
 
-      {/* Danh sách Thẻ bài tập */}
+      {/* 2. DANH SÁCH THẺ BÀI TẬP */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-slate-200 shadow-sm text-slate-500 gap-2">
           <Loader2 className="size-6 animate-spin text-[#EA580C]" />
@@ -655,7 +689,9 @@ export function ClassAssignmentsTab({
         <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-500 space-y-3">
           <FileText className="size-10 mx-auto text-slate-300" />
           <p className="text-sm font-semibold text-slate-700">Chưa có bài tập nào được giao cho lớp này.</p>
-          <p className="text-xs text-slate-400">Giáo viên có thể tạo thủ công từng câu hỏi hoặc bóc tách tự động từ file đề thi IELTS.</p>
+          <p className="text-xs text-slate-400">
+            Giáo viên có thể tạo thủ công từng câu hỏi hoặc bóc tách tự động từ file đề thi IELTS.
+          </p>
           {canManage && (
             <Button
               onClick={() => setCreateMode("choice")}
@@ -676,7 +712,10 @@ export function ClassAssignmentsTab({
                 <div className="flex items-start justify-between gap-2">
                   {renderSkillBadge(item.skill)}
                   {item.enableProctoring && (
-                    <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-600 border-slate-200 flex items-center gap-1">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-slate-50 text-slate-600 border-slate-200 flex items-center gap-1"
+                    >
                       <ShieldCheck className="size-3 text-emerald-600" /> Giám sát chuyển tab
                     </Badge>
                   )}
@@ -694,7 +733,9 @@ export function ClassAssignmentsTab({
                   </div>
                   <div className="flex items-center gap-1.5">
                     <BookOpen className="size-3.5 text-slate-400" />
-                    <span>{item.questionCount} câu • {item.totalPoints}đ</span>
+                    <span>
+                      {item.questionCount} câu • {item.totalPoints}đ
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5 col-span-2">
                     <Calendar className="size-3.5 text-slate-400" />
@@ -712,30 +753,56 @@ export function ClassAssignmentsTab({
                 )}
               </div>
 
-              {/* Action buttons */}
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                 {currentUser.role === "STUDENT" ? (
                   item.mySubmission ? (
-                    <div className="w-full flex items-center justify-between gap-2">
+                    <div className="w-full flex items-center justify-between gap-2 flex-wrap">
                       {item.mySubmission.status === "GRADED" ? (
                         <Badge className="bg-emerald-600 text-white text-[11px] font-semibold px-2.5 py-1">
-                          Đã có điểm: {item.mySubmission.score ?? 0} / {item.totalPoints}đ
+                          Đã chấm: {item.mySubmission.score ?? 0}/{item.totalPoints}đ
+                          {item.mySubmission.estimatedBand
+                            ? ` (Band ~${item.mySubmission.estimatedBand.toFixed(1)})`
+                            : ""}
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-[11px] px-2 py-0.5 font-medium">
-                          <Clock className="size-3 mr-1" /> Đã nộp (Chờ chấm)
+                        <Badge
+                          variant="outline"
+                          className="bg-amber-50 text-amber-700 border-amber-300 text-[11px] px-2 py-0.5 font-medium"
+                        >
+                          <Clock className="size-3 mr-1" /> Chờ chấm (BR-08)
                         </Badge>
                       )}
 
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setReviewAssignmentId(item.id)}
-                        className="text-xs rounded-xl border-orange-200 text-[#EA580C] hover:bg-orange-50 font-semibold gap-1 ml-auto"
-                      >
-                        <Eye className="size-3.5" /> Xem bài & Lời phê
-                      </Button>
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        {!item.isOverdue &&
+                          (item.myAttemptCount || 1) < (item.maxAttempts || 2) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleStartExam(item.id)}
+                              className="text-xs rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold"
+                            >
+                              Làm lại (Lần {(item.myAttemptCount || 1) + 1})
+                            </Button>
+                          )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setReviewAssignmentId(item.id)}
+                          className="text-xs rounded-xl border-orange-200 text-[#EA580C] hover:bg-orange-50 font-semibold gap-1"
+                        >
+                          <Eye className="size-3.5" /> Xem bài & Lời phê
+                        </Button>
+                      </div>
                     </div>
+                  ) : item.isOverdue ? (
+                    <Button
+                      size="sm"
+                      disabled
+                      className="w-full text-xs rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-semibold gap-1.5 opacity-90 cursor-not-allowed"
+                    >
+                      <Clock className="size-3.5" /> Đã quá hạn nộp bài (Khóa nộp - BR-05)
+                    </Button>
                   ) : (
                     <Button
                       size="sm"
@@ -791,605 +858,42 @@ export function ClassAssignmentsTab({
         </div>
       )}
 
-      {/* ========================================================
-          MODAL: CHỌN CÁCH GIAO BÀI (MANUAL VS SMART PARSER)
-          ======================================================== */}
-      <Dialog open={createMode === "choice"} onOpenChange={() => setCreateMode(null)}>
-        <DialogContent className="max-w-md rounded-2xl p-6">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900">
-              Chọn phương thức giao bài tập IELTS
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Hệ thống hỗ trợ soạn thủ công từng câu hỏi hoặc bóc tách thông minh từ file đề thi.
-            </DialogDescription>
-          </DialogHeader>
+      {/* 3. MODALS TẠO ĐỀ, LÀM BÀI, CHẤM BÀI & THÔNG BÁO */}
+      <CreateModeChoiceModal
+        open={createMode === "choice"}
+        onClose={() => setCreateMode(null)}
+        onSelectMode={(nextMode) => setCreateMode(nextMode)}
+      />
 
-          <div className="grid grid-cols-1 gap-3 py-3">
-            <button
-              onClick={() => setCreateMode("manual")}
-              className="p-4 rounded-2xl border border-slate-200 hover:border-orange-300 hover:bg-orange-50/50 text-left transition flex items-start gap-3.5 group"
-            >
-              <div className="size-10 rounded-xl bg-slate-100 group-hover:bg-[#EA580C] group-hover:text-white grid place-items-center text-slate-700 transition">
-                <Edit3 className="size-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm text-slate-900 group-hover:text-[#EA580C]">
-                  1. Soạn bài tập thủ công
-                </h4>
-                <p className="text-xs text-slate-500 mt-1">
-                  Đầy đủ 7 dạng câu hỏi IELTS, hỗ trợ trường mô tả ngữ cảnh đoạn trích, tải file audio MP3 trực tiếp.
-                </p>
-              </div>
-            </button>
+      <ManualAssignmentBuilderModal
+        open={createMode === "manual"}
+        onClose={() => setCreateMode(null)}
+        isPending={isPending}
+        manualTitle={manualTitle}
+        setManualTitle={setManualTitle}
+        manualSkill={manualSkill}
+        setManualSkill={setManualSkill}
+        manualDuration={manualDuration}
+        setManualDuration={setManualDuration}
+        manualDueDate={manualDueDate}
+        setManualDueDate={setManualDueDate}
+        manualStartDate={manualStartDate}
+        setManualStartDate={setManualStartDate}
+        manualAudioSourceType={manualAudioSourceType}
+        setManualAudioSourceType={setManualAudioSourceType}
+        manualAudioUrl={manualAudioUrl}
+        setManualAudioUrl={setManualAudioUrl}
+        manualAudioFileName={manualAudioFileName}
+        manualAudioFileSize={manualAudioFileSize}
+        onAudioUpload={handleManualAudioUpload}
+        manualQuestions={manualQuestions}
+        setManualQuestions={setManualQuestions}
+        onAddQuestion={handleAddQuestion}
+        onDuplicateQuestion={handleDuplicateQuestion}
+        onDeleteQuestion={handleDeleteQuestion}
+        onSave={handleSaveManualAssignment}
+      />
 
-            <button
-              onClick={() => {
-                setCreateMode("smart_parser");
-              }}
-              className="p-4 rounded-2xl border-2 border-orange-200 bg-orange-50/30 hover:bg-orange-50/80 text-left transition flex items-start gap-3.5 group"
-            >
-              <div className="size-10 rounded-xl bg-orange-100 group-hover:bg-[#EA580C] group-hover:text-white grid place-items-center text-[#EA580C] transition">
-                <Sparkles className="size-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="font-bold text-sm text-slate-900 group-hover:text-[#EA580C]">
-                    2. Bóc tách đề thi IELTS thông minh
-                  </h4>
-                  <Badge className="bg-[#EA580C] text-white text-[10px]">Ebook View</Badge>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Tải file đề thi PDF → Hiện ngay Ebook 2 cột → Nạp Excel tự động điền đáp án → Tự động tách 4 kỹ năng!
-                </p>
-              </div>
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ========================================================
-          MODAL: TẠO THỦ CÔNG (MANUAL BUILDER) - ĐẦY ĐỦ DẠNG CÂU HỎI & AUDIO UPLOAD
-          ======================================================== */}
-      <Dialog open={createMode === "manual"} onOpenChange={() => setCreateMode(null)}>
-        <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto rounded-2xl p-6">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Edit3 className="size-5 text-[#EA580C]" /> Soạn bài tập thủ công (Đầy đủ 7 Dạng câu hỏi IELTS)
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Thiết lập thông tin bài kiểm tra, đính kèm âm thanh nghe và soạn từng câu hỏi kèm đoạn mô tả ngữ cảnh.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1 col-span-2">
-                <Label className="text-xs font-bold text-slate-700">Tiêu đề bài tập <span className="text-rose-500">*</span></Label>
-                <Input
-                  value={manualTitle}
-                  onChange={(e) => setManualTitle(e.target.value)}
-                  placeholder="VD: IELTS Reading Mini Test - Academic Module"
-                  className="h-9 text-xs rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Kỹ năng IELTS</Label>
-                <select
-                  value={manualSkill}
-                  onChange={(e) => setManualSkill(e.target.value as any)}
-                  className="w-full h-9 text-xs rounded-xl border border-slate-200 px-3 bg-white"
-                >
-                  <option value="READING">Reading (Đọc)</option>
-                  <option value="LISTENING">Listening (Nghe)</option>
-                  <option value="WRITING">Writing (Viết)</option>
-                  <option value="SPEAKING">Speaking (Nói)</option>
-                  <option value="ALL_SKILLS">Tổng hợp 4 kỹ năng</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Thời lượng (phút)</Label>
-                <Input
-                  type="number"
-                  value={manualDuration}
-                  onChange={(e) => setManualDuration(Number(e.target.value))}
-                  className="h-9 text-xs rounded-xl"
-                />
-              </div>
-
-              {/* KHỐI ĐÍNH KÈM AUDIO NGHE: HỖ TRỢ TẢI FILE TRỰC TIẾP TỪ MÁY */}
-              {(manualSkill === "LISTENING" || manualSkill === "ALL_SKILLS") && (
-                <div className="col-span-2 p-4 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs font-bold text-blue-900">
-                      <Music className="size-4 text-blue-600" />
-                      <span>Đính kèm tệp Audio Nghe <span className="text-rose-600">* (Bắt buộc với bài Nghe)</span></span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] bg-white p-0.5 rounded-lg border border-blue-200">
-                      <button
-                        type="button"
-                        onClick={() => setManualAudioSourceType("file")}
-                        className={`px-2.5 py-1 rounded-md font-semibold transition ${
-                          manualAudioSourceType === "file" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"
-                        }`}
-                      >
-                        Tải tệp từ máy
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setManualAudioSourceType("url")}
-                        className={`px-2.5 py-1 rounded-md font-semibold transition ${
-                          manualAudioSourceType === "url" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"
-                        }`}
-                      >
-                        Dán URL ngoài
-                      </button>
-                    </div>
-                  </div>
-
-                  {manualAudioSourceType === "file" ? (
-                    <div className="space-y-2">
-                      <div className="border-2 border-dashed border-blue-200 rounded-xl p-4 text-center bg-white hover:bg-blue-50/30 transition">
-                        <Upload className="size-6 text-blue-500 mx-auto mb-1.5" />
-                        <p className="text-xs font-bold text-slate-800">
-                          {manualAudioFileName || "Nhấn để chọn tệp âm thanh (.mp3, .wav, .m4a)"}
-                        </p>
-                        {manualAudioFileSize && (
-                          <p className="text-[11px] text-slate-400 mt-0.5">Dung lượng: {manualAudioFileSize}</p>
-                        )}
-                        <input
-                          type="file"
-                          accept="audio/*,.mp3,.wav,.m4a"
-                          id="manual-audio-input"
-                          className="hidden"
-                          onChange={handleManualAudioUpload}
-                        />
-                        <label
-                          htmlFor="manual-audio-input"
-                          className="inline-block mt-2.5 px-3.5 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg font-semibold hover:bg-blue-100 cursor-pointer transition"
-                        >
-                          {manualAudioUrl ? "Đổi tệp âm thanh khác" : "Duyệt tìm tệp Audio trên máy..."}
-                        </label>
-                      </div>
-                    </div>
-                  ) : (
-                    <Input
-                      value={manualAudioUrl}
-                      onChange={(e) => setManualAudioUrl(e.target.value)}
-                      placeholder="Dán link audio (VD: https://domain.com/audio.mp3)"
-                      className="h-9 text-xs rounded-xl bg-white border-blue-200 font-mono text-[11px]"
-                    />
-                  )}
-
-                  {/* Audio Player nghe thử trực tiếp */}
-                  {manualAudioUrl && (
-                    <div className="p-2.5 bg-slate-900 rounded-xl text-white space-y-1 shadow-sm">
-                      <div className="flex items-center justify-between text-[11px] font-semibold text-purple-300">
-                        <span className="flex items-center gap-1.5">
-                          <Volume2 className="size-3.5" /> Nghe thử tệp âm thanh đã chọn:
-                        </span>
-                        <span className="text-[10px] text-slate-400 truncate max-w-[200px]">{manualAudioFileName || manualAudioUrl}</span>
-                      </div>
-                      <audio controls className="w-full h-8" src={manualAudioUrl} />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Cấu hình Giám sát thi */}
-              <div className="col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                <div>
-                  <b className="text-xs text-slate-800 block">Theo dõi rời tab làm bài</b>
-                  <span className="text-[11px] text-slate-500">
-                    Tự động ghi nhận số lần học viên chuyển tab/rời màn hình vào kết quả để giáo viên theo dõi (không tự động thu bài)
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  <CheckCircle2 className="size-3.5" /> Tự động ghi nhận
-                </div>
-              </div>
-            </div>
-
-            {/* DANH SÁCH CÂU HỎI & MÔ TẢ ĐOẠN TRÍCH */}
-            <div className="space-y-4 pt-3 border-t border-slate-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <b className="text-xs font-bold text-slate-900">Danh sách câu hỏi ({manualQuestions.length})</b>
-                  <p className="text-[11px] text-slate-500">Mỗi câu hỏi có thể cấu hình đoạn mô tả tham chiếu và dạng bài tương ứng.</p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleAddQuestion("MULTIPLE_CHOICE")}
-                    className="h-8 text-xs rounded-xl border-orange-200 text-[#EA580C] hover:bg-orange-50 font-semibold gap-1"
-                  >
-                    <Plus className="size-3.5" /> + Trắc nghiệm
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleAddQuestion("FILL_IN_BLANK")}
-                    className="h-8 text-xs rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold gap-1"
-                  >
-                    <Plus className="size-3.5" /> + Điền từ
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleAddQuestion("TRUE_FALSE_NG")}
-                    className="h-8 text-xs rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold gap-1"
-                  >
-                    <Plus className="size-3.5" /> + T/F/NG
-                  </Button>
-                </div>
-              </div>
-
-              {manualQuestions.map((q, qIdx) => (
-                <div key={qIdx} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3 transition">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                        Câu {qIdx + 1}
-                      </span>
-                      {/* Dropdown chọn dạng câu hỏi */}
-                      <select
-                        value={q.type}
-                        onChange={(e) => {
-                          const newType = e.target.value;
-                          setManualQuestions((prev) =>
-                            prev.map((item, idx) => {
-                              if (idx !== qIdx) return item;
-                              if (newType === "MATCHING" && (!item.options || item.options.length === 0)) {
-                                return {
-                                  ...item,
-                                  type: newType,
-                                  correctAnswer: "i",
-                                  options: [
-                                    { optionLabel: "i", content: "", isCorrect: true },
-                                    { optionLabel: "ii", content: "", isCorrect: false },
-                                    { optionLabel: "iii", content: "", isCorrect: false },
-                                  ],
-                                };
-                              }
-                              return { ...item, type: newType };
-                            })
-                          );
-                        }}
-                        className="h-7 text-xs rounded-lg border border-slate-200 bg-white font-medium text-slate-700 px-2"
-                      >
-                        {IELTS_QUESTION_TYPES.map((t) => (
-                          <option key={t.value} value={t.value}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 text-xs text-slate-500">
-                        <span>Điểm:</span>
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={q.points}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setManualQuestions((prev) =>
-                              prev.map((item, idx) => (idx === qIdx ? { ...item, points: val } : item))
-                            );
-                          }}
-                          className="w-12 h-7 text-xs text-center border border-slate-200 rounded-md bg-white font-bold"
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicateQuestion(qIdx)}
-                        className="size-7 grid place-items-center text-slate-400 hover:text-slate-700 rounded-lg hover:bg-white transition"
-                        title="Nhân bản câu hỏi này"
-                      >
-                        <Copy className="size-3.5" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteQuestion(qIdx)}
-                        className="size-7 grid place-items-center text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                        title="Xóa câu hỏi này"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Ô MÔ TẢ ĐOẠN TRÍCH / HƯỚNG DẪN NGỮ CẢNH */}
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
-                      <BookOpen className="size-3 text-slate-400" />
-                      Đoạn văn mô tả / Hướng dẫn đề bài (Passage snippet / Instructions)
-                    </Label>
-                    <textarea
-                      value={q.passageText || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setManualQuestions((prev) =>
-                          prev.map((item, idx) => (idx === qIdx ? { ...item, passageText: val } : item))
-                        );
-                      }}
-                      placeholder="VD: Paragraph A: Architecture has always been an accurate reflection... hoặc 'Questions 1-5: Choose NO MORE THAN TWO WORDS'"
-                      className="w-full h-14 p-2 text-xs bg-white border border-slate-200 rounded-xl resize-none font-serif text-slate-700 leading-relaxed"
-                    />
-                  </div>
-
-                  {/* NỘI DUNG CÂU HỎI */}
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-700">Nội dung câu hỏi (Question prompt)</Label>
-                    <Input
-                      value={q.prompt}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setManualQuestions((prev) =>
-                          prev.map((item, idx) => (idx === qIdx ? { ...item, prompt: val } : item))
-                        );
-                      }}
-                      placeholder="Nhập nội dung đề bài câu hỏi..."
-                      className="h-8 text-xs bg-white"
-                    />
-                  </div>
-
-                  {/* KHỐI ĐÁP ÁN THEO TỪNG DẠNG */}
-                  {q.type === "MULTIPLE_CHOICE" && (
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[11px] font-semibold text-slate-500">Các lựa chọn đáp án (Chọn 1 nút tròn để đặt làm đáp án đúng):</span>
-                      {q.options?.map((opt: any, optIdx: number) => (
-                        <div key={optIdx} className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-600 w-4">{opt.optionLabel}.</span>
-                          <Input
-                            value={opt.content}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setManualQuestions((prev) =>
-                                prev.map((item, idx) => {
-                                  if (idx !== qIdx) return item;
-                                  const newOpts = [...item.options];
-                                  newOpts[optIdx].content = val;
-                                  return { ...item, options: newOpts };
-                                })
-                              );
-                            }}
-                            className="h-7 text-xs bg-white flex-1"
-                          />
-                          <input
-                            type="radio"
-                            name={`correct-${qIdx}`}
-                            checked={opt.isCorrect}
-                            onChange={() => {
-                              setManualQuestions((prev) =>
-                                prev.map((item, idx) => {
-                                  if (idx !== qIdx) return item;
-                                  const newOpts = item.options.map((o: any, oi: number) => ({
-                                    ...o,
-                                    isCorrect: oi === optIdx,
-                                  }));
-                                  return { ...item, options: newOpts, correctAnswer: opt.optionLabel };
-                                })
-                              );
-                            }}
-                            title="Chọn làm đáp án đúng"
-                            className="size-4 accent-[#EA580C]"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {q.type === "TRUE_FALSE_NG" && (
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[11px] font-semibold text-slate-500">Chọn đáp án đúng chuẩn IELTS:</span>
-                      <div className="flex items-center gap-2">
-                        {["TRUE", "FALSE", "NOT GIVEN"].map((val) => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => {
-                              setManualQuestions((prev) =>
-                                prev.map((item, idx) => (idx === qIdx ? { ...item, correctAnswer: val } : item))
-                              );
-                            }}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${
-                              q.correctAnswer === val
-                                ? "bg-emerald-600 text-white border-emerald-600"
-                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                            }`}
-                          >
-                            {val}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {q.type === "FILL_IN_BLANK" && (
-                    <div className="space-y-1.5 pt-1">
-                      <Label className="text-[11px] font-semibold text-slate-500">Đáp án chuẩn cần điền (Hỗ trợ từ đồng nghĩa phân tách bằng dấu |):</Label>
-                      <Input
-                        value={q.correctAnswer || ""}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setManualQuestions((prev) =>
-                            prev.map((item, idx) => (idx === qIdx ? { ...item, correctAnswer: val } : item))
-                          );
-                        }}
-                        placeholder="VD: central library | library"
-                        className="h-8 text-xs bg-white font-mono"
-                      />
-                    </div>
-                  )}
-
-                  {q.type === "MATCHING" && (
-                    <div className="space-y-2.5 pt-1 p-3 bg-amber-50/50 rounded-xl border border-amber-200/80">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
-                          📋 Danh sách các Tiêu đề / Thông tin để nối (List of Headings):
-                        </span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const romanNums = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
-                            const curOpts = (q.options && q.options.length > 0) ? q.options : [
-                              { optionLabel: "i", content: "", isCorrect: true },
-                              { optionLabel: "ii", content: "", isCorrect: false },
-                              { optionLabel: "iii", content: "", isCorrect: false },
-                            ];
-                            const nextLabel = romanNums[curOpts.length] || `opt${curOpts.length + 1}`;
-                            const newOpts = [...curOpts, { optionLabel: nextLabel, content: "", isCorrect: false }];
-                            setManualQuestions((prev) =>
-                              prev.map((item, idx) => (idx === qIdx ? { ...item, options: newOpts } : item))
-                            );
-                          }}
-                          className="h-6 text-[10px] px-2 bg-white text-amber-800 border-amber-300 hover:bg-amber-100"
-                        >
-                          + Thêm Tiêu đề
-                        </Button>
-                      </div>
-
-                      {/* Danh sách các Headings */}
-                      <div className="space-y-1.5">
-                        {((q.options && q.options.length > 0) ? q.options : [
-                          { optionLabel: "i", content: "", isCorrect: true },
-                          { optionLabel: "ii", content: "", isCorrect: false },
-                          { optionLabel: "iii", content: "", isCorrect: false },
-                        ]).map((opt: any, optIdx: number) => (
-                          <div key={optIdx} className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-amber-900 w-6 text-center font-mono">{opt.optionLabel}.</span>
-                            <Input
-                              value={opt.content}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setManualQuestions((prev) =>
-                                  prev.map((item, idx) => {
-                                    if (idx !== qIdx) return item;
-                                    const curOpts = (item.options && item.options.length > 0) ? [...item.options] : [
-                                      { optionLabel: "i", content: "", isCorrect: true },
-                                      { optionLabel: "ii", content: "", isCorrect: false },
-                                      { optionLabel: "iii", content: "", isCorrect: false },
-                                    ];
-                                    curOpts[optIdx] = { ...curOpts[optIdx], content: val };
-                                    return { ...item, options: curOpts };
-                                  })
-                                );
-                              }}
-                              placeholder={`Nhập nội dung tiêu đề ${opt.optionLabel}...`}
-                              className="h-7 text-xs bg-white flex-1"
-                            />
-                            {/* Chọn đáp án đúng cho câu hỏi này */}
-                            <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 shrink-0 cursor-pointer">
-                              <input
-                                type="radio"
-                                name={`matching-correct-${qIdx}`}
-                                checked={q.correctAnswer === opt.optionLabel}
-                                onChange={() => {
-                                  setManualQuestions((prev) =>
-                                    prev.map((item, idx) => {
-                                      if (idx !== qIdx) return item;
-                                      const curOpts = (item.options && item.options.length > 0) ? [...item.options] : [
-                                        { optionLabel: "i", content: "", isCorrect: true },
-                                        { optionLabel: "ii", content: "", isCorrect: false },
-                                        { optionLabel: "iii", content: "", isCorrect: false },
-                                      ];
-                                      const newOpts = curOpts.map((o: any, oi: number) => ({
-                                        ...o,
-                                        isCorrect: oi === optIdx,
-                                      }));
-                                      return { ...item, options: newOpts, correctAnswer: opt.optionLabel };
-                                    })
-                                  );
-                                }}
-                                className="size-4 accent-[#EA580C]"
-                              />
-                              <span className="text-[10px]">Đáp án đúng</span>
-                            </label>
-                            {/* Nút xóa heading nếu > 2 headings */}
-                            {(q.options?.length || 0) > 2 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setManualQuestions((prev) =>
-                                    prev.map((item, idx) => {
-                                      if (idx !== qIdx) return item;
-                                      const newOpts = (item.options || []).filter((_: any, oi: number) => oi !== optIdx);
-                                      return { ...item, options: newOpts };
-                                    })
-                                  );
-                                }}
-                                className="text-slate-400 hover:text-rose-600 p-1"
-                                title="Xóa tiêu đề này"
-                              >
-                                <Trash2 className="size-3" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="text-[11px] text-amber-800 bg-amber-100/70 p-2 rounded-lg flex items-center justify-between">
-                        <span>Đoạn văn/mệnh đề nối: <b>{q.prompt || `Câu hỏi số ${qIdx + 1}`}</b></span>
-                        <span>Đáp án chọn: <b className="text-[#EA580C] font-mono">{q.correctAnswer || "i"}</b></span>
-                      </div>
-                    </div>
-                  )}
-
-                  {(q.type === "ESSAY" || q.type === "SPEAKING_RECORD") && (
-                    <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl text-[11px] text-amber-800">
-                      ℹ️ Dạng câu hỏi <b>{q.type === "ESSAY" ? "Tự luận Viết" : "Ghi âm Nói"}</b>: Giáo viên sẽ trực tiếp chấm tay và nhận xét dựa trên 4 tiêu chí IELTS sau khi học sinh nộp bài.
-                    </div>
-                  )}
-
-                  {/* GIẢI THÍCH CHI TIẾT */}
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-500">Lời giải thích chi tiết (Hiển thị cho học viên sau khi nộp bài):</Label>
-                    <Input
-                      value={q.explanation || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setManualQuestions((prev) =>
-                          prev.map((item, idx) => (idx === qIdx ? { ...item, explanation: val } : item))
-                        );
-                      }}
-                      placeholder="Giải thích vì sao đáp án này đúng dựa trên ngữ cảnh bài đọc/bài nghe..."
-                      className="h-7 text-xs bg-white"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={() => setCreateMode(null)} className="text-xs rounded-xl">
-              Hủy
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveManualAssignment}
-              disabled={isPending}
-              className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-semibold"
-            >
-              {isPending ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : null}
-              Lưu & Phát hành bài tập
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ========================================================
-          MODAL: BÓC TÁCH THÔNG MINH - HIỆN NGAY EBOOK 2 CỘT & ĐIỀN ĐÁP ÁN EXCEL
-          ======================================================== */}
       <SmartParserModal
         open={createMode === "smart_parser"}
         onOpenChange={(isOpen) => setCreateMode(isOpen ? "smart_parser" : null)}
@@ -1401,347 +905,63 @@ export function ClassAssignmentsTab({
         }}
       />
 
-      {/* ========================================================
-          GIAO DIỆN THI CHUẨN COMPUTER-DELIVERED IELTS & KẾT QUẢ THI
-          ======================================================== */}
       {examAssignment && !isExamFinished && (
         <IeltsExamPlayer
           assignment={examAssignment}
           onClose={() => setExamAssignment(null)}
-          onSubmit={(answers) => {
+          onSubmit={(answers, meta) => {
             setStudentAnswers(answers);
-            handleSubmitExam(undefined, undefined, answers);
+            handleSubmitExam(meta?.tabSwitchCount, meta?.autoSubmittedReason, answers);
           }}
           initialAnswers={studentAnswers}
         />
       )}
 
-
-
-      {/* MODAL KẾT QUẢ SAU KHI NỘP BÀI THI */}
       {examAssignment && isExamFinished && examResult && (
-        <Dialog open={true} onOpenChange={() => setExamAssignment(null)}>
-          <DialogContent className="max-w-md rounded-2xl p-6 bg-white">
-            <div className="p-4 text-center space-y-4">
-              {examResult.isCheated ? (
-                <div className="size-16 rounded-full bg-rose-100 text-rose-600 grid place-items-center mx-auto">
-                  <ShieldAlert className="size-8" />
-                </div>
-              ) : (
-                <div className="size-16 rounded-full bg-emerald-100 text-emerald-600 grid place-items-center mx-auto">
-                  <CheckCircle2 className="size-8" />
-                </div>
-              )}
-
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  {examResult.isCheated ? "Bài làm đã bị thu hồi do vi phạm quy chế!" : "Chúc mừng bạn đã hoàn thành bài thi!"}
-                </h3>
-                {examResult.isCheated && (
-                  <p className="text-xs text-rose-600 mt-1">
-                    Lý do: Rời màn hình làm bài {examResult.tabSwitchCount} lần (Vượt mức cho phép).
-                  </p>
-                )}
-                {examResult.score !== null && (
-                  <p className="text-2xl font-black text-[#EA580C] mt-2">
-                    {examResult.score} / {examResult.totalPoints} điểm
-                  </p>
-                )}
-              </div>
-
-              <Button
-                onClick={() => setExamAssignment(null)}
-                className="text-xs rounded-xl bg-slate-900 text-white px-6 w-full"
-              >
-                Đóng màn hình kết quả
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ExamResultModal examResult={examResult} onClose={() => setExamAssignment(null)} />
       )}
 
-      {/* ========================================================
-          MODAL NHẮC NHỞ: RỜI KHỎI MÀN HÌNH BÀI TẬP
-          ======================================================== */}
-      {showWarningModal && (
-        <Dialog open={true} onOpenChange={() => setShowWarningModal(false)}>
-          <DialogContent className="max-w-md rounded-2xl p-6 bg-white border border-amber-300">
-            <div className="text-center space-y-3">
-              <div className="size-14 rounded-full bg-amber-100 text-amber-600 grid place-items-center mx-auto">
-                <AlertTriangle className="size-7" />
-              </div>
-              <h3 className="text-base font-bold text-amber-700">
-                NHẮC NHỞ: RỜI KHỎI MÀN HÌNH BÀI TẬP
-              </h3>
-              <p className="text-xs text-slate-600">
-                Hệ thống phát hiện bạn vừa chuyển tab hoặc rời cửa sổ trình duyệt.
-                <br />
-                Đã ghi nhận lần thứ: <b className="text-amber-600 font-bold">{tabSwitchCount}</b>.
-              </p>
-              <p className="text-[11px] text-slate-500 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-                Lưu ý: Số lần rời tab sẽ được lưu lại trong kết quả nộp bài để giáo viên theo dõi. Bạn vẫn có thể tiếp tục làm bài bình thường!
-              </p>
-              <Button
-                size="sm"
-                onClick={() => setShowWarningModal(false)}
-                className="w-full rounded-xl bg-[#EA580C] hover:bg-[#EA580C]/90 text-white font-semibold text-xs"
-              >
-                Tôi đã hiểu và tiếp tục làm bài
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+      <TabSwitchWarningModal
+        open={showWarningModal}
+        tabSwitchCount={tabSwitchCount}
+        onClose={() => setShowWarningModal(false)}
+      />
 
-      {/* ========================================================
-          MODAL: GIÁO VIÊN CHẤM BÀI & GHI NHẬN XÉT
-          ======================================================== */}
-      {gradingAssignment && (
-        <Dialog open={true} onOpenChange={() => setGradingAssignment(null)}>
-          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl p-6">
-            <DialogHeader className="border-b border-slate-100 pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                    <UserCheck className="size-5 text-[#EA580C]" /> Chấm điểm bài tập: {gradingAssignment.title}
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-slate-500">
-                    Danh sách bài nộp của học viên • Tự động chấm trắc nghiệm & Chấm tay tự luận
-                  </DialogDescription>
-                </div>
-              </div>
-            </DialogHeader>
+      <TeacherGradingModal
+        gradingAssignment={gradingAssignment}
+        onClose={() => setGradingAssignment(null)}
+        submissionsList={submissionsList}
+        selectedSubmission={selectedSubmission}
+        onSelectSubmission={selectSubmissionForGrading}
+        teacherGradingAnswers={teacherGradingAnswers}
+        setTeacherGradingAnswers={setTeacherGradingAnswers}
+        overallFeedback={overallFeedback}
+        setOverallFeedback={setOverallFeedback}
+        isPending={isPending}
+        onSaveGrading={handleSaveGrading}
+      />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 py-2">
-              {/* Cột Trái: Danh sách bài nộp */}
-              <div className="border border-slate-200 rounded-2xl p-3 bg-slate-50/50 space-y-2">
-                <b className="text-xs font-bold text-slate-800 block px-1">Bài nộp học sinh ({submissionsList.length})</b>
-                <div className="space-y-1.5 max-h-[55vh] overflow-y-auto">
-                  {submissionsList.map((sub) => (
-                    <div
-                      key={sub.id}
-                      onClick={() => selectSubmissionForGrading(sub)}
-                      className={`p-3 rounded-xl border text-xs cursor-pointer transition ${
-                        selectedSubmission?.id === sub.id
-                          ? "border-[#EA580C] bg-white shadow-sm"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <b className="text-slate-900 truncate">{sub.studentName}</b>
-                        <Badge
-                          variant="outline"
-                          className={sub.status === "GRADED" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}
-                        >
-                          {sub.status === "GRADED" ? "Đã chấm" : "Chờ chấm"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-                        <span>Điểm: <b>{sub.score !== null ? `${sub.score}đ` : "---"}</b></span>
-                        {sub.isCheatingFlagged && (
-                          <span className="text-rose-600 font-bold flex items-center gap-0.5">
-                            <ShieldAlert className="size-3" /> Chuyển tab ({sub.tabSwitchCount})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+      <AssignmentAlertModal alertModal={alertModal} onClose={() => setAlertModal(null)} />
 
-              {/* Cột Phải: Chi tiết câu trả lời & Nhập điểm */}
-              <div className="lg:col-span-2 border border-slate-200 rounded-2xl p-4 bg-white space-y-4">
-                {selectedSubmission ? (
-                  <>
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900">{selectedSubmission.studentName}</h4>
-                        <span className="text-xs text-slate-500">{selectedSubmission.studentEmail}</span>
-                      </div>
-                      {selectedSubmission.isCheatingFlagged && (
-                        <Badge className="bg-rose-50 text-rose-700 border-rose-200">
-                          ⚠️ Vi phạm rời màn hình {selectedSubmission.tabSwitchCount} lần (Tự động thu bài)
-                        </Badge>
-                      )}
-                    </div>
+      <ConfirmDeleteAssignmentModal
+        confirmDeleteModal={confirmDeleteModal}
+        isPending={isPending}
+        onClose={() => setConfirmDeleteModal(null)}
+        onConfirm={executeDeleteAssignment}
+      />
 
-                    <div className="space-y-3 max-h-[42vh] overflow-y-auto pr-1">
-                      {selectedSubmission.answers.map((ans: any, idx: number) => (
-                        <div key={ans.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2 text-xs">
-                          <div className="flex items-start justify-between">
-                            <span className="font-bold text-slate-800">
-                              Câu {idx + 1}: {ans.prompt}
-                            </span>
-                            <span className="text-[11px] font-mono text-slate-500">Tối đa: {ans.points}đ</span>
-                          </div>
+      <ConfirmRegradeAssignmentModal
+        regradeModal={regradeModal}
+        isPending={isPending}
+        onClose={() => setRegradeModal(null)}
+        onConfirm={executeRegrade}
+      />
 
-                          <div className="p-2 bg-white rounded-lg border border-slate-200 text-slate-700">
-                            <span className="text-[10px] text-slate-400 block font-semibold">Câu trả lời của học sinh:</span>
-                            <p className="mt-0.5 font-medium">{ans.studentAnswer || "(Không trả lời)"}</p>
-                          </div>
+      <IeltsTemplatesShowcase
+        isOpen={isTemplatesShowcaseOpen}
+        onClose={() => setIsTemplatesShowcaseOpen(false)}
+      />
 
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <div>
-                              <Label className="text-[11px] font-semibold text-slate-600">Điểm chấm</Label>
-                              <Input
-                                type="number"
-                                step="0.5"
-                                max={ans.points}
-                                value={teacherGradingAnswers[ans.id]?.points ?? ans.awardedPoints ?? 0}
-                                onChange={(e) =>
-                                  setTeacherGradingAnswers({
-                                    ...teacherGradingAnswers,
-                                    [ans.id]: {
-                                      points: Number(e.target.value),
-                                      comment: teacherGradingAnswers[ans.id]?.comment || "",
-                                    },
-                                  })
-                                }
-                                className="h-7 text-xs bg-white"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-[11px] font-semibold text-slate-600">Nhận xét câu này</Label>
-                              <Input
-                                value={teacherGradingAnswers[ans.id]?.comment ?? ans.teacherComment ?? ""}
-                                onChange={(e) =>
-                                  setTeacherGradingAnswers({
-                                    ...teacherGradingAnswers,
-                                    [ans.id]: {
-                                      points: teacherGradingAnswers[ans.id]?.points || 0,
-                                      comment: e.target.value,
-                                    },
-                                  })
-                                }
-                                placeholder="Góp ý ngữ pháp, từ vựng..."
-                                className="h-7 text-xs bg-white"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                      <Label className="text-xs font-bold text-slate-700">Nhận xét tổng quan của Giáo viên</Label>
-                      <textarea
-                        value={overallFeedback}
-                        onChange={(e) => setOverallFeedback(e.target.value)}
-                        placeholder="Nhận xét tổng thể về bài làm của học sinh..."
-                        className="w-full h-16 p-2.5 text-xs border border-slate-200 rounded-xl resize-none"
-                      />
-                    </div>
-
-                    <div className="flex justify-end pt-2">
-                      <Button
-                        size="sm"
-                        onClick={handleSaveGrading}
-                        disabled={isPending}
-                        className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-semibold gap-1.5"
-                      >
-                        {isPending ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : null}
-                        Lưu kết quả chấm bài
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-8 text-center text-slate-400 text-xs">
-                    Chọn một bài nộp bên trái để bắt đầu chấm điểm.
-                  </div>
-                )}
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* ========================================================
-          MODAL: THÔNG BÁO POPUP CHUYÊN NGHIỆP (THAY THẾ WINDOW.ALERT)
-          ======================================================== */}
-      {alertModal && (
-        <Dialog open={alertModal.isOpen} onOpenChange={() => setAlertModal(null)}>
-          <DialogContent className="max-w-md rounded-2xl p-6 bg-white shadow-xl">
-            <div className="text-center space-y-3.5">
-              <div
-                className={`size-12 rounded-2xl grid place-items-center mx-auto ${
-                  alertModal.type === "error"
-                    ? "bg-rose-100 text-rose-600"
-                    : alertModal.type === "success"
-                    ? "bg-emerald-100 text-emerald-600"
-                    : alertModal.type === "info"
-                    ? "bg-blue-100 text-blue-600"
-                    : "bg-amber-100 text-amber-600"
-                }`}
-              >
-                {alertModal.type === "error" ? (
-                  <AlertCircle className="size-6" />
-                ) : alertModal.type === "success" ? (
-                  <CheckCircle2 className="size-6" />
-                ) : alertModal.type === "info" ? (
-                  <HelpCircle className="size-6" />
-                ) : (
-                  <AlertTriangle className="size-6" />
-                )}
-              </div>
-
-              <div>
-                <h3 className="text-base font-bold text-slate-900">{alertModal.title}</h3>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{alertModal.message}</p>
-              </div>
-
-              <Button
-                onClick={() => setAlertModal(null)}
-                className="w-full text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-semibold h-9"
-              >
-                Đã hiểu
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* ========================================================
-          MODAL: XÁC NHẬN XÓA BÀI TẬP (THAY THẾ WINDOW.CONFIRM)
-          ======================================================== */}
-      {confirmDeleteModal && (
-        <Dialog open={confirmDeleteModal.isOpen} onOpenChange={() => setConfirmDeleteModal(null)}>
-          <DialogContent className="max-w-md rounded-2xl p-6 bg-white shadow-xl">
-            <div className="text-center space-y-3.5">
-              <div className="size-12 rounded-2xl bg-rose-100 text-rose-600 grid place-items-center mx-auto">
-                <Trash2 className="size-6" />
-              </div>
-
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Xác nhận xóa bài tập</h3>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                  Bạn có chắc muốn xóa bài tập <b className="text-slate-900 font-semibold">"{confirmDeleteModal.title}"</b>?
-                  Hệ thống sẽ chuyển trạng thái sang xóa mềm để bảo toàn lịch sử học tập.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setConfirmDeleteModal(null)}
-                  className="flex-1 text-xs rounded-xl h-9"
-                >
-                  Hủy bỏ
-                </Button>
-                <Button
-                  onClick={executeDeleteAssignment}
-                  disabled={isPending}
-                  className="flex-1 text-xs rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold h-9"
-                >
-                  {isPending ? <Loader2 className="size-3.5 animate-spin mr-1" /> : null}
-                  Xác nhận xóa
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Modal học sinh xem lại bài làm & lời phê của giáo viên */}
       <StudentSubmissionReviewModal
         open={Boolean(reviewAssignmentId)}
         onOpenChange={(open) => !open && setReviewAssignmentId(null)}

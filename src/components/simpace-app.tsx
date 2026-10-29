@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useTransition, useRef } from "react";
 import {
+  BarChart3,
   Bell,
   Building2,
   CalendarDays,
@@ -64,6 +65,7 @@ import { ClassDetailView } from "@/components/classes/class-detail-view";
 import { UsersPageView } from "@/components/users/users-page-view";
 import { UserDialog } from "@/components/users/user-dialog";
 import { IeltsTemplatesShowcase } from "@/components/assignments/ielts-templates-showcase";
+import { ReportsPageView } from "@/components/reports/reports-page-view";
 
 export type View =
   | "dashboard"
@@ -76,7 +78,8 @@ export type View =
   | "settings"
   | "custom-module"
   | "materials-global"
-  | "assignments-global";
+  | "assignments-global"
+  | "reports";
 
 interface SimpaceAppProps {
   initialSession: any;
@@ -287,6 +290,10 @@ export function SimpaceApp({
       currentUser?.role === "STUDENT"
         ? "Bài tập & Đề thi cần hoàn thành"
         : "Trung tâm Quản lý Bài tập & Chấm điểm",
+    reports:
+      currentUser?.role === "STUDENT"
+        ? "Báo cáo Kết quả Học tập IELTS Cá nhân"
+        : "Báo cáo & Phân tích Học tập IELTS Academic",
   };
 
   return (
@@ -369,6 +376,18 @@ export function SimpaceApp({
               active={view === "assignments-global"}
               onClick={() => navigate("assignments-global")}
             />
+            {currentUser.role !== "TEACHING_ASSISTANT" && (
+              <NavItem
+                icon={BarChart3}
+                label={
+                  currentUser.role === "STUDENT"
+                    ? "Báo cáo học tập"
+                    : "Báo cáo & Thống kê"
+                }
+                active={view === "reports"}
+                onClick={() => navigate("reports")}
+              />
+            )}
             <NavItem
               icon={canManageSettings ? Settings : UserRound}
               label={canManageSettings ? "Cài đặt & Phân quyền" : "Hồ sơ cá nhân"}
@@ -386,6 +405,7 @@ export function SimpaceApp({
                     "VIEW_SCHOOLS",
                     "VIEW_CLASSES",
                     "VIEW_SCHEDULE",
+                    "VIEW_REPORTS",
                     "IMPORT_EXCEL",
                     "SYSTEM_SETTINGS",
                   ].includes(p.featureKey) &&
@@ -792,6 +812,9 @@ export function SimpaceApp({
                 </div>
               );
             })()}
+            {view === "reports" && (
+              <ReportsPageView currentUser={currentUser} />
+            )}
             {view === "import" && (
               <ImportPageView
                 onImportSuccess={() => {

@@ -163,6 +163,7 @@ export function subtitle(view: View) {
     "custom-module": "Màn hình chức năng mở rộng được phân quyền động từ cơ sở dữ liệu.",
     "materials-global": "Quản lý kho tài liệu, giáo trình, slide bài giảng và file nghe IELTS.",
     "assignments-global": "Danh sách bài tập, hạn nộp, chấm điểm tự luận và giám sát thi trực tuyến.",
+    reports: "Phân tích kết quả học tập IELTS Academic theo Trường, Lớp, 4 kỹ năng, dạng câu hỏi và nhận xét.",
     dashboard: "Theo dõi nhanh hoạt động học tập và giảng dạy trên toàn hệ thống.",
   };
   return map[view] || "";
@@ -192,4 +193,3 @@ export function roleBreadcrumbPrefix(role?: string | null): string {
   };
   return (role && map[role]) || "Hệ thống LMS";
 }
-

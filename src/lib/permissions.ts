@@ -33,6 +33,12 @@ export const DEFAULT_PERMISSIONS = [
     allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT", "STUDENT"] as RoleCode[],
   },
   {
+    featureKey: "VIEW_REPORTS",
+    name: "Xem Báo cáo kết quả học tập & Nhận xét IELTS",
+    category: "Đào tạo",
+    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "STUDENT"] as RoleCode[],
+  },
+  {
     featureKey: "IMPORT_EXCEL",
     name: "Import Excel Học viên hàng loạt",
     category: "Nhập liệu",
@@ -52,6 +58,7 @@ export const ROLE_GROUPS = {
   STAFF_AND_ADMIN: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT"] as readonly RoleCode[],
   TEACHING_STAFF: ["TEACHER", "TEACHING_ASSISTANT"] as readonly RoleCode[],
   EXAM_CREATORS: ["ADMIN", "TEACHER"] as readonly RoleCode[],
+  REPORT_COMMENT_AUTHORS: ["ADMIN", "SCHOOL_MANAGER", "TEACHER"] as readonly RoleCode[],
 };
 
 export type AuthCheckResult =
@@ -143,4 +150,3 @@ export function hasFeatureAccess(
   const defaultPerm = DEFAULT_PERMISSIONS.find((p) => p.featureKey === featureKey);
   return defaultPerm ? defaultPerm.allowedRoles.includes(role) : false;
 }
-

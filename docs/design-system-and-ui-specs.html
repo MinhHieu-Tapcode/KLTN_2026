@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIMPACE LMS - BỘ ẢNH MOCKUP GIAO DIỆN & QUY CHUẨN DESIGN SYSTEM</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    :root {
+      --primary: #EA580C;
+      --primary-hover: #C2410C;
+      --primary-50: #FFF7ED;
+      --primary-100: #FFEDD5;
+      --primary-200: #FED7AA;
+      --primary-600: #EA580C;
+
+      --slate-50: #F8FAFC;
+      --slate-100: #F1F5F9;
+      --slate-200: #E2E8F0;
+      --slate-300: #CBD5E1;
+      --slate-400: #94A3B8;
+      --slate-500: #64748B;
+      --slate-600: #475569;
+      --slate-700: #334155;
+      --slate-800: #1E293B;
+      --slate-900: #0F172A;
+
+      --emerald-500: #10B981;
+      --emerald-50: #ECFDF5;
+      --sky-500: #0EA5E9;
+      --sky-50: #F0F9FF;
+      --purple-500: #8B5CF6;
+      --purple-50: #FAF5FF;
+      --amber-500: #F59E0B;
+      --amber-50: #FFFBEB;
+      --rose-500: #F43F5E;
+      --rose-50: #FFF1F2;
+      --indigo-500: #6366F1;
+      --pink-500: #EC4899;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #E2E8F0;
+      color: var(--slate-900);
+      line-height: 1.4;
+      font-size: 12px;
+      padding: 24px;
+    }
+
+    @media print {
+      body { padding: 0; background: #fff; }
+      .page-break { page-break-before: always; break-before: page; }
+      .no-break { page-break-inside: avoid; break-inside: avoid; }
+    }
+
+    .container { max-width: 1140px; margin: 0 auto; }
+
+    /* HEADER */
+    .doc-banner {
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      color: white;
+      border-radius: 16px;
+      padding: 24px 30px;
+      margin-bottom: 24px;
+      border-left: 6px solid var(--primary);
+    }
+    .doc-banner h1 { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
+    .doc-banner p { color: var(--slate-300); font-size: 12.5px; }
+
+    /* SECTION TITLE */
+    .sec-head {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--slate-900);
+      margin: 28px 0 14px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sec-badge {
+      background: var(--primary);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    /* SCREEN FRAME */
+    .screen-card {
+      background: white;
+      border: 1.5px solid var(--slate-300);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+    }
+    .screen-header {
+      background: var(--slate-800);
+      color: white;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+    .screen-header .tag {
+      background: rgba(234, 88, 12, 0.3);
+      color: #FB923C;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 10.5px;
+      border: 1px solid rgba(251, 146, 60, 0.4);
+    }
+    .screen-body {
+      padding: 18px;
+      background: var(--slate-50);
+    }
+
+    /* SUB-ELEMENTS */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2.5px 8px;
+      border-radius: 9999px;
+      font-size: 10.5px;
+      font-weight: 600;
+      line-height: 1;
+    }
+    .badge-primary { background: var(--primary-50); color: var(--primary); border: 1px solid var(--primary-200); }
+    .badge-emerald { background: var(--emerald-50); color: #047857; border: 1px solid #A7F3D0; }
+    .badge-sky { background: var(--sky-50); color: #0369A1; border: 1px solid #BAE6FD; }
+    .badge-purple { background: var(--purple-50); color: #6D28D9; border: 1px solid #DDD6FE; }
+    .badge-amber { background: var(--amber-50); color: #B45309; border: 1px solid #FDE68A; }
+    .badge-rose { background: var(--rose-50); color: #BE123C; border: 1px solid #FECDD3; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-outline { background: white; border-color: var(--slate-300); color: var(--slate-700); }
+    .btn-danger { background: var(--rose-500); color: white; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+    .box-white {
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    /* MODAL SIMULATION */
+    .modal-overlay-sim {
+      background: rgba(15, 23, 42, 0.45);
+      border-radius: 10px;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-window-sim {
+      background: white;
+      border-radius: 16px;
+      border: 1px solid var(--slate-300);
+      width: 100%;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+    .modal-head-sim {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--slate-200);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #FAFAFA;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .modal-body-sim {
+      padding: 16px 18px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- BANNER TỔNG QUAN -->
+  <div class="doc-banner">
+    <h1>HỆ THỐNG MOCKUP GIAO DIỆN & QUY CHUẨN DESIGN SYSTEM</h1>
+    <p>Tổng hợp hình ảnh trực quan chi tiết từng màn hình, modal popup, cảnh báo gian lận và tín hiệu tương tác cho 3 module: <b>Quản lý Bài tập</b>, <b>Quản lý Học liệu</b>, <b>Báo cáo & Thống kê</b> trải qua 4 vai trò (Admin, Quản nhiệm, Giáo viên, Học sinh).</p>
+  </div>
+
+
+  <!-- ==================== PHẦN 1: MODULE BÀI TẬP ==================== -->
+  <div class="sec-head"><span class="sec-badge">MODULE 1</span> QUẢN LÝ BÀI TẬP & ĐỀ THI IELTS (ASSIGNMENTS)</div>
+
+  <!-- SCREEN 1: DANH SÁCH BÀI TẬP LỚP HỌC (TEACHER VIEW) -->
+  <div class="screen-card no-break">
+    <div class="screen-header">
+      <div>MÀN HÌNH 1: DANH SÁCH BÀI TẬP LỚP HỌC (GIAO DIỆN GIÁO VIÊN & QUẢN NHIỆM)</div>
+      <span class="tag">Mã: AS-01 • Role: TEACHER, SCHOOL_MANAGER, ADMIN</span>
+    </div>
+    <div class="screen-body">
+      <!-- Header điều khiển lớp -->
+      <div style="background: white; border: 1px solid var(--slate-200); border-radius: 12px; padding: 14px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-size: 15px; font-weight: 700;">Quản lý bài tập & Đề thi IELTS (4 bài tập)</div>
+          <div style="color: var(--slate-500); font-size: 11.5px; margin-top: 2px;">Lớp: <b>IELTS Bứt Phá - 10A1</b> • GV: Cô Nguyễn Thu Hường • Giám sát chuyển tab chống gian lận</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-outline">📂 Ngân hàng đề</button>
+          <button class="btn btn-primary">+ Tạo bài tập thủ công</button>
+        </div>
+      </div>
+
+      <!-- Filter Kỹ năng -->
+      <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+        <span class="badge badge-primary" style="padding: 5px 12px;">Tất cả (4)</span>
+        <span class="badge badge-emerald" style="padding: 5px 12px;">📖 Reading (1)</span>
+        <span class="badge badge-sky" style="padding: 5px 12px;">🎧 Listening (1)</span>
+        <span class="badge badge-purple" style="padding: 5px 12px;">✍ Writing (1)</span>
+        <span class="badge badge-amber" style="padding: 5px 12px;">🎙 Speaking (1)</span>
+      </div>
+
+      <!-- Grid Thẻ bài tập mẫu -->
+      <div class="grid-2">
+        <!-- Card 1: Speaking -->
+        <div class="box-white" style="border-top: 4px solid var(--amber-500);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+            <span class="badge badge-amber">🎙 Speaking (Nói)</span>
+            <span style="font-size: 10.5px; color: var(--slate-400);">Đã nộp: 2/3</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13px; color: var(--slate-900); margin-bottom: 4px;">IELTS Speaking Mock Test: Part 2 & Part 3 (Technology in Education)</div>
+          <div style="font-size: 11px; color: var(--slate-500); margin-bottom: 10px;">Thu âm trực tiếp micro • Chấm 4 tiêu chí chuẩn IELTS (FC, LR, GRA, P).</div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--slate-600); margin-bottom: 10px; border-top: 1px dashed var(--slate-200); padding-top: 8px;">
+            <span>⏱ 15 phút • 1 câu • 9.0đ</span>
+            <span>Hạn: 05/11/2026</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-outline" style="flex: 1; border-color: #FED7AA; color: #EA580C; justify-content: center;">👤 Chấm bài (2)</button>
+            <button class="btn btn-outline" style="width: 32px; justify-content: center;" title="Xem trước đề">👁</button>
+            <button class="btn btn-outline" style="width: 32px; justify-content: center; color: #F43F5E;" title="Xóa đề">🗑</button>
+          </div>
+        </div>
+
+        <!-- Card 2: Reading (Có cờ gian lận) -->
+        <div class="box-white" style="border-top: 4px solid var(--emerald-500);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+            <span class="badge badge-emerald">📖 Reading (Đọc)</span>
+            <span class="badge badge-rose">⚠ Có 1 bài vi phạm chuyển tab</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13px; color: var(--slate-900); margin-bottom: 4px;">IELTS Reading Practice: The History of Tea Culture</div>
+          <div style="font-size: 11px; color: var(--slate-500); margin-bottom: 10px;">Đọc bài khóa học thuật • 4 câu MCQ, T/F/NG và Summary Completion.</div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--slate-600); margin-bottom: 10px; border-top: 1px dashed var(--slate-200); padding-top: 8px;">
+            <span>⏱ 45 phút • 4 câu • 4đ</span>
+            <span>Hạn: 08/11/2026</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-outline" style="flex: 1; border-color: #FED7AA; color: #EA580C; justify-content: center;">👤 Chấm bài (3)</button>
+            <button class="btn btn-outline" style="width: 32px; justify-content: center;" title="Chấm lại trắc nghiệm">🔄</button>
+            <button class="btn btn-outline" style="width: 32px; justify-content: center;" title="Xem trước">👁</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- SCREEN 2: GIAO DIỆN HỌC SINH (STUDENT VIEW) -->
+  <div class="screen-card no-break">
+    <div class="screen-header">
+      <div>MÀN HÌNH 2: GIAO DIỆN DANH SÁCH BÀI TẬP CỦA HỌC VIÊN</div>
+      <span class="tag">Mã: AS-02 • Role: STUDENT (Học viên)</span>
+    </div>
+    <div class="screen-body">
+      <div class="grid-2">
+        <!-- Đã chấm xong -->
+        <div class="box-white">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <span class="badge badge-purple">✍ Writing</span>
+            <span class="badge badge-emerald">✓ Đã chấm: 13.5/18đ (Band ~6.5)</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13px;">IELTS Academic Writing Test: Task 1 & Task 2 (Urbanization)</div>
+          <div style="font-size: 11px; color: var(--slate-500); margin: 6px 0;">Giáo viên đã nhận xét chi tiết từng câu và chấm đủ 4 tiêu chí.</div>
+          <div style="border-top: 1px solid var(--slate-100); padding-top: 8px; display: flex; justify-content: flex-end;">
+            <button class="btn btn-outline" style="border-color: #FED7AA; color: #EA580C;">👁 Xem bài làm & Lời phê của cô</button>
+          </div>
+        </div>
+
+        <!-- Chưa làm bài -->
+        <div class="box-white">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <span class="badge badge-sky">🎧 Listening</span>
+            <span style="font-size: 11px; color: var(--slate-400);">Chưa nộp (Còn 5 ngày)</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13px;">IELTS Listening Practice: Campus Accommodation & Library Tour</div>
+          <div style="font-size: 11px; color: var(--slate-500); margin: 6px 0;">Nghe audio và trả lời 3 câu Form completion và Map labeling.</div>
+          <div style="border-top: 1px solid var(--slate-100); padding-top: 8px; display: flex; justify-content: flex-end;">
+            <button class="btn btn-primary">📖 Bắt đầu làm bài (Ebook View)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- SCREEN 3: GIAO DIỆN HỌC SINH LÀM BÀI (EBOOK PLAYER) + CẢNH BÁO GIAN LẬN -->
+  <div class="page-break"></div>
+  <div class="screen-card no-break">
+    <div class="screen-header">
+      <div>MÀN HÌNH 3: GIAO DIỆN LÀM BÀI 2 CỘT (EBOOK PLAYER) & POPUP CẢNH BÁO GIAN LẬN</div>
+      <span class="tag">Mã: AS-03 & AS-04 • Role: STUDENT</span>
+    </div>
+    <div class="screen-body">
+      <!-- Thanh bar trên của Ebook Player -->
+      <div style="background: white; border: 1px solid var(--slate-200); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div><b>IELTS Reading Practice: The History of Tea Culture</b> • Học viên: Nguyễn Văn An</div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <span class="badge badge-rose" style="font-size: 11px;">⚠ Chuyển tab: 1/3 lần</span>
+          <span style="background: #FFF7ED; color: #EA580C; border: 1px solid #FED7AA; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-family: monospace;">⏱ 38:42 còn lại</span>
+          <button class="btn btn-primary" style="padding: 4px 12px;">Nộp bài thi</button>
+        </div>
+      </div>
+
+      <!-- Bố cục 2 Cột Ebook -->
+      <div class="grid-2" style="margin-bottom: 14px;">
+        <!-- Cột trái: Đề bài / Passage -->
+        <div class="box-white" style="height: 220px; overflow-y: auto; line-height: 1.6; font-size: 11.5px; color: var(--slate-700);">
+          <div style="font-weight: 700; color: var(--slate-900); margin-bottom: 6px;">READING PASSAGE: THE HISTORY OF TEA CULTURE</div>
+          <p><b>Paragraph A:</b> According to Chinese legend, tea was first discovered in 2737 BC by Emperor Shennong, a renowned herbalist and scholar. While boiling drinking water in the shade of a wild tea tree, a light breeze blew a few leaves into the pot, infusing the water with a delicate aroma and refreshing flavour...</p>
+          <p style="margin-top: 8px;"><b>Paragraph B:</b> During the Han dynasty (202 BC – 220 AD), tea was primarily used as a medicinal concoction by royal physicians and Daoist monks to promote alertness and aid digestion...</p>
+        </div>
+
+        <!-- Cột phải: Phiếu câu hỏi -->
+        <div class="box-white" style="height: 220px; overflow-y: auto;">
+          <div style="font-weight: 700; font-size: 12px; margin-bottom: 8px;">Câu 1 (Multiple Choice - 1đ):</div>
+          <div style="color: var(--slate-800); margin-bottom: 8px;">Where was tea first discovered according to Chinese legend?</div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <label style="display: flex; gap: 6px; align-items: center; background: var(--slate-50); padding: 5px 8px; border-radius: 6px; border: 1px solid var(--slate-200);">
+              <input type="radio" name="q1" disabled> A. In an ancient forest in Yunnan
+            </label>
+            <label style="display: flex; gap: 6px; align-items: center; background: #FFF7ED; padding: 5px 8px; border-radius: 6px; border: 1.5px solid #EA580C; font-weight: 600;">
+              <input type="radio" name="q1" checked> B. Under Emperor Shennong's boiling water
+            </label>
+            <label style="display: flex; gap: 6px; align-items: center; background: var(--slate-50); padding: 5px 8px; border-radius: 6px; border: 1px solid var(--slate-200);">
+              <input type="radio" name="q1" disabled> C. By Buddhist monks during meditation
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- POPUP CẢNH BÁO GIAN LẬN CHUYỂN TAB (Mô phỏng modal nổi viền đỏ) -->
+      <div class="modal-overlay-sim">
+        <div class="modal-window-sim" style="max-width: 480px; border: 2px solid #F43F5E;">
+          <div class="modal-head-sim" style="background: #FFF1F2; color: #BE123C;">
+            <span>🚨 CẢNH BÁO VI PHẠM QUY CHẾ THI (PROCTORING)</span>
+            <span style="font-size: 11px; font-weight: normal;">Lần vi phạm: 2/3</span>
+          </div>
+          <div class="modal-body-sim" style="text-align: center;">
+            <div style="font-size: 13px; font-weight: 700; color: #9F1239; margin-bottom: 6px;">Hệ thống phát hiện bạn vừa rời khỏi màn hình làm bài!</div>
+            <p style="font-size: 11.5px; color: var(--slate-600); margin-bottom: 12px;">Bạn được phép rời màn hình tối đa <b>3 lần</b>. Nếu tiếp tục chuyển tab thêm <b>1 lần nữa</b>, bài thi sẽ bị <b>tự động nộp ngay lập tức</b> và bị đánh dấu gian lận gửi tới giáo viên.</p>
+            <button class="btn btn-danger" style="width: 100%; justify-content: center;">Tôi đã hiểu & Quay lại làm bài ngay</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- SCREEN 4: KHÔNG GIAN CHẤM BÀI 3 CỘT (TEACHER WORKSPACE) -->
+  <div class="page-break"></div>
+  <div class="screen-card no-break">
+    <div class="screen-header">
+      <div>MÀN HÌNH 4: KHÔNG GIAN CHẤM BÀI 3 CỘT (TEACHER GRADING WORKSPACE - FULLSCREEN)</div>
+      <span class="tag">Mã: AS-05 • Role: TEACHER, SCHOOL_MANAGER, ADMIN</span>
+    </div>
+    <div class="screen-body">
+      <div style="display: grid; grid-template-columns: 210px 1fr 320px; gap: 12px; height: 380px;">
+        <!-- Cột 1: Danh sách học viên -->
+        <div style="background: white; border: 1px solid var(--slate-200); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-weight: 700; font-size: 11px; color: var(--slate-500); text-transform: uppercase;">Bài nộp học sinh (3)</div>
+
+          <div style="border: 1.5px solid #EA580C; background: #FFF7ED; padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 700; color: #9A3412;">Nguyễn Văn An</div>
+            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+              <span class="badge badge-emerald" style="font-size: 10px;">Đã chấm: 6.5</span>
+              <span style="font-size: 10px; color: var(--slate-400);">Lần 1</span>
+            </div>
+          </div>
+
+          <div style="border: 1px solid var(--slate-200); background: white; padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; color: var(--slate-700);">Trần Thị Lan</div>
+            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+              <span class="badge badge-amber" style="font-size: 10px;">Chờ chấm</span>
+              <span style="font-size: 10px; color: var(--slate-400);">Lần 1</span>
+            </div>
+          </div>
+
+          <div style="border: 1px solid #FECDD3; background: #FFF1F2; padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; color: #9F1239;">Lê Hoàng Long</div>
+            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+              <span class="badge badge-rose" style="font-size: 10px;">4 vi phạm tab</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cột 2: Bài làm học viên + Sóng âm Whisper + Canvas gạch sửa Docs -->
+        <div style="background: white; border: 1px solid var(--slate-200); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; overflow-y: auto;">
+          <!-- Header câu -->
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <b>Speaking Part 2 (Cue Card - 2 phút)</b>
+            <span style="color: var(--slate-400);">Thang điểm: 9.0d</span>
+          </div>
+
+          <!-- Thanh sóng âm & Whisper AI transcript -->
+          <div style="background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 8px; padding: 8px; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button class="btn btn-primary" style="padding: 3px 8px; font-size: 11px;">▶ Nghe lại</button>
+              <div style="flex: 1; height: 18px; background: #FFEDD5; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #C2410C; font-weight: 600;">
+                |||||||||| Sóng âm thanh học viên (00:18 / 00:32) ||||||||||||||||||||||||
+              </div>
+              <span class="badge badge-emerald" style="font-size: 10px;">AI Whisper turbo ✓</span>
+            </div>
+            <div style="margin-top: 6px; font-size: 10.5px; color: #9A3412;">
+              👁 Hiển thị bản dịch Whisper cho học viên: <b>Đang BẬT</b> (Học sinh sẽ nhìn thấy lời cô sửa)
+            </div>
+          </div>
+
+          <!-- Đoạn văn bản có vết sửa gạch Docs -->
+          <div style="line-height: 1.8; font-size: 12px; color: var(--slate-800); border: 1px dashed var(--slate-300); padding: 10px; border-radius: 8px; flex: 1;">
+            Well, I'd like to talk about my laptop which I bought two years ago.
+            <span style="background: #FEE2E2; text-decoration: line-through; color: #DC2626; padding: 1px 4px; border-radius: 3px;">um</span>
+            It is a very useful device for my studies. I use it almost every day, mostly for writing essays and
+            <span style="border-bottom: 2px solid #10B981; background: #ECFDF5; padding: 1px 4px; font-weight: 600; color: #047857;">conducting research</span>
+            Actually, it help me to save a lot of time because I can find information quickly...
+          </div>
+
+          <!-- Thẻ popup bôi đen nổi -->
+          <div style="margin-top: 6px; background: #1E293B; color: white; padding: 4px 10px; border-radius: 6px; display: flex; gap: 8px; font-size: 10px; width: fit-content;">
+            <span>💬 Nhận xét [LR]</span> • <span style="color: #F87171;">✕ Xóa từ</span> • <span style="color: #34D399;">✎ Thay từ</span> • <span style="color: #FBBF24;">+ Chèn từ</span>
+          </div>
+        </div>
+
+        <!-- Cột 3: Phiếu chấm 4 Tiêu chí IELTS chính thức -->
+        <div style="background: white; border: 1px solid var(--slate-200); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <b style="font-size: 11.5px;">Chấm theo 4 tiêu chí IELTS:</b>
+              <span style="font-size: 12px; font-weight: 800; color: #EA580C;">Band: 6.5</span>
+            </div>
+
+            <!-- 4 tiêu chí -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="background: #F0F9FF; border: 1px solid #BAE6FD; padding: 5px; border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10.5px; font-weight: 600; color: #0369A1;">
+                  <span>Fluency & Coherence (FC)</span> <span>6.5</span>
+                </div>
+                <input type="range" min="0" max="9" step="0.5" value="6.5" style="width: 100%; height: 4px; accent-color: #0EA5E9;">
+              </div>
+
+              <div style="background: #ECFDF5; border: 1px solid #A7F3D0; padding: 5px; border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10.5px; font-weight: 600; color: #047857;">
+                  <span>Lexical Resource (LR)</span> <span>6.5</span>
+                </div>
+                <input type="range" min="0" max="9" step="0.5" value="6.5" style="width: 100%; height: 4px; accent-color: #10B981;">
+              </div>
+
+              <div style="background: #FFFBEB; border: 1px solid #FDE68A; padding: 5px; border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10.5px; font-weight: 600; color: #B45309;">
+                  <span>Grammar Range & Acc (GRA)</span> <span>6.0</span>
+                </div>
+                <input type="range" min="0" max="9" step="0.5" value="6.0" style="width: 100%; height: 4px; accent-color: #F59E0B;">
+              </div>
+
+              <div style="background: #FDF2F8; border: 1px solid #FBCFE8; padding: 5px; border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10.5px; font-weight: 600; color: #BE185D;">
+                  <span>Pronunciation (P)</span> <span>7.0</span>
+                </div>
+                <input type="range" min="0" max="9" step="0.5" value="7.0" style="width: 100%; height: 4px; accent-color: #EC4899;">
+              </div>
+            </div>
+
+            <!-- Ô nhận xét -->
+            <div style="margin-top: 8px;">
+              <div style="font-size: 10.5px; font-weight: 600; color: var(--slate-600); margin-bottom: 2px;">Lời phê tổng quan của giáo viên:</div>
+              <textarea style="width: 100%; height: 45px; border: 1px solid var(--slate-300); border-radius: 6px; font-size: 10.5px; padding: 4px; resize: none;" readonly>Phát âm rõ ràng, trôi chảy, sử dụng tốt các collocations về công nghệ. Cần chú ý chia động từ số ít ở thì hiện tại.</textarea>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 6px; margin-top: 6px;">
+            <button class="btn btn-outline" style="flex: 1; justify-content: center; font-size: 11px;">Lưu nháp</button>
+            <button class="btn btn-primary" style="flex: 1; justify-content: center; font-size: 11px;">Hoàn tất chấm</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== PHẦN 2: MODULE QUẢN LÝ HỌC LIỆU ==================== -->
+  <div class="page-break"></div>
+  <div class="sec-head"><span class="sec-badge">MODULE 2</span> QUẢN LÝ HỌC LIỆU & THƯ VIỆN SỐ (MATERIALS)</div>
+
+  <!-- SCREEN 5: KHO HỌC LIỆU & MODAL TẢI TÀI LIỆU -->
+  <div class="screen-card no-break">
+    <div class="screen-header">
+      <div>MÀN HÌNH 5: KHO HỌC LIỆU SỐ & MODAL TẢI LÊN NHANH (QUICK ADD MATERIAL)</div>
+      <span class="tag">Mã: MAT-01 & MAT-03 • Role: ALL ROLES</span>
+    </div>
+    <div class="screen-body">
+      <!-- Thanh tìm kiếm & lọc học liệu -->
+      <div style="background: white; border: 1px solid var(--slate-200); border-radius: 10px; padding: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; gap: 8px; flex: 1; max-width: 500px;">
+          <input type="text" placeholder="🔍 Tìm kiếm tài liệu, giáo trình, audio..." style="width: 100%; padding: 6px 10px; border: 1px solid var(--slate-300); border-radius: 8px; font-size: 11.5px;">
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-outline">📁 Thư mục mới</button>
+          <button class="btn btn-primary">+ Tải tài liệu lên</button>
+        </div>
+      </div>
+
+      <!-- Grid Thư mục & Tài liệu -->
+      <div class="grid-3" style="margin-bottom: 16px;">
+        <div class="box-white" style="display: flex; gap: 10px; align-items: center;">
+          <div style="font-size: 24px;">📁</div>
+          <div>
+            <div style="font-weight: 700;">IELTS Foundation 4.5 - 5.5</div>
+            <div style="font-size: 10.5px; color: var(--slate-400);">12 tài liệu • 4 lớp sử dụng</div>
+          </div>
+        </div>
+        <div class="box-white" style="display: flex; gap: 10px; align-items: center;">
+          <div style="font-size: 24px;">📁</div>
+          <div>
+            <div style="font-weight: 700;">IELTS Intensive 5.5 - 6.5</div>
+            <div style="font-size: 10.5px; color: var(--slate-400);">28 tài liệu • 6 lớp sử dụng</div>
+          </div>
+        </div>
+        <div class="box-white" style="display: flex; gap: 10px; align-items: center;">
+          <div style="font-size: 24px;">📁</div>
+          <div>
+            <div style="font-weight: 700;">IELTS Master 6.5+</div>
+            <div style="font-size: 10.5px; color: var(--slate-400);">19 tài liệu • 3 lớp sử dụng</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL TẢI TÀI LIỆU NHANH (Mô phỏng popup) -->
+      <div class="modal-overlay-sim">
+        <div class="modal-window-sim" style="max-width: 540px;">
+          <div class="modal-head-sim">
+            <span>📤 TẢI LÊN TÀI LIỆU HỌC TẬP MỚI</span>
+            <span>✕</span>
+          </div>
+          <div class="modal-body-sim">
+            <div style="border: 2px dashed #FED7AA; background: #FFF7ED; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 12px;">
+              <div style="font-size: 24px; color: #EA580C; margin-bottom: 4px;">☁</div>
+              <div style="font-weight: 600; color: var(--slate-800);">Kéo thả file vào đây hoặc bấm để chọn tệp</div>
+              <div style="font-size: 10.5px; color: var(--slate-500); margin-top: 2px;">Hỗ trợ: PDF, DOCX, MP3, MP4 (Tối đa 100MB)</div>
+            </div>
+
+            <div class="grid-2" style="margin-bottom: 10px;">
+              <div>
+                <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px;">Kỹ năng IELTS:</label>
+                <select style="width: 100%; padding: 6px; border: 1px solid var(--slate-300); border-radius: 6px; font-size: 11px;">
+                  <option>Reading (Đọc hiểu)</option>
+                  <option selected>Listening (Nghe hiểu & Audio)</option>
+                  <option>Writing (Viết luận)</option>
+                  <option>Speaking (Nói & Phát âm)</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px;">Gán cho Lớp học:</label>
+                <select style="width: 100%; padding: 6px; border: 1px solid var(--slate-300); border-radius: 6px; font-size: 11px;">
+                  <option selected>IELTS Bứt Phá - 10A1</option>
+                  <option>Tất cả các lớp thuộc Khối 10</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+              <button class="btn btn-outline">Hủy bỏ</button>
+              <button class="btn btn-primary">Tải lên & Lưu vào kho</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== PHẦN 3: MODULE BÁO CÁO THỐNG KÊ ==================== -->
+  <div class="page-break"></div>
+  <div class="sec-head"><span class="sec-badge">MODULE 3</span> BÁO CÁO & THỐNG KÊ (REPORTS & ANALYTICS)</div>
+
+  <!-- SCREEN 6: BÁO CÁO TIẾN ĐỘ & PHỔ ĐIỂM LỚP HỌC -->
+  <div class="screen-card no-break">
+    <div class="screen-header">
+      <div>MÀN HÌNH 6: DASHBOARD BÁO CÁO TIẾN ĐỘ & PHỔ ĐIỂM 4 KỸ NĂNG LỚP HỌC</div>
+      <span class="tag">Mã: REP-02 • Role: SCHOOL_MANAGER, TEACHER, ADMIN</span>
+    </div>
+    <div class="screen-body">
+      <!-- 4 Thẻ KPI trên cùng -->
+      <div class="grid-4" style="margin-bottom: 14px;">
+        <div class="box-white" style="border-left: 4px solid #EA580C;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Sĩ số lớp</div>
+          <div style="font-size: 18px; font-weight: 800; color: var(--slate-900);">28 Học viên</div>
+          <div style="font-size: 10px; color: #10B981; font-weight: 600;">100% Đang học</div>
+        </div>
+        <div class="box-white" style="border-left: 4px solid #10B981;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Điểm TB Lớp</div>
+          <div style="font-size: 18px; font-weight: 800; color: var(--slate-900);">Band 6.2</div>
+          <div style="font-size: 10px; color: #10B981; font-weight: 600;">↑ 0.5 so với đầu vào</div>
+        </div>
+        <div class="box-white" style="border-left: 4px solid #0EA5E9;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Tỷ lệ nộp bài</div>
+          <div style="font-size: 18px; font-weight: 800; color: var(--slate-900);">92.8%</div>
+          <div style="font-size: 10px; color: var(--slate-400);">Đúng hạn: 88.5%</div>
+        </div>
+        <div class="box-white" style="border-left: 4px solid #F43F5E;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Cảnh báo rủi ro</div>
+          <div style="font-size: 18px; font-weight: 800; color: #F43F5E;">2 Học viên</div>
+          <div style="font-size: 10px; color: #BE123C; font-weight: 600;">Nghỉ > 2 buổi / Dưới chuẩn</div>
+        </div>
+      </div>
+
+      <!-- Đồ thị 4 Kỹ năng & Bảng học sinh -->
+      <div class="grid-2">
+        <!-- Đồ thị thanh so sánh 4 kỹ năng -->
+        <div class="box-white">
+          <div style="font-weight: 700; margin-bottom: 8px;">Phổ điểm trung bình 4 kỹ năng IELTS:</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                <span>📖 Reading (Đọc)</span> <b style="color: #10B981;">Band 6.6</b>
+              </div>
+              <div style="height: 8px; background: #E2E8F0; border-radius: 4px; overflow: hidden; margin-top: 2px;">
+                <div style="width: 73%; height: 100%; background: #10B981;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                <span>🎧 Listening (Nghe)</span> <b style="color: #0EA5E9;">Band 6.4</b>
+              </div>
+              <div style="height: 8px; background: #E2E8F0; border-radius: 4px; overflow: hidden; margin-top: 2px;">
+                <div style="width: 71%; height: 100%; background: #0EA5E9;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                <span>✍ Writing (Viết)</span> <b style="color: #8B5CF6;">Band 5.8</b>
+              </div>
+              <div style="height: 8px; background: #E2E8F0; border-radius: 4px; overflow: hidden; margin-top: 2px;">
+                <div style="width: 64%; height: 100%; background: #8B5CF6;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                <span>🎙 Speaking (Nói)</span> <b style="color: #F59E0B;">Band 6.0</b>
+              </div>
+              <div style="height: 8px; background: #E2E8F0; border-radius: 4px; overflow: hidden; margin-top: 2px;">
+                <div style="width: 66%; height: 100%; background: #F59E0B;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bảng theo dõi học sinh -->
+        <div class="box-white">
+          <div style="font-weight: 700; margin-bottom: 8px;">Theo dõi học viên lớp 10A1:</div>
+          <table style="width: 100%; font-size: 11px; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--slate-200); color: var(--slate-500); text-align: left;">
+                <th style="padding: 4px;">Học viên</th>
+                <th style="padding: 4px;">Đầu vào</th>
+                <th style="padding: 4px;">Hiện tại</th>
+                <th style="padding: 4px;">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid var(--slate-100);">
+                <td style="padding: 5px 4px; font-weight: 600;">Nguyễn Văn An</td>
+                <td style="padding: 5px 4px;">6.0</td>
+                <td style="padding: 5px 4px; color: #10B981; font-weight: 700;">6.5</td>
+                <td style="padding: 5px 4px;"><span class="badge badge-emerald">Tốt</span></td>
+              </tr>
+              <tr style="border-bottom: 1px solid var(--slate-100);">
+                <td style="padding: 5px 4px; font-weight: 600;">Trần Thị Lan</td>
+                <td style="padding: 5px 4px;">5.5</td>
+                <td style="padding: 5px 4px; color: #0EA5E9; font-weight: 700;">5.8</td>
+                <td style="padding: 5px 4px;"><span class="badge badge-sky">Đạt chuẩn</span></td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 4px; font-weight: 600; color: #BE123C;">Lê Hoàng Long</td>
+                <td style="padding: 5px 4px;">5.0</td>
+                <td style="padding: 5px 4px; color: #F43F5E; font-weight: 700;">5.0</td>
+                <td style="padding: 5px 4px;"><span class="badge badge-rose">Cần kèm cặp</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== FOOTER ==================== -->
+  <div style="text-align: center; padding: 20px 0; color: var(--slate-500); font-size: 11px; border-top: 1px solid var(--slate-300); margin-top: 24px;">
+    Đồ án Tốt nghiệp MIS 2026 • Hệ thống LMS Công ty Cổ phần SIMPACE Việt Nam • Tài liệu Mockup Giao diện Trực quan
+  </div>
+
+</div>
+
+</body>
+</html>

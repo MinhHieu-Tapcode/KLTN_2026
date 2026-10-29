@@ -14,23 +14,87 @@ function mapQuestionTypeToDbEnum(typeStr?: string): QuestionType {
     case "MULTIPLE_SELECT":
       return "MULTIPLE_SELECT" as QuestionType;
     case "TRUE_FALSE_NG":
+    case "READING_TFNG":
+    case "READING_YNNG":
       return "TRUE_FALSE_NG" as QuestionType;
     case "FILL_IN_BLANK":
+    case "MATCHING":
     case "MATCHING_HEADINGS":
     case "MATCHING_INFO":
     case "MATCHING_FEATURES":
     case "SENTENCE_ENDINGS":
     case "MAP":
     case "SHORT_ANSWER":
+    case "READING_MATCHING_HEADINGS":
+    case "READING_MATCHING_INFO":
+    case "READING_SENTENCE_COMPLETION":
+    case "READING_SUMMARY_COMPLETION":
+    case "READING_NOTE_TABLE_FORM":
+    case "READING_SHORT_ANSWER":
+    case "READING_DIAGRAM_LABELLING":
+    case "LISTENING_MATCHING":
+    case "LISTENING_MAP_PLAN":
+    case "LISTENING_FORM_NOTE_TABLE":
+    case "LISTENING_SENTENCE_COMPLETION":
+    case "LISTENING_SHORT_ANSWER":
       return "FILL_IN_BLANK" as QuestionType;
     case "ESSAY":
+    case "WRITING_TASK_1":
+    case "WRITING_TASK_2":
       return "ESSAY" as QuestionType;
     case "SPEAKING_RECORD":
+    case "SPEAKING_PART_1":
+    case "SPEAKING_PART_2":
+    case "SPEAKING_PART_3":
       return "SPEAKING_RECORD" as QuestionType;
     case "MULTIPLE_CHOICE":
+    case "READING_MCQ":
+    case "LISTENING_MCQ":
     default:
       return "MULTIPLE_CHOICE" as QuestionType;
   }
+}
+
+/**
+ * Suy luận mã dạng bài IELTS chi tiết (ieltsQuestionType) nếu người tạo chưa chọn tường minh
+ */
+export function resolveIeltsQuestionType(
+  explicitIeltsType?: string | null,
+  rawType?: string | null,
+  assignmentSkill?: string | null,
+  questionNumber?: number
+): string | null {
+  if (explicitIeltsType && explicitIeltsType.trim().length > 0) {
+    return explicitIeltsType.trim();
+  }
+  const skill = (assignmentSkill || "READING").toUpperCase();
+  const t = (rawType || "").toUpperCase();
+
+  if (skill === "WRITING" || t === "ESSAY") {
+    return questionNumber === 1 ? "WRITING_TASK_1" : "WRITING_TASK_2";
+  }
+  if (skill === "SPEAKING" || t === "SPEAKING_RECORD") {
+    if (questionNumber === 1) return "SPEAKING_PART_1";
+    if (questionNumber === 2) return "SPEAKING_PART_2";
+    return "SPEAKING_PART_3";
+  }
+  if (skill === "LISTENING") {
+    if (t.includes("MAP")) return "LISTENING_MAP_PLAN";
+    if (t.includes("MATCH")) return "LISTENING_MATCHING";
+    if (t.includes("SHORT")) return "LISTENING_SHORT_ANSWER";
+    if (t.includes("SENTENCE")) return "LISTENING_SENTENCE_COMPLETION";
+    if (t === "FILL_IN_BLANK") return "LISTENING_FORM_NOTE_TABLE";
+    return "LISTENING_MCQ";
+  }
+
+  // Mặc định là READING
+  if (t === "TRUE_FALSE_NG") return "READING_TFNG";
+  if (t === "MATCHING" || t === "MATCHING_HEADINGS") return "READING_MATCHING_HEADINGS";
+  if (t === "MATCHING_INFO") return "READING_MATCHING_INFO";
+  if (t === "SHORT_ANSWER") return "READING_SHORT_ANSWER";
+  if (t === "MAP") return "READING_DIAGRAM_LABELLING";
+  if (t === "FILL_IN_BLANK") return "READING_SENTENCE_COMPLETION";
+  return "READING_MCQ";
 }
 
 export interface CreateAssignmentInput {
@@ -43,6 +107,7 @@ export interface CreateAssignmentInput {
   durationMinutes?: number;
   dueDate?: string | null;
   startDate?: string | null;
+  maxAttempts?: number;
   audioUrl?: string | null;
   enableProctoring?: boolean;
   maxTabSwitches?: number;
@@ -55,6 +120,8 @@ export interface CreateAssignmentInput {
     passageText?: string;
     prompt: string;
     type: string;
+    ieltsQuestionType?: string | null;
+    groupTitle?: string | null;
     points: number;
     correctAnswer?: string;
     explanation?: string;
@@ -73,8 +140,8 @@ export interface UpdateAssignmentInput {
   type?: string;
   durationMinutes?: number;
   audioUrl?: string | null;
-  classId?: string; // Sửa hạn nộp/cài đặt cho riêng lớp này
-  updateAllClasses?: boolean; // Áp dụng cài đặt cho tất cả các lớp
+  classId?: string;
+  updateAllClasses?: boolean;
   dueDate?: string | null;
   startDate?: string | null;
   enableProctoring?: boolean;
@@ -85,6 +152,8 @@ export interface UpdateAssignmentInput {
     passageText?: string;
     prompt: string;
     type: string;
+    ieltsQuestionType?: string | null;
+    groupTitle?: string | null;
     points: number;
     correctAnswer?: string;
     explanation?: string;
@@ -113,22 +182,62 @@ export async function createAssignmentService(
   }
 
   const primaryClassId = targetClassList[0];
+  const maxTabLimit =
+    typeof data.maxTabSwitches === "number" && data.maxTabSwitches > 0 ? data.maxTabSwitches : 3;
+  const maxAttempts =
+    typeof data.maxAttempts === "number" && data.maxAttempts > 0 ? data.maxAttempts : 2;
+
+  const normalizePoints = (qType: QuestionType, rawPts?: number) => {
+    // Mục 8.5: Câu Writing/Speaking dùng totalPoints = 9 để dùng chung công thức %
+    if (qType === "ESSAY" || qType === "SPEAKING_RECORD") return 9.0;
+    return Number(rawPts) || 1.0;
+  };
 
   const saveToDemoStore = () => {
-    const totalPts = data.questions.reduce((sum, q) => sum + (Number(q.points) || 1), 0);
     const assignId = `assign-${Date.now()}`;
     const assignedClasses = targetClassList.map((cId) => ({
       id: `ac-${Date.now()}-${cId}`,
       assignmentId: assignId,
       classId: cId,
       dueDate: data.dueDate || null,
-      startDate: data.startDate || null,
+      startDate: data.startDate || new Date().toISOString(),
       enableProctoring: data.enableProctoring !== false,
-      maxTabSwitches: 999, // Không giới hạn số lần out tab
+      maxTabSwitches: maxTabLimit,
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
+
+    const mappedQuestions = data.questions.map((q, idx) => {
+      const dbType = mapQuestionTypeToDbEnum(q.type);
+      const qNum = q.questionNumber || idx + 1;
+      return {
+        id: `q-${Date.now()}-${idx}`,
+        questionNumber: qNum,
+        passageText: q.passageText?.trim() || null,
+        prompt: q.prompt.trim(),
+        type: dbType,
+        ieltsQuestionType: resolveIeltsQuestionType(
+          q.ieltsQuestionType,
+          q.type,
+          data.skill,
+          qNum
+        ),
+        groupTitle: q.groupTitle?.trim() || null,
+        points: normalizePoints(dbType, q.points),
+        correctAnswer: q.correctAnswer?.trim() || null,
+        explanation: q.explanation?.trim() || null,
+        orderIndex: idx,
+        options: (q.options || []).map((opt, oIdx) => ({
+          id: `opt-${Date.now()}-${idx}-${oIdx}`,
+          optionLabel: opt.optionLabel,
+          content: opt.content,
+          isCorrect: Boolean(opt.isCorrect),
+        })),
+      };
+    });
+
+    const totalPts = mappedQuestions.reduce((sum, q) => sum + (Number(q.points) || 1), 0);
 
     const newAssign = {
       id: assignId,
@@ -145,9 +254,11 @@ export async function createAssignmentService(
       type: data.type || "HOMEWORK",
       durationMinutes: data.durationMinutes ? Number(data.durationMinutes) : 60,
       dueDate: data.dueDate || null,
+      startDate: data.startDate || new Date().toISOString(),
+      maxAttempts,
       audioUrl: data.audioUrl || null,
       enableProctoring: data.enableProctoring !== false,
-      maxTabSwitches: 999, // Không giới hạn số lần out tab
+      maxTabSwitches: maxTabLimit,
       createdById: createdById || "SYSTEM",
       totalPoints: totalPts,
       submittedCount: 0,
@@ -159,23 +270,7 @@ export async function createAssignmentService(
       matchingHeadings: data.matchingHeadings || [],
       summaries: data.summaries || [],
       createdAt: new Date().toISOString(),
-      questions: data.questions.map((q, idx) => ({
-        id: `q-${Date.now()}-${idx}`,
-        questionNumber: q.questionNumber || idx + 1,
-        passageText: q.passageText?.trim() || null,
-        prompt: q.prompt.trim(),
-        type: mapQuestionTypeToDbEnum(q.type),
-        points: Number(q.points) || 1.0,
-        correctAnswer: q.correctAnswer?.trim() || null,
-        explanation: q.explanation?.trim() || null,
-        orderIndex: idx,
-        options: (q.options || []).map((opt, oIdx) => ({
-          id: `opt-${Date.now()}-${idx}-${oIdx}`,
-          optionLabel: opt.optionLabel,
-          content: opt.content,
-          isCorrect: Boolean(opt.isCorrect),
-        })),
-      })),
+      questions: mappedQuestions,
       submissions: [],
     };
 
@@ -211,40 +306,52 @@ export async function createAssignmentService(
         type: (data.type as AssignmentType) || "HOMEWORK",
         durationMinutes: data.durationMinutes ? Number(data.durationMinutes) : null,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        maxAttempts,
         audioUrl: data.audioUrl || null,
         enableProctoring: data.enableProctoring !== false,
-        maxTabSwitches: 999, // Không giới hạn số lần out tab
+        maxTabSwitches: maxTabLimit,
         createdById: createdById || "SYSTEM",
         assignedClasses: {
           create: targetClassList.map((cId) => ({
             classId: cId,
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
-            startDate: data.startDate ? new Date(data.startDate) : null,
+            startDate: data.startDate ? new Date(data.startDate) : new Date(),
             enableProctoring: data.enableProctoring !== false,
-            maxTabSwitches: 999,
+            maxTabSwitches: maxTabLimit,
           })),
         },
         questions: {
-          create: data.questions.map((q, idx) => ({
-            questionNumber: q.questionNumber || idx + 1,
-            passageText: q.passageText?.trim() || null,
-            prompt: q.prompt.trim(),
-            type: mapQuestionTypeToDbEnum(q.type),
-            points: Number(q.points) || 1.0,
-            correctAnswer: q.correctAnswer?.trim() || null,
-            explanation: q.explanation?.trim() || null,
-            orderIndex: idx,
-            options:
-              q.options && q.options.length > 0
-                ? {
-                    create: q.options.map((opt) => ({
-                      optionLabel: opt.optionLabel,
-                      content: opt.content,
-                      isCorrect: Boolean(opt.isCorrect),
-                    })),
-                  }
-                : undefined,
-          })),
+          create: data.questions.map((q, idx) => {
+            const dbType = mapQuestionTypeToDbEnum(q.type);
+            const qNum = q.questionNumber || idx + 1;
+            return {
+              questionNumber: qNum,
+              passageText: q.passageText?.trim() || null,
+              prompt: q.prompt.trim(),
+              type: dbType,
+              ieltsQuestionType: resolveIeltsQuestionType(
+                q.ieltsQuestionType,
+                q.type,
+                data.skill,
+                qNum
+              ),
+              groupTitle: q.groupTitle?.trim() || null,
+              points: normalizePoints(dbType, q.points),
+              correctAnswer: q.correctAnswer?.trim() || null,
+              explanation: q.explanation?.trim() || null,
+              orderIndex: idx,
+              options:
+                q.options && q.options.length > 0
+                  ? {
+                      create: q.options.map((opt) => ({
+                        optionLabel: opt.optionLabel,
+                        content: opt.content,
+                        isCorrect: Boolean(opt.isCorrect),
+                      })),
+                    }
+                  : undefined,
+            };
+          }),
         },
       },
       include: {
@@ -262,10 +369,9 @@ export async function createAssignmentService(
     };
   } catch (dbErr: any) {
     const errText = String(dbErr?.message || dbErr || "");
-    // Bắt lỗi P2021 hoặc text lỗi nếu bảng assignments chưa được tạo trên Supabase PostgreSQL
-    if (dbErr?.code === "P2021" || errText.includes("does not exist")) {
+    if (dbErr?.code === "P2021" || dbErr?.code === "P2022" || errText.includes("does not exist")) {
       console.warn(
-        "[createAssignmentService] CSDL chưa có bảng 'assignments', tự động chuyển sang lưu tạm bộ nhớ:",
+        "[createAssignmentService] CSDL chưa đồng bộ cột mới, tự động chuyển sang lưu tạm bộ nhớ:",
         errText
       );
       return saveToDemoStore();
@@ -297,14 +403,15 @@ export async function updateAssignmentService(
     if (data.durationMinutes !== undefined) assign.durationMinutes = data.durationMinutes;
     if (data.audioUrl !== undefined) assign.audioUrl = data.audioUrl;
 
-    // Cập nhật cài đặt lớp
     if (data.updateAllClasses) {
       if (data.dueDate !== undefined) assign.dueDate = data.dueDate;
+      if (data.startDate !== undefined) assign.startDate = data.startDate;
       if (data.enableProctoring !== undefined) assign.enableProctoring = data.enableProctoring;
       if (data.maxTabSwitches !== undefined) assign.maxTabSwitches = data.maxTabSwitches;
       if (Array.isArray(assign.assignedClasses)) {
         assign.assignedClasses.forEach((ac: any) => {
           if (data.dueDate !== undefined) ac.dueDate = data.dueDate;
+          if (data.startDate !== undefined) ac.startDate = data.startDate;
           if (data.enableProctoring !== undefined) ac.enableProctoring = data.enableProctoring;
           if (data.maxTabSwitches !== undefined) ac.maxTabSwitches = data.maxTabSwitches;
         });
@@ -313,30 +420,41 @@ export async function updateAssignmentService(
       const classLink = assign.assignedClasses.find((ac: any) => ac.classId === data.classId);
       if (classLink) {
         if (data.dueDate !== undefined) classLink.dueDate = data.dueDate;
+        if (data.startDate !== undefined) classLink.startDate = data.startDate;
         if (data.enableProctoring !== undefined) classLink.enableProctoring = data.enableProctoring;
         if (data.maxTabSwitches !== undefined) classLink.maxTabSwitches = data.maxTabSwitches;
       }
     }
 
-    // Cập nhật câu hỏi nếu có
     if (data.questions && data.questions.length > 0) {
-      assign.questions = data.questions.map((q, idx) => ({
-        id: q.id || `q-${Date.now()}-${idx}`,
-        questionNumber: q.questionNumber || idx + 1,
-        passageText: q.passageText?.trim() || null,
-        prompt: q.prompt.trim(),
-        type: mapQuestionTypeToDbEnum(q.type),
-        points: Number(q.points) || 1.0,
-        correctAnswer: q.correctAnswer?.trim() || null,
-        explanation: q.explanation?.trim() || null,
-        orderIndex: idx,
-        options: (q.options || []).map((opt, oIdx) => ({
-          id: opt.id || `opt-${Date.now()}-${idx}-${oIdx}`,
-          optionLabel: opt.optionLabel,
-          content: opt.content,
-          isCorrect: Boolean(opt.isCorrect),
-        })),
-      }));
+      assign.questions = data.questions.map((q, idx) => {
+        const dbType = mapQuestionTypeToDbEnum(q.type);
+        const qNum = q.questionNumber || idx + 1;
+        return {
+          id: q.id || `q-${Date.now()}-${idx}`,
+          questionNumber: qNum,
+          passageText: q.passageText?.trim() || null,
+          prompt: q.prompt.trim(),
+          type: dbType,
+          ieltsQuestionType: resolveIeltsQuestionType(
+            q.ieltsQuestionType,
+            q.type,
+            assign.skill,
+            qNum
+          ),
+          groupTitle: q.groupTitle?.trim() || null,
+          points: dbType === "ESSAY" || dbType === "SPEAKING_RECORD" ? 9.0 : Number(q.points) || 1.0,
+          correctAnswer: q.correctAnswer?.trim() || null,
+          explanation: q.explanation?.trim() || null,
+          orderIndex: idx,
+          options: (q.options || []).map((opt, oIdx) => ({
+            id: opt.id || `opt-${Date.now()}-${idx}-${oIdx}`,
+            optionLabel: opt.optionLabel,
+            content: opt.content,
+            isCorrect: Boolean(opt.isCorrect),
+          })),
+        };
+      });
     }
 
     const subCount = (assign.submissions || []).length;
@@ -347,13 +465,13 @@ export async function updateAssignmentService(
     };
   }
 
-  // Cập nhật Prisma
   const updateData: any = {};
   if (data.title !== undefined) updateData.title = data.title.trim();
   if (data.description !== undefined) updateData.description = data.description?.trim() || null;
   if (data.skill !== undefined) updateData.skill = data.skill as AssignmentSkill;
   if (data.type !== undefined) updateData.type = data.type as AssignmentType;
-  if (data.durationMinutes !== undefined) updateData.durationMinutes = data.durationMinutes ? Number(data.durationMinutes) : null;
+  if (data.durationMinutes !== undefined)
+    updateData.durationMinutes = data.durationMinutes ? Number(data.durationMinutes) : null;
   if (data.audioUrl !== undefined) updateData.audioUrl = data.audioUrl;
 
   if (data.updateAllClasses) {
@@ -365,6 +483,7 @@ export async function updateAssignmentService(
       where: { assignmentId, isActive: true },
       data: {
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        startDate: data.startDate ? new Date(data.startDate) : undefined,
         enableProctoring: data.enableProctoring !== undefined ? data.enableProctoring : undefined,
         maxTabSwitches: data.maxTabSwitches !== undefined ? data.maxTabSwitches : undefined,
       },
@@ -374,26 +493,34 @@ export async function updateAssignmentService(
       where: { assignmentId, classId: data.classId },
       data: {
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        startDate: data.startDate ? new Date(data.startDate) : undefined,
         enableProctoring: data.enableProctoring !== undefined ? data.enableProctoring : undefined,
         maxTabSwitches: data.maxTabSwitches !== undefined ? data.maxTabSwitches : undefined,
       },
     });
   }
 
-  // Cập nhật các câu hỏi nếu được gửi kèm
   if (data.questions && data.questions.length > 0) {
-    // Xóa câu hỏi cũ và tạo mới trong transaction
     await prisma.$transaction([
       prisma.assignmentQuestion.deleteMany({ where: { assignmentId } }),
-      ...data.questions.map((q, idx) =>
-        prisma.assignmentQuestion.create({
+      ...data.questions.map((q, idx) => {
+        const dbType = mapQuestionTypeToDbEnum(q.type);
+        const qNum = q.questionNumber || idx + 1;
+        return prisma.assignmentQuestion.create({
           data: {
             assignmentId,
-            questionNumber: q.questionNumber || idx + 1,
+            questionNumber: qNum,
             passageText: q.passageText?.trim() || null,
             prompt: q.prompt.trim(),
-            type: mapQuestionTypeToDbEnum(q.type),
-            points: Number(q.points) || 1.0,
+            type: dbType,
+            ieltsQuestionType: resolveIeltsQuestionType(
+              q.ieltsQuestionType,
+              q.type,
+              data.skill,
+              qNum
+            ),
+            groupTitle: q.groupTitle?.trim() || null,
+            points: dbType === "ESSAY" || dbType === "SPEAKING_RECORD" ? 9.0 : Number(q.points) || 1.0,
             correctAnswer: q.correctAnswer?.trim() || null,
             explanation: q.explanation?.trim() || null,
             orderIndex: idx,
@@ -408,8 +535,8 @@ export async function updateAssignmentService(
                   }
                 : undefined,
           },
-        })
-      ),
+        });
+      }),
     ]);
   }
 
@@ -433,8 +560,6 @@ export async function updateAssignmentService(
 
 /**
  * Xóa mềm Bài tập
- * Nếu có classId và không chọn deleteFromAll: chỉ xóa liên kết AssignmentClass của lớp đó.
- * Chỉ xóa hẳn Assignment gốc khi không còn lớp nào liên kết hoặc khi chọn deleteFromAll.
  */
 export async function deleteAssignmentService(
   assignmentId: string,

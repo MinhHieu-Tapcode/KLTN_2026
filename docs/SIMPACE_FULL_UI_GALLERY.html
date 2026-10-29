@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIMPACE LMS - BỘ BẢN ĐỒ TOÀN BỘ ẢNH GIAO DIỆN (FULL UI & MODAL GALLERY)</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    :root {
+      --primary: #EA580C;
+      --primary-hover: #C2410C;
+      --primary-50: #FFF7ED;
+      --primary-100: #FFEDD5;
+      --primary-200: #FED7AA;
+
+      --slate-50: #F8FAFC;
+      --slate-100: #F1F5F9;
+      --slate-200: #E2E8F0;
+      --slate-300: #CBD5E1;
+      --slate-400: #94A3B8;
+      --slate-500: #64748B;
+      --slate-600: #475569;
+      --slate-700: #334155;
+      --slate-800: #1E293B;
+      --slate-900: #0F172A;
+
+      --emerald-500: #10B981;
+      --emerald-50: #ECFDF5;
+      --sky-500: #0EA5E9;
+      --sky-50: #F0F9FF;
+      --purple-500: #8B5CF6;
+      --purple-50: #FAF5FF;
+      --amber-500: #F59E0B;
+      --amber-50: #FFFBEB;
+      --rose-500: #F43F5E;
+      --rose-50: #FFF1F2;
+      --indigo-500: #6366F1;
+      --pink-500: #EC4899;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #F1F5F9;
+      color: var(--slate-900);
+      line-height: 1.45;
+      font-size: 12px;
+      padding: 24px;
+    }
+
+    @media print {
+      body { padding: 0; background: #fff; }
+      .page-break { page-break-before: always; break-before: page; }
+      .no-break { page-break-inside: avoid; break-inside: avoid; }
+    }
+
+    .container { max-width: 1180px; margin: 0 auto; }
+
+    /* HEADER BANNER */
+    .master-banner {
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      color: white;
+      border-radius: 16px;
+      padding: 26px 32px;
+      margin-bottom: 24px;
+      border-left: 6px solid var(--primary);
+      box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.2);
+    }
+    .master-banner h1 { font-size: 24px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.5px; }
+    .master-banner p { color: var(--slate-300); font-size: 13px; max-width: 950px; }
+
+    /* TOC QUICK NAV */
+    .toc-bar {
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 12px 18px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      font-size: 11.5px;
+    }
+    .toc-link {
+      color: var(--slate-700);
+      text-decoration: none;
+      background: var(--slate-100);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .toc-link:hover {
+      background: var(--primary-50);
+      color: var(--primary);
+    }
+
+    /* SECTION TITLE */
+    .sec-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--slate-900);
+      margin: 32px 0 16px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--slate-200);
+    }
+    .sec-num {
+      background: var(--primary);
+      color: white;
+      padding: 2px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+
+    /* CASE CARD */
+    .case-card {
+      background: white;
+      border: 1.5px solid var(--slate-300);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 22px;
+      box-shadow: 0 3px 8px -1px rgba(15, 23, 42, 0.06);
+    }
+    .case-header {
+      background: var(--slate-800);
+      color: white;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .case-tag {
+      background: rgba(234, 88, 12, 0.35);
+      color: #FB923C;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 10.5px;
+      font-weight: 600;
+      border: 1px solid rgba(251, 146, 60, 0.4);
+    }
+    .case-body {
+      padding: 16px;
+      background: var(--slate-50);
+    }
+
+    /* PILLS & BADGES */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 10.5px;
+      font-weight: 600;
+      line-height: 1;
+    }
+    .badge-primary { background: var(--primary-50); color: var(--primary); border: 1px solid var(--primary-200); }
+    .badge-emerald { background: var(--emerald-50); color: #047857; border: 1px solid #A7F3D0; }
+    .badge-sky { background: var(--sky-50); color: #0369A1; border: 1px solid #BAE6FD; }
+    .badge-purple { background: var(--purple-50); color: #6D28D9; border: 1px solid #DDD6FE; }
+    .badge-amber { background: var(--amber-50); color: #B45309; border: 1px solid #FDE68A; }
+    .badge-rose { background: var(--rose-50); color: #BE123C; border: 1px solid #FECDD3; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-outline { background: white; border-color: var(--slate-300); color: var(--slate-700); }
+    .btn-danger { background: var(--rose-500); color: white; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+    .box-white {
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    /* MODAL POPUP SIMULATION */
+    .popup-sim {
+      border: 2px solid var(--slate-300);
+      background: white;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+      margin-top: 10px;
+    }
+    .popup-head {
+      background: #F8FAFC;
+      border-bottom: 1px solid var(--slate-200);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .popup-body {
+      padding: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- BANNER TỔNG QUAN -->
+  <div class="master-banner">
+    <h1>BẢN ĐỒ TOÀN BỘ ẢNH MOCKUP GIAO DIỆN (FULL UI & MODAL GALLERY)</h1>
+    <p>Tổng hợp chi tiết trực quan <b>toàn bộ 36+ trường hợp</b> màn hình, popup, modal, tín hiệu cảnh báo gian lận và phiếu chấm 4 kỹ năng IELTS trong hệ thống SIMPACE LMS phục vụ chuẩn hóa thiết kế đồ án tốt nghiệp.</p>
+  </div>
+
+  <!-- THANH ĐIỀU HƯỚNG NHANH -->
+  <div class="toc-bar">
+    <span style="font-weight: 700; color: var(--slate-900);">Mục lục nhanh:</span>
+    <a href="#sec-1" class="toc-link">1. Các dạng bài IELTS (13 cases)</a>
+    <a href="#sec-2" class="toc-link">2. Không gian Chấm bài 3 cột (7 cases)</a>
+    <a href="#sec-3" class="toc-link">3. Giám sát thi & Gian lận (5 cases)</a>
+    <a href="#sec-4" class="toc-link">4. Quản lý Học liệu (5 cases)</a>
+    <a href="#sec-5" class="toc-link">5. Báo cáo & Thống kê (6 cases)</a>
+    <a href="#sec-6" class="toc-link">6. Giao diện 4 Roles</a>
+  </div>
+
+
+  <!-- ==========================================
+       PHẦN 1: TẤT CẢ CÁC DẠNG BÀI TẬP IELTS
+       ========================================== -->
+  <div id="sec-1" class="sec-title"><span class="sec-num">PHẦN 1</span> TOÀN BỘ CÁC DẠNG BÀI TẬP IELTS (13 TRƯỜNG HỢP)</div>
+
+  <!-- CASE 1: READING PASSAGE + MCQ -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 01: READING — TRẮC NGHIỆM ĐỌC HIỂU (MULTIPLE CHOICE - MCQ)</div>
+      <span class="case-tag">Kỹ năng: Reading • Ebook Player</span>
+    </div>
+    <div class="case-body">
+      <div class="grid-2">
+        <div class="box-white" style="line-height: 1.6; font-size: 11.5px;">
+          <b style="color: var(--slate-900);">READING PASSAGE 1: THE HISTORY OF TEA CULTURE</b>
+          <p style="margin-top: 6px; color: var(--slate-700);">Paragraph A: According to Chinese legend, tea was first discovered in 2737 BC by Emperor Shennong, a renowned herbalist and scholar. While boiling drinking water in the shade of a wild tea tree, a light breeze blew a few leaves into the pot, infusing the water with a delicate aroma...</p>
+        </div>
+        <div class="box-white">
+          <div style="font-weight: 700; margin-bottom: 6px;">Questions 1-2 (Multiple Choice):</div>
+          <div style="margin-bottom: 6px;">1. Where was tea first discovered according to Chinese legend?</div>
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="background: var(--slate-50); padding: 5px 8px; border-radius: 6px; border: 1px solid var(--slate-200);"><input type="radio" disabled> A. In an ancient forest in Yunnan</label>
+            <label style="background: #FFF7ED; padding: 5px 8px; border-radius: 6px; border: 1.5px solid #EA580C; font-weight: 600;"><input type="radio" checked> B. Under Emperor Shennong's boiling water</label>
+            <label style="background: var(--slate-50); padding: 5px 8px; border-radius: 6px; border: 1px solid var(--slate-200);"><input type="radio" disabled> C. By Buddhist monks during meditation</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 2: READING MATCHING HEADINGS -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 02: READING — NỐI TIÊU ĐỀ ĐOẠN VĂN (MATCHING HEADINGS)</div>
+      <span class="case-tag">Kỹ năng: Reading • Nối đoạn</span>
+    </div>
+    <div class="case-body">
+      <div class="box-white" style="margin-bottom: 10px;">
+        <div style="font-weight: 700; color: #4338CA; margin-bottom: 6px;">List of Headings (Danh sách tiêu đề):</div>
+        <div class="grid-4" style="font-size: 11px;">
+          <div style="background: #EEF2FF; border: 1px solid #C7D2FE; padding: 6px; border-radius: 6px;"><b>i.</b> Benefits of online learning</div>
+          <div style="background: #EEF2FF; border: 1px solid #C7D2FE; padding: 6px; border-radius: 6px;"><b>ii.</b> Challenges for students</div>
+          <div style="background: #EEF2FF; border: 1px solid #C7D2FE; padding: 6px; border-radius: 6px;"><b>iii.</b> The role of teachers</div>
+          <div style="background: #EEF2FF; border: 1px solid #C7D2FE; padding: 6px; border-radius: 6px;"><b>iv.</b> Future of education</div>
+        </div>
+      </div>
+      <div class="grid-3">
+        <div class="box-white">
+          <b>Paragraph A:</b> Học sinh tự chủ học tập...
+          <div style="margin-top: 6px;"><select style="width: 100%; padding: 4px; border-radius: 6px; border: 1px solid var(--slate-300);"><option>Chọn tiêu đề: i. Benefits</option></select></div>
+        </div>
+        <div class="box-white">
+          <b>Paragraph B:</b> Khó khăn về tính kỷ luật...
+          <div style="margin-top: 6px;"><select style="width: 100%; padding: 4px; border-radius: 6px; border: 1px solid var(--slate-300);"><option>Chọn tiêu đề: ii. Challenges</option></select></div>
+        </div>
+        <div class="box-white">
+          <b>Paragraph C:</b> Công cụ hỗ trợ giảng viên...
+          <div style="margin-top: 6px;"><select style="width: 100%; padding: 4px; border-radius: 6px; border: 1px solid var(--slate-300);"><option>Chọn tiêu đề: iii. Role of teachers</option></select></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 3: READING FLOWCHART COMPLETION -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 03: READING — HOÀN THÀNH SƠ ĐỒ QUY TRÌNH (FLOWCHART COMPLETION)</div>
+      <span class="case-tag">Kỹ năng: Reading • Sơ đồ tuần tự</span>
+    </div>
+    <div class="case-body">
+      <div style="display: flex; gap: 8px; align-items: center; justify-content: space-between; overflow-x: auto; padding: 8px 0;">
+        <div class="box-white" style="text-align: center; width: 180px; border-top: 3px solid #6366F1;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Bước 1</div>
+          <div>Manager having just obtained <input type="text" value="MBA" style="width: 60px; border: 1px solid #EA580C; border-radius: 4px; text-align: center; color: #EA580C; font-weight: 700;"></div>
+        </div>
+        <span style="font-size: 18px; color: var(--slate-400);">➔</span>
+        <div class="box-white" style="text-align: center; width: 180px; border-top: 3px solid #6366F1;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Bước 2</div>
+          <div>People with varied <input type="text" value="backgrounds" style="width: 80px; border: 1px solid #EA580C; border-radius: 4px; text-align: center; color: #EA580C; font-weight: 700;"></div>
+        </div>
+        <span style="font-size: 18px; color: var(--slate-400);">➔</span>
+        <div class="box-white" style="text-align: center; width: 180px; background: #F8FAFC;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Bước 3 (Cố định)</div>
+          <div>Playing with language for a long time</div>
+        </div>
+        <span style="font-size: 18px; color: var(--slate-400);">➔</span>
+        <div class="box-white" style="text-align: center; width: 180px; border-top: 3px solid #6366F1;">
+          <div style="font-size: 10.5px; color: var(--slate-500);">Bước 4</div>
+          <div>Want <input type="text" value="immediate" style="width: 70px; border: 1px solid #EA580C; border-radius: 4px; text-align: center; color: #EA580C; font-weight: 700;"> payback</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 4 & 5: TABLE COMPLETION & SUMMARY COMPLETION -->
+  <div class="grid-2 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 04: READING — ĐIỀN BẢNG SỐ LIỆU (TABLE COMPLETION)</div>
+        <span class="case-tag">Table</span>
+      </div>
+      <div class="case-body">
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+          <tr style="background: var(--slate-200); font-weight: 700;"><th style="padding: 5px;">Nº</th><th style="padding: 5px;">FEATURE</th><th style="padding: 5px;">DESCRIPTION</th></tr>
+          <tr style="border-bottom: 1px solid var(--slate-200);"><td style="padding: 5px;">1</td><td style="padding: 5px;">Location</td><td style="padding: 5px;">Central campus near <input type="text" value="library" style="border: 1px solid #EA580C; width: 70px; padding: 2px;"></td></tr>
+          <tr><td style="padding: 5px;">2</td><td style="padding: 5px;">Facilities</td><td style="padding: 5px;">High-speed <input type="text" value="computers" style="border: 1px solid #EA580C; width: 80px; padding: 2px;"></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 05: READING — ĐIỀN ĐOẠN TÓM TẮT (SUMMARY COMPLETION)</div>
+        <span class="case-tag">Gap-fill</span>
+      </div>
+      <div class="case-body" style="line-height: 1.8;">
+        Tea culture began in ancient China when Emperor Shennong accidentally discovered leaves falling into his <input type="text" value="boiling water" style="border: 1px solid #EA580C; width: 90px; padding: 2px; color: #EA580C; font-weight: 600;">. During the Han dynasty, it was utilized as a <input type="text" value="medicinal" style="border: 1px solid #EA580C; width: 75px; padding: 2px; color: #EA580C; font-weight: 600;"> drink by physicians.
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 6: TRUE / FALSE / NOT GIVEN -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 06: READING — DẠNG XÁC ĐỊNH ĐÚNG/SAI/KHÔNG ĐỀ CẬP (TRUE / FALSE / NOT GIVEN)</div>
+      <span class="case-tag">Kỹ năng: Reading • T/F/NG</span>
+    </div>
+    <div class="case-body">
+      <div class="grid-3">
+        <div class="box-white">
+          <div style="font-weight: 600;">1. Emperor Shennong was intentionally searching for tea leaves.</div>
+          <div style="margin-top: 6px; display: flex; gap: 8px;">
+            <span class="badge badge-rose" style="font-weight: 700;">FALSE ✓</span>
+            <span style="font-size: 10.5px; color: var(--slate-400);">(Lá dại tình cờ rơi vào)</span>
+          </div>
+        </div>
+        <div class="box-white">
+          <div style="font-weight: 600;">2. Tea was traded across Europe before the 17th century.</div>
+          <div style="margin-top: 6px; display: flex; gap: 8px;">
+            <span class="badge badge-rose" style="font-weight: 700;">FALSE ✓</span>
+            <span style="font-size: 10.5px; color: var(--slate-400);">(Thế kỷ 17 mới du nhập)</span>
+          </div>
+        </div>
+        <div class="box-white">
+          <div style="font-weight: 600;">3. French aristocracy preferred green tea over black tea.</div>
+          <div style="margin-top: 6px; display: flex; gap: 8px;">
+            <span class="badge badge-amber" style="font-weight: 700;">NOT GIVEN ✓</span>
+            <span style="font-size: 10.5px; color: var(--slate-400);">(Bài không đề cập sở thích)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 7 & 8: LISTENING FORM & MAP LABELING -->
+  <div class="page-break"></div>
+  <div class="grid-2 no-break">
+    <!-- CASE 7: LISTENING FORM -->
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 07: LISTENING — ĐIỀN BIỂU MẪU (FORM COMPLETION)</div>
+        <span class="case-tag">Listening • Form</span>
+      </div>
+      <div class="case-body">
+        <div style="background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <span>🎧 Track 1 (00:42 / 03:15)</span>
+          <span class="badge badge-sky">Audio Playing ▶</span>
+        </div>
+        <div class="box-white" style="line-height: 1.8;">
+          <b>STUDENT ACCOMMODATION APPLICATION:</b><br>
+          • Full name: <input type="text" value="Nguyen Van An" style="border: 1px solid var(--slate-300); width: 120px; padding: 2px;"><br>
+          • Preferred room: Single <input type="text" value="ensuite" style="border: 1px solid #EA580C; width: 80px; padding: 2px; color: #EA580C; font-weight: 700;"> room with balcony.<br>
+          • Contact number: <input type="text" value="0912345678" style="border: 1px solid var(--slate-300); width: 100px; padding: 2px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- CASE 8: LISTENING MAP LABELING -->
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 08: LISTENING — GẮN NHÃN SƠ ĐỒ BẢN ĐỒ (MAP LABELING)</div>
+        <span class="case-tag">Listening • Map</span>
+      </div>
+      <div class="case-body">
+        <div style="background: var(--slate-200); height: 80px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--slate-600); font-weight: 700; margin-bottom: 8px;">
+          🗺 [SƠ ĐỒ KHUÔN VIÊN TRƯỜNG ĐẠI HỌC] (Tòa A, B, C, Thư viện, Hội trường)
+        </div>
+        <div style="font-size: 11px;">
+          Câu 3: The Multimedia Lab is located next to the Main <input type="text" value="Auditorium" style="border: 1px solid #EA580C; width: 100px; padding: 2px; color: #EA580C; font-weight: 700;">.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 9: LISTENING MCQ -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 09: LISTENING — TRẮC NGHIỆM ĐOẠN HỘI THOẠI (MULTIPLE CHOICE)</div>
+      <span class="case-tag">Listening • MCQ</span>
+    </div>
+    <div class="case-body">
+      <div class="box-white">
+        <div style="font-weight: 600; margin-bottom: 6px;">Which floor of the library is reserved for silent postgraduate research?</div>
+        <div style="display: flex; gap: 12px;">
+          <label><input type="radio" disabled> A. Ground Floor</label>
+          <label><input type="radio" disabled> B. Second Floor (Group discussion)</label>
+          <label style="color: #EA580C; font-weight: 700;"><input type="radio" checked> C. Fourth Floor (Silent study zone ✓)</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 10 & 11: WRITING TASK 1 & TASK 2 -->
+  <div class="grid-2 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 10: WRITING TASK 1 (REPORT - 150 WORDS)</div>
+        <span class="case-tag">Writing • Task 1</span>
+      </div>
+      <div class="case-body">
+        <div style="background: var(--slate-100); padding: 6px; border-radius: 6px; margin-bottom: 6px; font-size: 11px;">
+          <b>Đề bài:</b> Bảng số liệu tỷ lệ dân cư thành thị tại 4 nước châu Á (1970 - 2040). Viết tối thiểu 150 từ.
+        </div>
+        <textarea style="width: 100%; height: 80px; border: 1px solid var(--slate-300); border-radius: 6px; font-size: 11px; padding: 6px; resize: none;" readonly>The provided table illustrates the percentage of city dwellers across four Asian nations from 1970 to 2020, alongside forecasts for 2040. Overall, all four countries experienced a steady upward trajectory in urbanization...</textarea>
+        <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: var(--slate-500); margin-top: 4px;">
+          <span>Đếm từ: <b>168 từ</b> (Đạt chuẩn ≥ 150)</span>
+          <span class="badge badge-emerald">Task 1 ✓</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 11: WRITING TASK 2 (ESSAY - 250 WORDS)</div>
+        <span class="case-tag">Writing • Task 2</span>
+      </div>
+      <div class="case-body">
+        <div style="background: var(--slate-100); padding: 6px; border-radius: 6px; margin-bottom: 6px; font-size: 11px;">
+          <b>Đề bài:</b> Giới trẻ đổ về các đô thị lớn để học tập và làm việc. Nêu lý do và đánh giá lợi ích/bất lợi. Viết ≥ 250 từ.
+        </div>
+        <textarea style="width: 100%; height: 80px; border: 1px solid var(--slate-300); border-radius: 6px; font-size: 11px; padding: 6px; resize: none;" readonly>Over the past few decades, rural-to-urban migration among young adults has accelerated dramatically. This essay argues that while metropolitan centers offer superior educational and career prospects, the resulting pressure...</textarea>
+        <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: var(--slate-500); margin-top: 4px;">
+          <span>Đếm từ: <b>284 từ</b> (Đạt chuẩn ≥ 250)</span>
+          <span class="badge badge-purple">Task 2 ✓</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 12 & 13: SPEAKING PART 2 & PART 3 -->
+  <div class="grid-2 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 12: SPEAKING PART 2 (CUE CARD - 2 PHÚT)</div>
+        <span class="case-tag">Speaking • Cue Card</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white" style="margin-bottom: 8px;">
+          <b>Describe a piece of technology (not a phone) useful for your studies:</b><br>
+          • What it is & when you got it<br>
+          • What you use it for & why it helps you study effectively
+        </div>
+        <div style="background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 8px; padding: 8px; display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="btn btn-primary" style="padding: 4px 8px;">🎙 Thu âm</button>
+            <span style="font-weight: 700; color: #EA580C; font-family: monospace;">01:45 / 02:00</span>
+          </div>
+          <span class="badge badge-amber">Đang ghi âm sóng mic</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 13: SPEAKING PART 3 (TWO-WAY DISCUSSION)</div>
+        <span class="case-tag">Speaking • Thảo luận</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white" style="margin-bottom: 8px;">
+          <b>Question 1:</b> In what ways do you think artificial intelligence will transform classroom learning over the next decade?
+        </div>
+        <div style="border: 1px solid var(--slate-200); border-radius: 8px; padding: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <button class="btn btn-outline">▶ Nghe câu trả lời của thí sinh (00:48)</button>
+          <span class="badge badge-emerald">File WAV đã upload</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==========================================
+       PHẦN 2: KHÔNG GIAN CHẤM BÀI 3 CỘT & GHI CHÚ DOCS
+       ========================================== -->
+  <div class="page-break"></div>
+  <div id="sec-2" class="sec-title"><span class="sec-num">PHẦN 2</span> KHÔNG GIAN CHẤM BÀI 3 CỘT & GHI CHÚ INLINE GOOGLE DOCS (7 TRƯỜNG HỢP)</div>
+
+  <!-- CASE 14: CHẤM BÀI TRẮC NGHIỆM KHÁCH QUAN -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 14: KHÔNG GIAN CHẤM BÀI TRẮC NGHIỆM KHÁCH QUAN (READING / LISTENING)</div>
+      <span class="case-tag">Chấm tự động • Không hiện 4 tiêu chí</span>
+    </div>
+    <div class="case-body">
+      <div style="display: grid; grid-template-columns: 200px 1fr 280px; gap: 10px;">
+        <div class="box-white">
+          <div style="font-weight: 700; font-size: 11px; margin-bottom: 6px;">DANH SÁCH HỌC VIÊN</div>
+          <div style="padding: 6px; border: 1.5px solid #10B981; border-radius: 6px; background: #ECFDF5; margin-bottom: 6px;">
+            <b>Nguyễn Văn An</b><br><span class="badge badge-emerald">4/4đ (Band ~9.0)</span>
+          </div>
+          <div style="padding: 6px; border: 1px solid var(--slate-200); border-radius: 6px;">
+            <b>Trần Thị Lan</b><br><span class="badge badge-amber">3/4đ (Band ~7.5)</span>
+          </div>
+        </div>
+
+        <div class="box-white">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <b>Câu 1: Where was tea first discovered?</b>
+            <span class="badge badge-emerald">Học sinh làm ĐÚNG (+1đ)</span>
+          </div>
+          <div style="font-size: 11px; color: var(--slate-700);">Đáp án của học sinh: <b>B</b> (Chính xác)</div>
+          <div style="background: #F0FDF4; border-left: 3px solid #10B981; padding: 6px 10px; margin-top: 6px; font-size: 10.5px; color: #166534;">
+            <b>Giải thích chi tiết:</b> Đoạn A nêu rõ: Hoàng đế Thần Nông đang đun nước thì lá trà bay vào nồi nước sôi.
+          </div>
+        </div>
+
+        <div class="box-white">
+          <div style="font-weight: 700; margin-bottom: 6px;">TỔNG KẾT KHÁCH QUAN</div>
+          <div style="font-size: 20px; font-weight: 800; color: #10B981; margin-bottom: 6px;">4 / 4 Điểm</div>
+          <div style="font-size: 11px; color: var(--slate-500); margin-bottom: 10px;">Tự động chấm 100% bằng thuật toán. Không yêu cầu chấm 4 tiêu chí IELTS.</div>
+          <button class="btn btn-primary" style="width: 100%; justify-content: center;">Xác nhận điểm số</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 15: CHẤM WRITING 4 TIÊU CHÍ -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 15: CHẤM BÀI VIẾT WRITING VỚI 4 TIÊU CHÍ (TA/TR, CC, LR, GRA)</div>
+      <span class="case-tag">Writing Workspace</span>
+    </div>
+    <div class="case-body">
+      <div style="display: grid; grid-template-columns: 200px 1fr 300px; gap: 10px;">
+        <div class="box-white">
+          <b>Bài nộp Writing:</b><br>
+          <div style="margin-top: 6px; padding: 6px; border: 1.5px solid #EA580C; border-radius: 6px; background: #FFF7ED;">
+            Nguyễn Văn An<br><span class="badge badge-primary">Task 1 & Task 2</span>
+          </div>
+        </div>
+
+        <div class="box-white" style="line-height: 1.8;">
+          <b>Bài làm của học viên (Có ghi chú giáo viên):</b><br>
+          The table compares the urban population percentages in four Asian countries. Overall, urbanization increased significantly,
+          <span style="border-bottom: 2px solid #10B981; background: #ECFDF5; color: #047857; font-weight: 600; padding: 1px 4px;">[LR] especially in Malaysia and Indonesia</span>
+          where more than two-thirds of citizens
+          <span style="border-bottom: 2px solid #F59E0B; background: #FEF3C7; color: #B45309; padding: 1px 4px;">[GRA] will reside in cities</span>
+          by 2040.
+        </div>
+
+        <div class="box-white">
+          <div style="font-weight: 700; margin-bottom: 6px;">CHẤM 4 TIÊU CHÍ WRITING:</div>
+          <div style="display: flex; flex-direction: column; gap: 5px; font-size: 11px;">
+            <div style="background: #EEF2FF; padding: 4px; border-radius: 4px;"><b>TA/TR:</b> 6.5 (Đầy đủ Overview)</div>
+            <div style="background: #F0F9FF; padding: 4px; border-radius: 4px;"><b>CC:</b> 6.5 (Từ nối mạch lạc)</div>
+            <div style="background: #ECFDF5; padding: 4px; border-radius: 4px;"><b>LR:</b> 7.0 (Từ vựng học thuật tốt)</div>
+            <div style="background: #FFFBEB; padding: 4px; border-radius: 4px;"><b>GRA:</b> 6.0 (Chú ý thì tương lai)</div>
+          </div>
+          <div style="font-weight: 800; font-size: 14px; color: #EA580C; margin-top: 8px; text-align: right;">Overall Band: 6.5</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 16, 17, 18, 19: SPEAKING WORKSPACE, INLINE TOOLBAR, CARDS & STUDENT REVIEW -->
+  <div class="page-break"></div>
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 16: CHẤM BÀI NÓI SPEAKING VỚI SÓNG ÂM & BẢN DỊCH AI WHISPER</div>
+      <span class="case-tag">Speaking Workspace • FC, LR, GRA, P</span>
+    </div>
+    <div class="case-body">
+      <!-- Sóng âm thanh thật -->
+      <div style="background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 8px; padding: 10px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+        <button class="btn btn-primary">▶ Nghe Audio</button>
+        <div style="flex: 1; height: 22px; background: #FFEDD5; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #EA580C; font-weight: 700;">
+          |||||||||||||| Sóng âm thanh học viên Nguyễn Văn An (00:14 / 00:32) |||||||||||||||||||||||||||||
+        </div>
+        <span class="badge badge-emerald">Whisper AI Large v3 ✓</span>
+        <button class="btn btn-outline" style="font-size: 10.5px;">Bật HS xem</button>
+      </div>
+
+      <!-- Bản ghi chữ và thanh Docs -->
+      <div class="box-white" style="line-height: 2.0; font-size: 12.5px;">
+        Well, I would like to talk about my laptop which I bought two years ago.
+        <span style="background: #FEE2E2; text-decoration: line-through; color: #DC2626; padding: 2px 6px; border-radius: 4px; font-weight: 600;">um</span>
+        It is a very useful device for my studies. I use it almost every day, mostly for writing essays and
+        <span style="border-bottom: 2.5px solid #10B981; background: #ECFDF5; color: #047857; font-weight: 700; padding: 2px 6px;">[LR] conducting research</span>.
+        Actually, it helps me to save a lot of time because I can find information quickly.
+      </div>
+
+      <!-- CASE 17: INLINE TOOLBAR NỔI -->
+      <div style="margin-top: 10px; background: #0F172A; color: white; border-radius: 8px; padding: 6px 14px; display: inline-flex; gap: 12px; font-size: 11px; box-shadow: 0 6px 15px rgba(0,0,0,0.25);">
+        <span style="color: #38BDF8; font-weight: 700;">CASE 17: POPUP MENU NỔI KHI BÔI ĐEN CHỮ:</span>
+        <span>💬 Nhận xét</span> • <span style="color: #F87171;">✕ Đề xuất xóa</span> • <span style="color: #34D399;">✎ Đề xuất thay thế</span> • <span style="color: #FBBF24;">+ Đề xuất chèn</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 18 & 19: RIGHT MARGIN CARDS & STUDENT REVIEW -->
+  <div class="grid-2 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 18: THẺ NHẬN XÉT GHIM MÉP PHẢI (RIGHT-MARGIN CARDS)</div>
+        <span class="case-tag">Margin Cards</span>
+      </div>
+      <div class="case-body" style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="border-left: 4px solid #10B981; background: #ECFDF5; padding: 8px 10px; border-radius: 0 8px 8px 0; font-size: 11px;">
+          <div style="display: flex; justify-content: space-between; font-weight: 700; color: #047857;">
+            <span>[LR] conducting research</span>
+            <span>00:14</span>
+          </div>
+          <div style="color: var(--slate-700); margin-top: 2px;">Dùng cụm collocation học thuật rất chuẩn, nâng Band từ vựng!</div>
+        </div>
+
+        <div style="border-left: 4px solid #F43F5E; background: #FFF1F2; padding: 8px 10px; border-radius: 0 8px 8px 0; font-size: 11px;">
+          <div style="display: flex; justify-content: space-between; font-weight: 700; color: #BE123C;">
+            <span>[FC] um</span>
+            <span>Đề xuất xóa</span>
+          </div>
+          <div style="color: var(--slate-700); margin-top: 2px;">Từ đệm lặp lại 3 lần làm giảm độ trôi chảy (Fluency).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 19: MODAL HỌC SINH XEM LẠI BÀI & LỜI PHÊ</div>
+        <span class="case-tag">Student Review</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white" style="margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; font-weight: 700;">
+            <span>Kết quả chấm bài của cô Hường:</span>
+            <span class="badge badge-emerald" style="font-size: 11.5px;">Band 6.5 / 9.0</span>
+          </div>
+          <div style="font-size: 11px; color: var(--slate-600); margin-top: 4px;">
+            "Phát âm rõ ràng, tự tin, dùng từ vựng tốt. Cần giảm bớt các từ đệm 'um, ah' khi chuyển ý."
+          </div>
+        </div>
+        <div style="font-size: 10.5px; color: var(--slate-500); text-align: center;">
+          Học sinh xem được từng vết sửa trực quan trên bài làm của mình.
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==========================================
+       PHẦN 3: GIÁM SÁT THI & CẢNH BÁO GIAN LẬN
+       ========================================== -->
+  <div class="page-break"></div>
+  <div id="sec-3" class="sec-title"><span class="sec-num">PHẦN 3</span> GIÁM SÁT THI & CẢNH BÁO GIAN LẬN CHUYỂN TAB (5 TRƯỜNG HỢP)</div>
+
+  <!-- CASE 20, 21, 22: PROCTORING & WARNINGS -->
+  <div class="grid-3 no-break">
+    <!-- CASE 20: EBOOK PLAYER ANTI-CHEAT -->
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 20: THANH GIÁM SÁT LÀM BÀI</div>
+        <span class="case-tag">Proctoring Bar</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <div style="font-size: 11px; color: var(--slate-500);">Trạng thái làm bài:</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+            <span class="badge badge-emerald">Hệ thống đang giám sát</span>
+            <span style="font-weight: 700; font-family: monospace; color: #EA580C;">⏱ 24:15</span>
+          </div>
+          <div style="margin-top: 8px; font-size: 10.5px; color: var(--slate-600);">
+            Số lần rời màn hình: <b>0 / 3 lần</b> (Quy chuẩn BR-05).
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CASE 21: POPUP CẢNH BÁO CHUYỂN TAB CẤP 1 -->
+    <div class="case-card">
+      <div class="case-header" style="background: #991B1B;">
+        <div>CASE 21: POPUP CẢNH BÁO GIAN LẬN</div>
+        <span class="case-tag" style="background: rgba(255,255,255,0.2); color: white;">Viền đỏ</span>
+      </div>
+      <div class="case-body">
+        <div style="border: 2px solid #F43F5E; background: #FFF1F2; border-radius: 8px; padding: 10px; text-align: center;">
+          <div style="font-size: 16px; margin-bottom: 2px;">🚨</div>
+          <div style="font-weight: 800; color: #9F1239; font-size: 11.5px;">CẢNH BÁO RỜI MÀN HÌNH (LẦN 2/3)</div>
+          <div style="font-size: 10.5px; color: var(--slate-600); margin: 6px 0;">Nếu rời màn hình thêm 1 lần nữa, bài thi sẽ bị thu tự động!</div>
+          <button class="btn btn-danger" style="font-size: 10.5px; padding: 4px 10px;">Quay lại làm bài</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CASE 22: AUTO-SUBMITTED -->
+    <div class="case-card">
+      <div class="case-header" style="background: #1E293B;">
+        <div>CASE 22: THU BÀI TỰ ĐỘNG VÌ GIAN LẬN</div>
+        <span class="case-tag">Auto-submitted</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white" style="border-left: 4px solid #F43F5E;">
+          <b style="color: #BE123C;">Bài thi đã bị khóa & nộp tự động</b>
+          <div style="font-size: 10.5px; color: var(--slate-600); margin-top: 4px;">
+            Lý do: <i>Vượt quá số lần chuyển tab cho phép (4/3 lần)</i>. Bài thi đã được gắn cờ <code>isCheatingFlagged: true</code> gửi tới giáo viên phụ trách.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 23, 24, 25: ACTION MODALS -->
+  <div class="grid-3 no-break">
+    <!-- CASE 23: REGRADE MODAL -->
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 23: MODAL CHẤM LẠI BÀI NỘP</div>
+        <span class="case-tag">Regrade Modal</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <b>Chấm lại toàn bộ bài làm trắc nghiệm?</b>
+          <p style="font-size: 10.5px; color: var(--slate-500); margin: 6px 0;">Hệ thống sẽ chạy lại thuật toán so khớp đáp án mới nhất cho tất cả 28 học sinh mà không ảnh hưởng điểm tự luận.</p>
+          <div style="display: flex; gap: 6px; justify-content: flex-end;">
+            <button class="btn btn-outline" style="font-size: 10px;">Hủy</button>
+            <button class="btn btn-primary" style="font-size: 10px;">Xác nhận chấm lại</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CASE 24: MANUAL BUILDER MODAL -->
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 24: MODAL TẠO BÀI TẬP THỦ CÔNG</div>
+        <span class="case-tag">Builder</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <b>Tạo bài tập IELTS mới (2 bước):</b>
+          <div style="margin-top: 6px; font-size: 10.5px; color: var(--slate-600);">
+            • Bước 1: Tiêu đề, Kỹ năng, Hạn nộp, Thời lượng, Giám sát gian lận<br>
+            • Bước 2: Soạn câu hỏi theo mẫu chuẩn IELTS
+          </div>
+          <button class="btn btn-primary" style="width: 100%; margin-top: 8px; justify-content: center; font-size: 10.5px;">Bắt đầu soạn đề</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CASE 25: DELETE SCOPE MODAL -->
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 25: MODAL XÓA BÀI TẬP (SCOPE)</div>
+        <span class="case-tag">Delete Scope</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <b>Chọn phạm vi xóa bài tập:</b>
+          <div style="font-size: 10.5px; margin: 6px 0;">
+            <label><input type="radio" checked> Chỉ gỡ khỏi lớp hiện tại</label><br>
+            <label><input type="radio"> Xóa vĩnh viễn ở tất cả các lớp</label>
+          </div>
+          <button class="btn btn-danger" style="width: 100%; justify-content: center; font-size: 10.5px;">Xác nhận xóa</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==========================================
+       PHẦN 4: QUẢN LÝ HỌC LIỆU & THƯ VIỆN SỐ
+       ========================================== -->
+  <div class="page-break"></div>
+  <div id="sec-4" class="sec-title"><span class="sec-num">PHẦN 4</span> QUẢN LÝ HỌC LIỆU & THƯ VIỆN SỐ (5 TRƯỜNG HỢP)</div>
+
+  <!-- CASE 26 & 27: GLOBAL REPOSITORY & CLASS MATERIALS -->
+  <div class="grid-2 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 26: KHO HỌC LIỆU TOÀN HỆ THỐNG THEO BAND</div>
+        <span class="case-tag">Global Repository</span>
+      </div>
+      <div class="case-body">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div class="box-white" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>📁 <b>IELTS Foundation (4.5 - 5.5)</b></div>
+            <span class="badge badge-sky">12 files</span>
+          </div>
+          <div class="box-white" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>📁 <b>IELTS Intensive (5.5 - 6.5)</b></div>
+            <span class="badge badge-emerald">28 files</span>
+          </div>
+          <div class="box-white" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>📁 <b>IELTS Master (6.5+)</b></div>
+            <span class="badge badge-purple">19 files</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 27: TÀI LIỆU NỘI BỘ LỚP HỌC (STUDENT VIEW)</div>
+        <span class="case-tag">Class Directory</span>
+      </div>
+      <div class="case-body">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div class="box-white" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>📄 <b>Cam 18 Reading Test 1 Giải chi tiết.pdf</b> (2.4 MB)</div>
+            <button class="btn btn-outline" style="font-size: 10px;">👁 Xem</button>
+          </div>
+          <div class="box-white" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>🎧 <b>Listening Section 2 Audio Track.mp3</b> (5.1 MB)</div>
+            <button class="btn btn-outline" style="font-size: 10px;">▶ Nghe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 28, 29, 30: QUICK ADD, BULK UPLOAD, PREVIEW -->
+  <div class="grid-3 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 28: MODAL TẢI LÊN NHANH</div>
+        <span class="case-tag">Quick Add</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <div style="border: 1.5px dashed #FED7AA; background: #FFF7ED; padding: 12px; border-radius: 8px; text-align: center; font-size: 11px;">
+            ☁ Kéo thả tệp vào đây<br><span style="font-size: 10px; color: var(--slate-400);">PDF, MP3, DOCX</span>
+          </div>
+          <div style="margin-top: 6px; font-size: 10.5px;">Gán lớp: <b>10A1, 11B2</b></div>
+          <button class="btn btn-primary" style="width: 100%; margin-top: 6px; justify-content: center; font-size: 10.5px;">Lưu tài liệu</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 29: MODAL TẢI HÀNG LOẠT</div>
+        <span class="case-tag">Bulk Upload</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <b>Đang tải 3 tệp lên:</b>
+          <div style="margin: 6px 0; font-size: 10.5px;">
+            <div>File1.pdf: 100% ✓</div>
+            <div>File2.mp3: 65% (Đang tải...)</div>
+          </div>
+          <div style="height: 6px; background: #E2E8F0; border-radius: 3px; overflow: hidden;">
+            <div style="width: 78%; height: 100%; background: #10B981;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 30: MODAL XEM TRƯỚC HỌC LIỆU</div>
+        <span class="case-tag">Preview</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white" style="text-align: center;">
+          <div style="font-size: 20px;">📄</div>
+          <b>Trình xem trước PDF nhúng</b>
+          <div style="font-size: 10px; color: var(--slate-400); margin: 4px 0;">Xem trực tiếp không cần tải về máy</div>
+          <button class="btn btn-outline" style="width: 100%; justify-content: center; font-size: 10px;">⬇ Tải về máy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==========================================
+       PHẦN 5: BÁO CÁO & THỐNG KÊ
+       ========================================== -->
+  <div class="page-break"></div>
+  <div id="sec-5" class="sec-title"><span class="sec-num">PHẦN 5</span> BÁO CÁO & THỐNG KÊ (6 TRƯỜNG HỢP)</div>
+
+  <!-- CASE 31: SCHOOL REPORT -->
+  <div class="case-card no-break">
+    <div class="case-header">
+      <div>CASE 31: BÁO CÁO CẤP CƠ SỞ / TRƯỜNG (SCHOOL REPORT OVERVIEW)</div>
+      <span class="case-tag">Admin & Quản nhiệm</span>
+    </div>
+    <div class="case-body">
+      <div class="grid-4">
+        <div class="box-white" style="border-left: 4px solid #EA580C;">
+          <div style="color: var(--slate-500); font-size: 10.5px;">Tổng học viên</div>
+          <div style="font-size: 18px; font-weight: 800;">450 Học viên</div>
+          <div style="color: #10B981; font-size: 10px;">18 Lớp học đang chạy</div>
+        </div>
+        <div class="box-white" style="border-left: 4px solid #10B981;">
+          <div style="color: var(--slate-500); font-size: 10.5px;">Tỷ lệ chuyên cần</div>
+          <div style="font-size: 18px; font-weight: 800;">96.4%</div>
+          <div style="color: #10B981; font-size: 10px;">Đạt mục tiêu trường</div>
+        </div>
+        <div class="box-white" style="border-left: 4px solid #0EA5E9;">
+          <div style="color: var(--slate-500); font-size: 10.5px;">Điểm TB Toàn trường</div>
+          <div style="font-size: 18px; font-weight: 800;">Band 6.1</div>
+          <div style="color: #0EA5E9; font-size: 10px;">↑ 0.7 so với đầu khóa</div>
+        </div>
+        <div class="box-white" style="border-left: 4px solid #F43F5E;">
+          <div style="color: var(--slate-500); font-size: 10.5px;">Vi phạm chuyển tab</div>
+          <div style="font-size: 18px; font-weight: 800; color: #F43F5E;">6 Ca</div>
+          <div style="color: #BE123C; font-size: 10px;">Đã xử lý biên bản</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 32 & 33: CLASS PROGRESS & AT-RISK STUDENTS -->
+  <div class="grid-2 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 32: BÁO CÁO TIẾN ĐỘ LỚP HỌC (RADAR 4 KỸ NĂNG)</div>
+        <span class="case-tag">Class Report</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <div style="font-weight: 700; margin-bottom: 6px;">Phổ điểm trung bình lớp 10A1:</div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11px;">
+            <div>Reading: <b>Band 6.6</b> (Mục tiêu 6.5 ✓)</div>
+            <div>Listening: <b>Band 6.4</b> (Mục tiêu 6.5)</div>
+            <div>Writing: <b>Band 5.8</b> (Cần tăng cường Task 2)</div>
+            <div>Speaking: <b>Band 6.0</b> (Cần luyện phản xạ Part 3)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 33: CẢNH BÁO HỌC VIÊN CÓ NGUY CƠ (AT-RISK)</div>
+        <span class="case-tag">At-Risk Alerts</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white" style="border: 1.5px solid #FECDD3; background: #FFF1F2;">
+          <div style="display: flex; justify-content: space-between; font-weight: 700; color: #9F1239;">
+            <span>Lê Hoàng Long (HV002)</span>
+            <span class="badge badge-rose">Báo động</span>
+          </div>
+          <div style="font-size: 10.5px; color: var(--slate-700); margin-top: 4px;">
+            • Nghỉ học 3 buổi liên tiếp<br>
+            • Điểm Writing 5.0 (Dưới cam kết đầu ra 6.0)<br>
+            • Vi phạm chuyển tab 4 lần ở bài Reading
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASE 34, 35, 36: STUDENT REPORT, QUESTION TYPES & EXPORT -->
+  <div class="grid-3 no-break">
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 34: BÁO CÁO CÁ NHÂN HỌC VIÊN</div>
+        <span class="case-tag">Student Report</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <b>Học viên: Nguyễn Văn An</b>
+          <div style="font-size: 10.5px; margin: 4px 0;">Đầu vào: 6.0 ➔ Hiện tại: <b>6.5</b></div>
+          <div style="font-size: 10.5px; color: var(--slate-500);">Đã hoàn thành: 4/4 bài tập (100%)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 35: PHÂN TÍCH DẠNG CÂU HỎI</div>
+        <span class="case-tag">Question Types</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white" style="font-size: 10.5px;">
+          • Matching Headings: <b>85% đúng</b><br>
+          • True/False/NG: <b>70% đúng</b><br>
+          • Map Labeling: <b>60% đúng</b> (Cần luyện thêm)
+        </div>
+      </div>
+    </div>
+
+    <div class="case-card">
+      <div class="case-header">
+        <div>CASE 36: MODAL XUẤT BÁO CÁO</div>
+        <span class="case-tag">Export Modal</span>
+      </div>
+      <div class="case-body">
+        <div class="box-white">
+          <b>Xuất dữ liệu thống kê:</b>
+          <div style="display: flex; gap: 6px; margin-top: 6px;">
+            <button class="btn btn-outline" style="flex: 1; font-size: 10px;">📊 Excel (.xlsx)</button>
+            <button class="btn btn-primary" style="flex: 1; font-size: 10px;">📄 PDF Report</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==========================================
+       PHẦN 6: GIAO DIỆN THEO 4 VAI TRÒ
+       ========================================== -->
+  <div class="page-break"></div>
+  <div id="sec-6" class="sec-title"><span class="sec-num">PHẦN 6</span> ĐẶC TẢ GIAO DIỆN THEO 4 VAI TRÒ (4 ROLES MATRIX)</div>
+
+  <div class="grid-4 no-break">
+    <div class="box-white" style="border-top: 4px solid #0F172A;">
+      <b style="font-size: 13px;">1. Quản trị viên (ADMIN)</b>
+      <p style="font-size: 10.5px; color: var(--slate-500); margin: 6px 0;">Toàn quyền hệ thống</p>
+      <ul style="font-size: 10.5px; padding-left: 14px; color: var(--slate-700); line-height: 1.6;">
+        <li>Xem tất cả trường & cơ sở</li>
+        <li>Tạo, sửa, xóa mọi bài tập</li>
+        <li>Quản lý ngân hàng đề & học liệu</li>
+        <li>Xem toàn bộ phổ điểm & xuất file</li>
+      </ul>
+    </div>
+
+    <div class="box-white" style="border-top: 4px solid #0284C7;">
+      <b style="font-size: 13px;">2. Quản nhiệm (MANAGER)</b>
+      <p style="font-size: 10.5px; color: var(--slate-500); margin: 6px 0;">Phụ trách cơ sở/trường</p>
+      <ul style="font-size: 10.5px; padding-left: 14px; color: var(--slate-700); line-height: 1.6;">
+        <li>Quản lý các lớp trong trường</li>
+        <li>Duyệt học liệu & đề thi</li>
+        <li>Giám sát chuyên cần & gian lận</li>
+        <li>Xem bảng cảnh báo rủi ro học viên</li>
+      </ul>
+    </div>
+
+    <div class="box-white" style="border-top: 4px solid #EA580C;">
+      <b style="font-size: 13px;">3. Giáo viên (TEACHER)</b>
+      <p style="font-size: 10.5px; color: var(--slate-500); margin: 6px 0;">Giảng dạy & Chấm bài</p>
+      <ul style="font-size: 10.5px; padding-left: 14px; color: var(--slate-700); line-height: 1.6;">
+        <li>Giao bài tập cho lớp mình dạy</li>
+        <li>Chấm bài 3 cột chuẩn 4 tiêu chí</li>
+        <li>Gạch sửa bôi đen kiểu Docs</li>
+        <li>Tải học liệu cho lớp</li>
+      </ul>
+    </div>
+
+    <div class="box-white" style="border-top: 4px solid #10B981;">
+      <b style="font-size: 13px;">4. Học sinh (STUDENT)</b>
+      <p style="font-size: 10.5px; color: var(--slate-500); margin: 6px 0;">Làm bài & Tiến bộ</p>
+      <ul style="font-size: 10.5px; padding-left: 14px; color: var(--slate-700); line-height: 1.6;">
+        <li>Làm bài 2 cột Ebook View</li>
+        <li>Xem bài đã chấm & Lời phê của cô</li>
+        <li>Tải học liệu của lớp</li>
+        <li>Theo dõi biểu đồ tăng Band cá nhân</li>
+      </ul>
+    </div>
+  </div>
+
+
+  <!-- FOOTER -->
+  <div style="text-align: center; padding: 24px 0 12px 0; color: var(--slate-400); font-size: 11px; border-top: 1px solid var(--slate-300); margin-top: 32px;">
+    SIMPACE LMS • Đồ án Tốt nghiệp MIS 2026 • Bản đồ Giao diện & Mockup Hoàn chỉnh 36+ Trường hợp
+  </div>
+
+</div>
+
+</body>
+</html>
