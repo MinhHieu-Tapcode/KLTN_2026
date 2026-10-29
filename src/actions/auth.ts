@@ -18,6 +18,132 @@ function safeRevalidate(path: string) {
   } catch {}
 }
 
+function getDemoUserPayload(identifier: string, password: string): {
+  userId: string;
+  username: string;
+  email: string;
+  role: "ADMIN" | "SCHOOL_MANAGER" | "TEACHER" | "STUDENT";
+  fullName: string;
+} | null {
+  if (password !== "simpace2026") return null;
+  const clean = identifier.trim().toLowerCase();
+
+  if (clean === "admin@simpace.vn" || clean === "admin") {
+    return {
+      userId: "admin-demo-id",
+      username: "admin",
+      email: "admin@simpace.vn",
+      role: "ADMIN",
+      fullName: "Quản trị viên Hệ thống",
+    };
+  }
+
+  if (
+    clean === "manager@simpace.vn" ||
+    clean === "manager" ||
+    clean === "quan_nhiem" ||
+    clean === "sm@simpace.vn"
+  ) {
+    return {
+      userId: "demo-manager-1",
+      username: "manager_quan",
+      email: "manager@simpace.vn",
+      role: "SCHOOL_MANAGER",
+      fullName: "ThS. Hoàng Văn Quản",
+    };
+  }
+
+  if (
+    clean === "teacher@simpace.vn" ||
+    clean === "teacher" ||
+    clean === "teacher_huong"
+  ) {
+    return {
+      userId: "demo-staff-1",
+      username: "teacher_huong",
+      email: "teacher@simpace.vn",
+      role: "TEACHER",
+      fullName: "Cô Nguyễn Thu Hường",
+    };
+  }
+
+  if (
+    clean === "student@simpace.vn" ||
+    clean === "student" ||
+    clean === "student_an" ||
+    clean === "hv1001"
+  ) {
+    return {
+      userId: "demo-student-1",
+      username: "student_an",
+      email: "student@simpace.vn",
+      role: "STUDENT",
+      fullName: "Nguyễn Văn An",
+    };
+  }
+
+  if (
+    clean === "hv001@simpace.vn" ||
+    clean === "lan.tran@gmail.com" ||
+    clean === "hv001" ||
+    clean === "hv1002"
+  ) {
+    return {
+      userId: "st-1",
+      username: "HV1002",
+      email: "hv001@simpace.vn",
+      role: "STUDENT",
+      fullName: "Trần Thị Lan",
+    };
+  }
+
+  if (
+    clean === "hv002@simpace.vn" ||
+    clean === "long.le@gmail.com" ||
+    clean === "hv002" ||
+    clean === "hv1003"
+  ) {
+    return {
+      userId: "st-2",
+      username: "HV1003",
+      email: "hv002@simpace.vn",
+      role: "STUDENT",
+      fullName: "Lê Hoàng Long",
+    };
+  }
+
+  return null;
+}
+
+async function buildDemoLoginResponse(
+  demoPayload: NonNullable<ReturnType<typeof getDemoUserPayload>>
+) {
+  const token = await createSessionToken({
+    userId: demoPayload.userId,
+    username: demoPayload.username,
+    email: demoPayload.email,
+    role: demoPayload.role,
+    fullName: demoPayload.fullName,
+    mustChangePassword: false,
+  });
+
+  await setSessionCookie(token);
+
+  return {
+    success: true,
+    mustChangePassword: false,
+    role: demoPayload.role,
+    user: {
+      id: demoPayload.userId,
+      userId: demoPayload.userId,
+      username: demoPayload.username,
+      fullName: demoPayload.fullName,
+      email: demoPayload.email,
+      role: demoPayload.role,
+    },
+  };
+}
+
 export async function loginAction(formData: FormData) {
   const identifier = formData.get("identifier")?.toString().trim();
   const password = formData.get("password")?.toString();
@@ -26,97 +152,17 @@ export async function loginAction(formData: FormData) {
     return { success: false, error: "Vui lòng nhập đầy đủ thông tin đăng nhập!" };
   }
 
-  // Nếu DB offline, xử lý đăng nhập demo siêu tốc (< 1ms) không để treo TCP socket
+  // Nếu DB offline hoặc chưa cấu hình URL, xử lý đăng nhập demo siêu tốc (< 1ms) không để treo TCP socket
   if (!(await isDbAlive())) {
-    if (
-      (identifier.toLowerCase() === "admin@simpace.vn" || identifier === "admin") &&
-      password === "simpace2026"
-    ) {
-      const token = await createSessionToken({
-        userId: "admin-demo-id",
-        username: "admin",
-        email: "admin@simpace.vn",
-        role: "ADMIN",
-        fullName: "Quản trị viên Hệ thống",
-        mustChangePassword: false,
-      });
-
-      await setSessionCookie(token);
-
-      return {
-        success: true,
-        mustChangePassword: false,
-        role: "ADMIN",
-        user: {
-          id: "admin-demo-id",
-          userId: "admin-demo-id",
-          username: "admin",
-          fullName: "Quản trị viên Hệ thống",
-          email: "admin@simpace.vn",
-          role: "ADMIN",
-        },
-      };
-    }
-
-    if (
-      (identifier.toLowerCase() === "teacher@simpace.vn" || identifier === "teacher") &&
-      password === "simpace2026"
-    ) {
-      const token = await createSessionToken({
-        userId: "demo-staff-1",
-        username: "teacher_huong",
-        email: "teacher@simpace.vn",
-        role: "TEACHER",
-        fullName: "Cô Nguyễn Thu Hường",
-        mustChangePassword: false,
-      });
-      await setSessionCookie(token);
-      return {
-        success: true,
-        mustChangePassword: false,
-        role: "TEACHER",
-        user: {
-          id: "demo-staff-1",
-          userId: "demo-staff-1",
-          username: "teacher_huong",
-          fullName: "Cô Nguyễn Thu Hường",
-          email: "teacher@simpace.vn",
-          role: "TEACHER",
-        },
-      };
-    }
-
-    if (
-      (identifier.toLowerCase() === "student@simpace.vn" || identifier === "student") &&
-      password === "simpace2026"
-    ) {
-      const token = await createSessionToken({
-        userId: "demo-student-1",
-        username: "student_an",
-        email: "student@simpace.vn",
-        role: "STUDENT",
-        fullName: "Nguyễn Văn An",
-        mustChangePassword: false,
-      });
-      await setSessionCookie(token);
-      return {
-        success: true,
-        mustChangePassword: false,
-        role: "STUDENT",
-        user: {
-          id: "demo-student-1",
-          userId: "demo-student-1",
-          username: "student_an",
-          fullName: "Nguyễn Văn An",
-          email: "student@simpace.vn",
-          role: "STUDENT",
-        },
-      };
+    const demo = getDemoUserPayload(identifier, password);
+    if (demo) {
+      return await buildDemoLoginResponse(demo);
     }
 
     return {
       success: false,
-      error: "Đăng nhập thất bại! Vui lòng dùng: admin@simpace.vn (hoặc teacher@simpace.vn / student@simpace.vn) - MK: simpace2026",
+      error:
+        "Đăng nhập thất bại! Vui lòng dùng: admin@simpace.vn (hoặc teacher@simpace.vn / student@simpace.vn / manager@simpace.vn) - MK: simpace2026",
     };
   }
 
@@ -136,34 +182,9 @@ export async function loginAction(formData: FormData) {
     });
 
     if (!user) {
-      if (
-        (identifier.toLowerCase() === "admin@simpace.vn" || identifier === "admin") &&
-        password === "simpace2026"
-      ) {
-        const token = await createSessionToken({
-          userId: "admin-demo-id",
-          username: "admin",
-          email: "admin@simpace.vn",
-          role: "ADMIN",
-          fullName: "Quản trị viên Hệ thống",
-          mustChangePassword: false,
-        });
-
-        await setSessionCookie(token);
-
-        return {
-          success: true,
-          mustChangePassword: false,
-          role: "ADMIN",
-          user: {
-            id: "admin-demo-id",
-            userId: "admin-demo-id",
-            username: "admin",
-            fullName: "Quản trị viên Hệ thống",
-            email: "admin@simpace.vn",
-            role: "ADMIN",
-          },
-        };
+      const demo = getDemoUserPayload(identifier, password);
+      if (demo) {
+        return await buildDemoLoginResponse(demo);
       }
       return { success: false, error: "Tài khoản hoặc mật khẩu không chính xác!" };
     }
@@ -226,40 +247,15 @@ export async function loginAction(formData: FormData) {
     };
   } catch (err: any) {
     console.warn("[loginAction] Database notice:", err?.message);
-    // Nếu kết nối cơ sở dữ liệu lỗi hoặc URL mẫu chưa cấu hình, cho phép đăng nhập tài khoản quản trị viên mẫu
-    if (
-      (identifier.toLowerCase() === "admin@simpace.vn" || identifier === "admin") &&
-      password === "simpace2026"
-    ) {
-      const token = await createSessionToken({
-        userId: "admin-demo-id",
-        username: "admin",
-        email: "admin@simpace.vn",
-        role: "ADMIN",
-        fullName: "Quản trị viên Hệ thống",
-        mustChangePassword: false,
-      });
-
-      await setSessionCookie(token);
-
-      return {
-        success: true,
-        mustChangePassword: false,
-        role: "ADMIN",
-        user: {
-          id: "admin-demo-id",
-          userId: "admin-demo-id",
-          username: "admin",
-          fullName: "Quản trị viên Hệ thống",
-          email: "admin@simpace.vn",
-          role: "ADMIN",
-        },
-      };
+    const demo = getDemoUserPayload(identifier, password);
+    if (demo) {
+      return await buildDemoLoginResponse(demo);
     }
 
     return {
       success: false,
-      error: "Đăng nhập thất bại! Vui lòng sử dụng tài khoản mẫu: admin@simpace.vn / simpace2026",
+      error:
+        "Đăng nhập thất bại! Vui lòng sử dụng tài khoản mẫu: admin@simpace.vn (hoặc teacher@simpace.vn / student@simpace.vn / manager@simpace.vn) - MK: simpace2026",
     };
   }
 }

@@ -20,7 +20,7 @@ import {
 } from "@/lib/ielts-report-config";
 import { resolveIeltsQuestionType } from "./assignment-mutation.service";
 
-const DEMO_STORE_VERSION = "v2026-real-audio-2";
+const DEMO_STORE_VERSION = "v2026-reports-v3";
 
 const globalAssignmentsStore = globalThis as unknown as {
   demoAssignments?: any[];
@@ -267,8 +267,8 @@ if (
       skill: "LISTENING",
       type: "QUIZ",
       durationMinutes: 30,
-      dueDate: new Date(nowMs + 5 * 86400000).toISOString(),
-      startDate: new Date(nowMs - 5 * 86400000).toISOString(),
+      dueDate: new Date(nowMs - 2 * 86400000).toISOString(),
+      startDate: new Date(nowMs - 7 * 86400000).toISOString(),
       maxAttempts: 2,
       audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
       enableProctoring: true,
@@ -682,7 +682,7 @@ if (
       durationMinutes: 15,
       dueDate: new Date(nowMs + 5 * 86400000).toISOString(),
       startDate: new Date(nowMs - 4 * 86400000).toISOString(),
-      maxAttempts: 1,
+      maxAttempts: 3,
       audioUrl: null,
       enableProctoring: false,
       maxTabSwitches: 3,

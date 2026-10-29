@@ -24,6 +24,19 @@ if (!globalUsersStore.demoUsers) {
       managedSchools: [],
     },
     {
+      id: "demo-manager-1",
+      username: "manager_quan",
+      email: "manager@simpace.vn",
+      role: { code: "SCHOOL_MANAGER", name: "Quản nhiệm trường học" },
+      profile: { fullName: "ThS. Hoàng Văn Quản", phoneNumber: "0981234567" },
+      isActive: true,
+      classAssignments: [],
+      classEnrollments: [],
+      managedSchools: [
+        { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+      ],
+    },
+    {
       id: "demo-staff-1",
       username: "teacher_huong",
       email: "teacher@simpace.vn",
