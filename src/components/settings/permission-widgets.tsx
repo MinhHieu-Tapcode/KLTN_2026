@@ -143,7 +143,6 @@ export function AddPermissionModal({
                 { code: "ADMIN" as RoleCode, label: "Quản trị viên" },
                 { code: "SCHOOL_MANAGER" as RoleCode, label: "Quản nhiệm" },
                 { code: "TEACHER" as RoleCode, label: "Giáo viên" },
-                { code: "TEACHING_ASSISTANT" as RoleCode, label: "Trợ giảng" },
                 { code: "STUDENT" as RoleCode, label: "Học sinh" },
               ].map((r) => (
                 <label key={r.code} className="flex items-center gap-2 cursor-pointer">

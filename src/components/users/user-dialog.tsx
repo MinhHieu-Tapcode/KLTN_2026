@@ -11,7 +11,6 @@ import { BulkIeltsWizard } from "./bulk-ielts-wizard";
 const ROLE_OPTIONS: { code: RoleCode; label: string; desc: string; prefix: string }[] = [
   { code: "STUDENT", label: "Học sinh", desc: "Theo học các lớp đối tác", prefix: "HV" },
   { code: "TEACHER", label: "Giáo viên", desc: "Giảng dạy chuyên môn", prefix: "GV" },
-  { code: "TEACHING_ASSISTANT", label: "Trợ giảng (TA)", desc: "Hỗ trợ học tập & lớp", prefix: "TG" },
   { code: "SCHOOL_MANAGER", label: "Quản nhiệm", desc: "Quản lý trường học đối tác", prefix: "QN" },
   { code: "ADMIN", label: "Quản trị viên", desc: "Toàn quyền hệ thống", prefix: "AD" },
 ];

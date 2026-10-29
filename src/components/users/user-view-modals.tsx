@@ -118,7 +118,6 @@ export function ViewUserModal({
     ADMIN: "Quản trị viên toàn hệ thống",
     SCHOOL_MANAGER: "Quản nhiệm trường học",
     TEACHER: "Giáo viên giảng dạy",
-    TEACHING_ASSISTANT: "Trợ giảng",
     STUDENT: "Học viên",
   };
 
@@ -248,7 +247,7 @@ export function ViewUserModal({
               </div>
             )}
 
-            {(user.role?.code === "TEACHER" || user.role?.code === "TEACHING_ASSISTANT") && (
+            {user.role?.code === "TEACHER" && (
               <div>
                 <p className="text-xs text-[#64748B] mb-1.5">Các lớp học được phân công:</p>
                 {assignedClasses.length > 0 ? (

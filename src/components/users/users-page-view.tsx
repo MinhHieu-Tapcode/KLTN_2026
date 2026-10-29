@@ -35,8 +35,8 @@ export function UsersPageView({
 
   const isSchoolManager = currentUser?.role === "SCHOOL_MANAGER";
   const roleTabs = isSchoolManager
-    ? ["Tất cả", "Giáo viên", "Trợ giảng", "Học sinh"]
-    : ["Tất cả", "Quản trị viên", "Quản nhiệm", "Giáo viên", "Trợ giảng", "Học sinh"];
+    ? ["Tất cả", "Giáo viên", "Học sinh"]
+    : ["Tất cả", "Quản trị viên", "Quản nhiệm", "Giáo viên", "Học sinh"];
 
   const filtered = localUsers.filter((u) => {
     if (!u.isActive) return false;
@@ -49,7 +49,6 @@ export function UsersPageView({
       (tab === "Quản trị viên" && u.role?.code === "ADMIN") ||
       (tab === "Quản nhiệm" && u.role?.code === "SCHOOL_MANAGER") ||
       (tab === "Giáo viên" && u.role?.code === "TEACHER") ||
-      (tab === "Trợ giảng" && u.role?.code === "TEACHING_ASSISTANT") ||
       (tab === "Học sinh" && u.role?.code === "STUDENT");
 
     const cleanSearch = search.trim().toLowerCase();

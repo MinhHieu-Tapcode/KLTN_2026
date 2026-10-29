@@ -45,7 +45,7 @@ export function ClassDetailView({
     }
   }, [initialTab]);
 
-  const [assignRole, setAssignRole] = useState<"TEACHER" | "TEACHING_ASSISTANT" | null>(null);
+  const [assignRole, setAssignRole] = useState<"TEACHER" | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -75,7 +75,6 @@ export function ClassDetailView({
   );
 
   const assignedTeachers = classItem.assignments?.filter((a: any) => a.roleInClass === "TEACHER") || [];
-  const assignedTAs = classItem.assignments?.filter((a: any) => a.roleInClass === "TEACHING_ASSISTANT") || [];
 
   const handleAssign = () => {
     if (!assignRole || !selectedStaffId) return;
@@ -241,7 +240,7 @@ export function ClassDetailView({
 
       {activeTab === "info" && (
         <>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <InfoCard
               title="Thông tin lớp học & Thời khóa biểu"
               items={[
@@ -313,56 +312,6 @@ export function ClassDetailView({
                   </div>
                 ) : (
                   <p className="text-sm text-[#94A3B8] italic">Chưa phân công giáo viên</p>
-                )}
-              </div>
-            </section>
-
-            <section className="panel flex flex-col justify-between">
-              <div>
-                <div className="flex justify-between items-center mb-3">
-                  <h2 className="font-bold text-base text-[#0F172A]">
-                    Trợ giảng (TA) phụ trách ({assignedTAs.length})
-                  </h2>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-7 rounded-lg text-purple-600 border-purple-200 hover:bg-purple-50"
-                    onClick={() => {
-                      setAssignRole("TEACHING_ASSISTANT");
-                      setSelectedStaffId("");
-                    }}
-                  >
-                    <Plus className="size-3 mr-1" /> Gán thêm TA
-                  </Button>
-                </div>
-                {assignedTAs.length > 0 ? (
-                  <div className="space-y-2.5">
-                    {assignedTAs.map((ta: any) => (
-                      <div
-                        key={ta.id}
-                        className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/50 flex justify-between items-start"
-                      >
-                        <div className="space-y-1 text-sm">
-                          <b className="text-[#0F172A] block text-sm">
-                            {ta.staff?.profile?.fullName || ta.staff?.username}
-                          </b>
-                          <p className="text-[#64748B] text-xs">{ta.staff?.email}</p>
-                          <Badge>Trợ giảng hỗ trợ lớp</Badge>
-                        </div>
-                        {assignedTAs.length > 1 && (
-                          <button
-                            onClick={() => setUnassignTarget({ userId: ta.userId, roleName: "trợ giảng" })}
-                            className="text-xs font-semibold text-rose-600 hover:underline ml-2"
-                            title="Hủy phân công trợ giảng này"
-                          >
-                            Gỡ
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-[#94A3B8] italic">Chưa phân công trợ giảng</p>
                 )}
               </div>
             </section>

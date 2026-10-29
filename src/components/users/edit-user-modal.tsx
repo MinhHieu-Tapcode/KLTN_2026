@@ -61,10 +61,6 @@ export function EditUserModal({
       setErrorMsg("Giáo viên bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
       return;
     }
-    if (selectedRole === "TEACHING_ASSISTANT" && classIds.length === 0) {
-      setErrorMsg("Trợ giảng bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
-      return;
-    }
     if (selectedRole === "STUDENT" && classIds.length === 0) {
       setErrorMsg("Học sinh bắt buộc phải được ghi danh vào ít nhất 1 lớp học!");
       return;
@@ -81,9 +77,7 @@ export function EditUserModal({
         roleCode: selectedRole,
         schoolIds: selectedRole === "SCHOOL_MANAGER" ? schoolIds : undefined,
         classIds:
-          selectedRole === "TEACHER" ||
-          selectedRole === "TEACHING_ASSISTANT" ||
-          selectedRole === "STUDENT"
+          selectedRole === "TEACHER" || selectedRole === "STUDENT"
             ? classIds
             : undefined,
       });
@@ -198,7 +192,6 @@ export function EditUserModal({
             >
               <option value="STUDENT">Học sinh</option>
               <option value="TEACHER">Giáo viên</option>
-              <option value="TEACHING_ASSISTANT">Trợ giảng</option>
               <option value="SCHOOL_MANAGER">Quản nhiệm</option>
               <option value="ADMIN">Quản trị viên</option>
             </select>
@@ -257,9 +250,7 @@ export function EditUserModal({
             </div>
           )}
 
-          {(selectedRole === "TEACHER" ||
-            selectedRole === "TEACHING_ASSISTANT" ||
-            selectedRole === "STUDENT") && (
+          {(selectedRole === "TEACHER" || selectedRole === "STUDENT") && (
             <div className="space-y-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3 text-xs">
               <div className="flex justify-between items-center">
                 <b className="text-slate-800">

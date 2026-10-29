@@ -376,18 +376,16 @@ export function SimpaceApp({
               active={view === "assignments-global"}
               onClick={() => navigate("assignments-global")}
             />
-            {currentUser.role !== "TEACHING_ASSISTANT" && (
-              <NavItem
-                icon={BarChart3}
-                label={
-                  currentUser.role === "STUDENT"
-                    ? "Báo cáo học tập"
-                    : "Báo cáo & Thống kê"
-                }
-                active={view === "reports"}
-                onClick={() => navigate("reports")}
-              />
-            )}
+            <NavItem
+              icon={BarChart3}
+              label={
+                currentUser.role === "STUDENT"
+                  ? "Báo cáo học tập"
+                  : "Báo cáo & Thống kê"
+              }
+              active={view === "reports"}
+              onClick={() => navigate("reports")}
+            />
             <NavItem
               icon={canManageSettings ? Settings : UserRound}
               label={canManageSettings ? "Cài đặt & Phân quyền" : "Hồ sơ cá nhân"}
@@ -717,7 +715,7 @@ export function SimpaceApp({
                   );
                 }
 
-                if (currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT") {
+                if (currentUser.role === "TEACHER") {
                   return c.assignments?.some(
                     (a: any) =>
                       a.userId === currentUid ||
@@ -747,7 +745,7 @@ export function SimpaceApp({
                       <h2 className="text-lg font-bold text-slate-900">
                         {currentUser.role === "STUDENT"
                           ? "Bài tập & Đề thi cần hoàn thành"
-                          : currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT"
+                          : currentUser.role === "TEACHER"
                           ? "Quản lý Bài tập các Lớp bạn phụ trách"
                           : "Trung tâm Quản lý Bài tập & Chấm điểm"}
                       </h2>

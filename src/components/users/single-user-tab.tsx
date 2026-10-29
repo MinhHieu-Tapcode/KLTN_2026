@@ -86,10 +86,6 @@ export function SingleUserTab({
       setErrorMsg("Giáo viên bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
       return;
     }
-    if (selectedRole === "TEACHING_ASSISTANT" && classIds.length === 0) {
-      setErrorMsg("Trợ giảng bắt buộc phải được phân công ít nhất 1 lớp học phụ trách!");
-      return;
-    }
 
     let parsedScore: number | undefined = undefined;
     let levelId: string | undefined = undefined;
@@ -119,7 +115,6 @@ export function SingleUserTab({
         schoolIds: selectedRole === "SCHOOL_MANAGER" ? schoolIds : undefined,
         classIds:
           selectedRole === "TEACHER" ||
-          selectedRole === "TEACHING_ASSISTANT" ||
           (selectedRole === "STUDENT" && classIds.length > 0)
             ? classIds
             : undefined,
@@ -355,20 +350,6 @@ export function SingleUserTab({
             setStaffClasses,
             classOptions,
             "-- Chọn lớp học #{idx} * --",
-            "Thêm lớp",
-            onAddClassShortcut
-              ? { label: "Tạo lớp mới", title: "Tạo nhanh lớp mới", onClick: onAddClassShortcut }
-              : undefined
-          )}
-
-        {selectedRole === "TEACHING_ASSISTANT" &&
-          renderDynamicSelectList(
-            "Lớp học phụ trách trợ giảng *",
-            "Bắt buộc chọn ít nhất 1 lớp học trợ giảng.",
-            staffClasses,
-            setStaffClasses,
-            classOptions,
-            "-- Chọn lớp trợ giảng #{idx} * --",
             "Thêm lớp",
             onAddClassShortcut
               ? { label: "Tạo lớp mới", title: "Tạo nhanh lớp mới", onClick: onAddClassShortcut }

@@ -30,7 +30,7 @@ export function SchedulePageView({
       return c.school?.managerId === currentUid;
     }
 
-    if (currentUser?.role === "TEACHER" || currentUser?.role === "TEACHING_ASSISTANT") {
+    if (currentUser?.role === "TEACHER") {
       return c.assignments?.some(
         (a: any) =>
           a.userId === currentUid ||
@@ -190,9 +190,6 @@ export function SchedulePageView({
                           const teacherName =
                             cls.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff
                               ?.profile?.fullName || "Chưa phân công";
-                          const taName = cls.assignments?.find(
-                            (a: any) => a.roleInClass === "TEACHING_ASSISTANT"
-                          )?.staff?.profile?.fullName;
 
                           return (
                             <div
@@ -225,9 +222,6 @@ export function SchedulePageView({
                                   <GraduationCap className="size-3 shrink-0" />
                                   <span className="truncate">GV: {teacherName}</span>
                                 </div>
-                                {taName && (
-                                  <div className="text-[10px] text-[#94A3B8] pl-4">TA: {taName}</div>
-                                )}
                               </div>
                             </div>
                           );
@@ -280,7 +274,6 @@ export function SchedulePageView({
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường học</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Thời gian học</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Giáo viên phụ trách</th>
-                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trợ giảng</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
                 </tr>
               </thead>
@@ -306,10 +299,6 @@ export function SchedulePageView({
                         {c.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff?.profile
                           ?.fullName || "Chưa phân công"}
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-[#475569]">
-                        {c.assignments?.find((a: any) => a.roleInClass === "TEACHING_ASSISTANT")?.staff
-                          ?.profile?.fullName || "Chưa phân công"}
-                      </td>
                       <td className="px-4 py-3.5">
                         <Status tone="success">Đang diễn ra</Status>
                       </td>
@@ -317,7 +306,7 @@ export function SchedulePageView({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-sm">
+                    <td colSpan={5} className="text-center py-12 text-sm">
                       {selectedSchool !== "ALL" ? (
                         <div className="flex flex-col items-center justify-center space-y-3">
                           <div className="size-12 rounded-full bg-orange-100 flex items-center justify-center text-[#EA580C]">

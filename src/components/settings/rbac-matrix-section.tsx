@@ -17,7 +17,6 @@ export const ROLES_LIST: { code: RoleCode; label: string }[] = [
   { code: "ADMIN", label: "Quản trị viên" },
   { code: "SCHOOL_MANAGER", label: "Quản nhiệm" },
   { code: "TEACHER", label: "Giáo viên" },
-  { code: "TEACHING_ASSISTANT", label: "Trợ giảng" },
   { code: "STUDENT", label: "Học sinh" },
 ];
 

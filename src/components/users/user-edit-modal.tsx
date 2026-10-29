@@ -12,10 +12,7 @@ export function formatUserAssignmentText(u: any): string {
   if (u.role?.code === "SCHOOL_MANAGER" && u.managedSchools?.length > 0) {
     return u.managedSchools.map((s: any) => s.name).join(", ");
   }
-  if (
-    (u.role?.code === "TEACHER" || u.role?.code === "TEACHING_ASSISTANT") &&
-    u.classAssignments?.length > 0
-  ) {
+  if (u.role?.code === "TEACHER" && u.classAssignments?.length > 0) {
     return u.classAssignments
       .map((a: any) => {
         const sch = a.class?.school?.name;

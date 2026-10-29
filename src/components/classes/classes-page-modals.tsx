@@ -83,9 +83,6 @@ export function ClassesTimetableGrid({
                     const teacherName =
                       cls.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff?.profile
                         ?.fullName || "Chưa phân công";
-                    const taName = cls.assignments?.find(
-                      (a: any) => a.roleInClass === "TEACHING_ASSISTANT"
-                    )?.staff?.profile?.fullName;
 
                     return (
                       <div
@@ -120,9 +117,6 @@ export function ClassesTimetableGrid({
                             <GraduationCap className="size-3 shrink-0" />
                             <span className="truncate">GV: {teacherName}</span>
                           </div>
-                          {taName && (
-                            <div className="text-[10px] text-[#94A3B8] pl-4">TA: {taName}</div>
-                          )}
                         </div>
                       </div>
                     );

@@ -109,7 +109,6 @@ export function DashboardView({
               <div className="space-y-3">
                 {myClasses.map((cls) => {
                   const teacher = cls.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff?.profile?.fullName;
-                  const ta = cls.assignments?.find((a: any) => a.roleInClass === "TEACHING_ASSISTANT")?.staff?.profile?.fullName;
 
                   return (
                     <div
@@ -128,8 +127,7 @@ export function DashboardView({
                       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 text-[#475569]">
                         <div><b>Trường:</b> {cls.school?.name}</div>
                         <div><b>Lịch học:</b> <span className="text-[#EA580C] font-semibold">{cls.description || "Chưa xếp lịch"}</span></div>
-                        <div><b>Giáo viên:</b> {teacher || "Đang cập nhật"}</div>
-                        <div><b>Trợ giảng:</b> {ta || "Đang cập nhật"}</div>
+                        <div className="sm:col-span-2"><b>Giáo viên:</b> {teacher || "Đang cập nhật"}</div>
                       </div>
                     </div>
                   );
@@ -199,9 +197,8 @@ export function DashboardView({
             </div>
             <div className="w-full space-y-3 text-sm">
               {[
-                ["Học sinh", "62%"],
-                ["Giáo viên", "18%"],
-                ["Trợ giảng (TA)", "8%"],
+                ["Học sinh", "68%"],
+                ["Giáo viên", "20%"],
                 ["Quản nhiệm trường", "7%"],
                 ["Quản trị viên (Admin)", "5%"],
               ].map((x, i) => (

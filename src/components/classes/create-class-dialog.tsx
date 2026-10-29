@@ -27,7 +27,7 @@ export function ClassDialog({
   onOpenChange: (v: boolean) => void;
   schools: any[];
   teachers: any[];
-  tas: any[];
+  tas?: any[];
   defaultSchoolId?: string;
   onAddSchoolShortcut: () => void;
   onDone: () => void;
@@ -55,7 +55,6 @@ export function ClassDialog({
   }, [open, defaultSchoolId]);
 
   const [teacherIds, setTeacherIds] = useState<string[]>([""]);
-  const [taIds, setTaIds] = useState<string[]>([""]);
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -95,23 +94,11 @@ export function ClassDialog({
     });
   };
 
-  const handleAddTa = () => setTaIds((prev) => [...prev, ""]);
-  const handleRemoveTa = (idx: number) =>
-    setTaIds((prev) => prev.filter((_, i) => i !== idx));
-  const handleTaChange = (idx: number, val: string) => {
-    setTaIds((prev) => {
-      const copy = [...prev];
-      copy[idx] = val;
-      return copy;
-    });
-  };
-
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
 
     const validTeachers = teacherIds.filter(Boolean);
-    const validTas = taIds.filter(Boolean);
 
     if (!name.trim()) {
       setErrorMsg("Vui lòng nhập tên lớp học!");
@@ -125,10 +112,6 @@ export function ClassDialog({
       setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Giáo viên giảng dạy!");
       return;
     }
-    if (validTas.length === 0) {
-      setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!");
-      return;
-    }
 
     startTransition(async () => {
       const res = await createClassAction({
@@ -137,7 +120,7 @@ export function ClassDialog({
         program: selectedProgram as any,
         capacity: Number(capacity) || 30,
         teacherIds: validTeachers,
-        taIds: validTas,
+        taIds: [],
         schedule: customSchedule.trim(),
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -158,7 +141,7 @@ export function ClassDialog({
         <DialogHeader>
           <DialogTitle>Tạo lớp học mới</DialogTitle>
           <DialogDescription>
-            Lớp học sẽ trực thuộc trường học đối tác, tự động sinh mã lớp, bộ chọn lịch học thông minh và gán giáo viên / trợ giảng.
+            Lớp học sẽ trực thuộc trường học đối tác, tự động sinh mã lớp, bộ chọn lịch học thông minh và gán giáo viên giảng dạy.
             {code ? ` (Mã dự kiến: ${code})` : ""}
           </DialogDescription>
         </DialogHeader>
@@ -298,49 +281,6 @@ export function ClassDialog({
                       onClick={() => handleRemoveTeacher(idx)}
                       className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
                       title="Xóa giáo viên này"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-sm font-semibold text-[#0F172A]">
-                  Trợ giảng (TA) phụ trách *
-                </label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAddTa}
-                  className="h-6 text-xs text-[#EA580C] hover:bg-orange-50 font-semibold px-2"
-                >
-                  <Plus className="size-3 mr-1" /> Thêm TA (+)
-                </Button>
-              </div>
-              {taIds.map((tid, idx) => (
-                <div key={idx} className="flex gap-1.5 items-center">
-                  <select
-                    value={tid}
-                    onChange={(e) => handleTaChange(idx, e.target.value)}
-                    className="field text-sm flex-1"
-                  >
-                    <option value="">-- Chọn trợ giảng --</option>
-                    {tas.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.profile?.fullName || t.username} ({t.username})
-                      </option>
-                    ))}
-                  </select>
-                  {taIds.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTa(idx)}
-                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                      title="Xóa trợ giảng này"
                     >
                       <Trash2 className="size-4" />
                     </button>

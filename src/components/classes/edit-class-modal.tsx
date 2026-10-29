@@ -23,7 +23,7 @@ export function EditClassModal({
 }: {
   classItem: any;
   teachers: any[];
-  tas: any[];
+  tas?: any[];
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -36,14 +36,6 @@ export function EditClassModal({
       .map((a: any) => a.userId) || [];
   const [teacherIds, setTeacherIds] = useState<string[]>(
     initialTeacherIds.length > 0 ? initialTeacherIds : [""]
-  );
-
-  const initialTaIds =
-    classItem.assignments
-      ?.filter((a: any) => a.roleInClass === "TEACHING_ASSISTANT")
-      .map((a: any) => a.userId) || [];
-  const [taIds, setTaIds] = useState<string[]>(
-    initialTaIds.length > 0 ? initialTaIds : [""]
   );
 
   const [startDate, setStartDate] = useState(
@@ -71,30 +63,14 @@ export function EditClassModal({
     });
   };
 
-  const handleAddTa = () => setTaIds((prev) => [...prev, ""]);
-  const handleRemoveTa = (idx: number) =>
-    setTaIds((prev) => prev.filter((_, i) => i !== idx));
-  const handleTaChange = (idx: number, val: string) => {
-    setTaIds((prev) => {
-      const copy = [...prev];
-      copy[idx] = val;
-      return copy;
-    });
-  };
-
   const handleUpdate = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
     const formData = new FormData(e.currentTarget);
     const validTeachers = teacherIds.filter(Boolean);
-    const validTas = taIds.filter(Boolean);
 
     if (validTeachers.length === 0) {
       setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Giáo viên giảng dạy!");
-      return;
-    }
-    if (validTas.length === 0) {
-      setErrorMsg("Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!");
       return;
     }
 
@@ -105,7 +81,7 @@ export function EditClassModal({
         capacity: Number(formData.get("capacity")) || 30,
         status: formData.get("status")?.toString() as any,
         teacherIds: validTeachers,
-        taIds: validTas,
+        taIds: [],
         schedule: scheduleStr.trim(),
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -200,49 +176,6 @@ export function EditClassModal({
                       onClick={() => handleRemoveTeacher(idx)}
                       className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
                       title="Xóa giáo viên này"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-sm font-semibold text-[#0F172A]">
-                  Trợ giảng (TA) phụ trách *
-                </label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAddTa}
-                  className="h-6 text-xs text-[#EA580C] hover:bg-orange-50 font-semibold px-2"
-                >
-                  <Plus className="size-3 mr-1" /> Thêm TA (+)
-                </Button>
-              </div>
-              {taIds.map((tid, idx) => (
-                <div key={idx} className="flex gap-1.5 items-center">
-                  <select
-                    value={tid}
-                    onChange={(e) => handleTaChange(idx, e.target.value)}
-                    className="field text-sm flex-1"
-                  >
-                    <option value="">-- Chọn trợ giảng --</option>
-                    {tas.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.profile?.fullName || t.username} ({t.username})
-                      </option>
-                    ))}
-                  </select>
-                  {taIds.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTa(idx)}
-                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                      title="Xóa trợ giảng này"
                     >
                       <Trash2 className="size-4" />
                     </button>

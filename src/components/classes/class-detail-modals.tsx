@@ -9,11 +9,11 @@ import { ConfirmDialog } from "@/components/shared/common-widgets";
 export interface ClassDetailModalsProps {
   classItem: any;
   teachers: any[];
-  tas: any[];
+  tas?: any[];
   sameSchoolClasses: any[];
   isPending: boolean;
-  assignRole: "TEACHER" | "TEACHING_ASSISTANT" | null;
-  setAssignRole: (v: "TEACHER" | "TEACHING_ASSISTANT" | null) => void;
+  assignRole: "TEACHER" | null;
+  setAssignRole: (v: "TEACHER" | null) => void;
   selectedStaffId: string;
   setSelectedStaffId: (v: string) => void;
   onAssignStaff: () => void;
@@ -82,23 +82,21 @@ export function ClassDetailModals({
         <Dialog open={true} onOpenChange={() => setAssignRole(null)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>
-                {assignRole === "TEACHER" ? "Gán thêm Giáo viên" : "Gán thêm Trợ giảng (TA)"}
-              </DialogTitle>
+              <DialogTitle>Gán thêm Giáo viên</DialogTitle>
               <DialogDescription>
-                Chọn nhân sự để gán thêm vào lớp {classItem.name} ({classItem.code})
+                Chọn giáo viên để gán thêm vào lớp {classItem.name} ({classItem.code})
               </DialogDescription>
             </DialogHeader>
 
             <div className="py-3">
-              <label className="block text-sm font-semibold mb-2">Chọn nhân sự</label>
+              <label className="block text-sm font-semibold mb-2">Chọn giáo viên</label>
               <select
                 className="field"
                 value={selectedStaffId}
                 onChange={(e) => setSelectedStaffId(e.target.value)}
               >
-                <option value="">-- Chọn nhân sự --</option>
-                {(assignRole === "TEACHER" ? teachers : tas)
+                <option value="">-- Chọn giáo viên --</option>
+                {teachers
                   .filter((s: any) => !classItem.assignments?.some((a: any) => a.userId === s.id))
                   .map((s: any) => (
                     <option key={s.id} value={s.id}>

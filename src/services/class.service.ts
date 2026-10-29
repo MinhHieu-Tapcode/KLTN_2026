@@ -282,12 +282,6 @@ export async function createClassService(data: {
     }
 
     const tasToAssign = (data.taIds || (data.taId ? [data.taId] : [])).filter(Boolean);
-    if (tasToAssign.length === 0) {
-      return {
-        success: false,
-        error: "Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!",
-      };
-    }
 
     let code = data.code?.trim().toUpperCase();
     if (!code) {
@@ -465,12 +459,6 @@ export async function updateClassService(
       return {
         success: false,
         error: "Lớp học bắt buộc phải có ít nhất 1 Giáo viên giảng dạy!",
-      };
-    }
-    if (data.taIds !== undefined && data.taIds.filter(Boolean).length === 0) {
-      return {
-        success: false,
-        error: "Lớp học bắt buộc phải có ít nhất 1 Trợ giảng (TA) phụ trách!",
       };
     }
 

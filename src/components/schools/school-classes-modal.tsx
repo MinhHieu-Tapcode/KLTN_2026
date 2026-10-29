@@ -93,7 +93,6 @@ export function SchoolClassesModal({
   );
 
   const assignedTeachers = currentClass?.assignments?.filter((a: any) => a.roleInClass === "TEACHER") || [];
-  const assignedTAs = currentClass?.assignments?.filter((a: any) => a.roleInClass === "TEACHING_ASSISTANT") || [];
   const enrollments = currentClass?.enrollments || [];
   const capacity = currentClass?.capacity || 30;
   const enrollCount = enrollments.length;
@@ -359,7 +358,7 @@ export function SchoolClassesModal({
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   <div className="bg-white p-2.5 rounded-xl border border-orange-100">
                     <span className="text-slate-400 block mb-0.5 font-medium">Giáo viên phụ trách:</span>
                     <div className="font-semibold text-slate-800">
@@ -367,21 +366,6 @@ export function SchoolClassesModal({
                         assignedTeachers.map((t: any) => (
                           <div key={t.id} className="truncate">
                             {t.staff?.profile?.fullName || t.staff?.username}
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-slate-400 italic">Chưa phân công</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-2.5 rounded-xl border border-orange-100">
-                    <span className="text-slate-400 block mb-0.5 font-medium">Trợ giảng (TA):</span>
-                    <div className="font-semibold text-slate-800">
-                      {assignedTAs.length > 0 ? (
-                        assignedTAs.map((ta: any) => (
-                          <div key={ta.id} className="truncate">
-                            {ta.staff?.profile?.fullName || ta.staff?.username}
                           </div>
                         ))
                       ) : (
