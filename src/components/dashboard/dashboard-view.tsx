@@ -1,9 +1,21 @@
 "use client";
 
-import React from "react";
-import { Building2, CalendarDays, GraduationCap, UserRound } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  BarChart3,
+  BookOpen,
+  Building2,
+  CalendarDays,
+  ChevronDown,
+  Clock,
+  GraduationCap,
+  TrendingUp,
+  UserRound,
+} from "lucide-react";
 import type { View } from "@/components/simpace-app";
+import { parseSchedule } from "@/lib/schedule";
+import { getRecentActivitiesAction } from "@/actions/dashboard";
+import type { SystemActivity } from "@/services/dashboard.service";
 
 export function NavItem({
   icon: Icon,
@@ -22,12 +34,35 @@ export function NavItem({
       className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition-all ${
         active
           ? "bg-[#EA580C] text-white shadow-md shadow-[#EA580C]/25"
-          : "text-[#475569] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+          : "text-[#475569] hover:bg-[#EA580C] hover:text-white"
       }`}
     >
       <Icon className="size-4.5 shrink-0" />
       <span className="truncate">{label}</span>
     </button>
+  );
+}
+
+function Sparkline({ color, id }: { color: string; id: string }) {
+  return (
+    <svg className="w-24 sm:w-28 h-14 shrink-0 overflow-visible" viewBox="0 0 120 50" fill="none">
+      <defs>
+        <linearGradient id={`grad-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M2 42 C18 40, 24 26, 38 30 C52 34, 60 14, 76 22 C90 29, 98 8, 118 16 L118 48 L2 48 Z"
+        fill={`url(#grad-${id})`}
+      />
+      <path
+        d="M2 42 C18 40, 24 26, 38 30 C52 34, 60 14, 76 22 C90 29, 98 8, 118 16"
+        stroke={color}
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
@@ -38,6 +73,7 @@ export function DashboardView({
   classesCount,
   currentUser,
   classes = [],
+  users = [],
 }: {
   navigate: (v: View) => void;
   usersCount: number;
@@ -45,8 +81,62 @@ export function DashboardView({
   classesCount: number;
   currentUser?: any;
   classes?: any[];
+  users?: any[];
 }) {
   const currentUid = currentUser?.userId || currentUser?.id;
+  const [activities, setActivities] = useState<SystemActivity[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    getRecentActivitiesAction().then((res) => {
+      if (isMounted && res.success) {
+        setActivities(res.activities);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const totalWeeklySessions = useMemo(() => {
+    return classes.reduce((sum, c) => {
+      if (!c.isActive) return sum;
+      const parsed = parseSchedule(c.description);
+      return sum + (parsed?.days?.length || 0);
+    }, 0);
+  }, [classes]);
+
+  const roleBreakdown = useMemo(() => {
+    const total = users.length || usersCount || 0;
+    const students = users.filter((u) => u.role?.code === "STUDENT").length;
+    const teachers = users.filter((u) => u.role?.code === "TEACHER").length;
+    const tas = users.filter((u) => u.role?.code === "TEACHING_ASSISTANT").length;
+    const managers = users.filter((u) => u.role?.code === "SCHOOL_MANAGER").length;
+    const admins = users.filter((u) => u.role?.code === "ADMIN").length;
+    const getPct = (cnt: number) => (total > 0 ? Math.round((cnt / total) * 100) : 0);
+
+    const list = [
+      { label: "Học sinh", count: students, pct: getPct(students), dotColor: "bg-[#EA580C]", hex: "#EA580C" },
+      { label: "Giáo viên", count: teachers, pct: getPct(teachers), dotColor: "bg-[#3B82F6]", hex: "#3B82F6" },
+      { label: "Trợ giảng (TA)", count: tas, pct: getPct(tas), dotColor: "bg-[#FBBF24]", hex: "#FBBF24" },
+      { label: "Quản nhiệm trường", count: managers, pct: getPct(managers), dotColor: "bg-[#10B981]", hex: "#10B981" },
+      { label: "Quản trị viên (Admin)", count: admins, pct: getPct(admins), dotColor: "bg-[#8B5CF6]", hex: "#8B5CF6" },
+    ];
+    return list.filter((r) => r.count > 0 || total === 0);
+  }, [users, usersCount]);
+
+  const donutGradient = useMemo(() => {
+    const total = roleBreakdown.reduce((s, r) => s + r.count, 0);
+    if (total === 0) return "conic-gradient(#E2E8F0 0deg 360deg)";
+    let acc = 0;
+    const stops = roleBreakdown.map((r) => {
+      const start = acc;
+      const deg = (r.count / total) * 360;
+      acc += deg;
+      return `${r.hex} ${start.toFixed(1)}deg ${acc.toFixed(1)}deg`;
+    });
+    return `conic-gradient(${stops.join(", ")})`;
+  }, [roleBreakdown]);
 
   if (currentUser?.role === "STUDENT") {
     const myClasses = classes.filter(
@@ -59,183 +149,243 @@ export function DashboardView({
             e.student?.username === currentUser?.username
         )
     );
-
     const activeSchoolName = myClasses[0]?.school?.name || "SIMPACE Việt Nam";
-
     const studentStats = [
-      [GraduationCap, "Lớp học của tôi", `${myClasses.length} lớp`, "Đang diễn ra", "schedule"],
-      [CalendarDays, "Thời khóa biểu tuần", `${myClasses.filter((c) => c.description).length} ca/tuần`, "Đúng tiến độ", "schedule"],
-      [Building2, "Trường liên kết", activeSchoolName, "Đối tác", "schedule"],
-      [UserRound, "Tài khoản học viên", currentUser?.fullName || "Học viên", "Hoạt động", "settings"],
-    ] as const;
+      { icon: GraduationCap, label: "Lớp học của tôi", value: `${myClasses.length} lớp`, sub: "Đang diễn ra", dest: "classes", iconBg: "bg-[#FFF1EB] text-[#EA580C]", hex: "#EA580C" },
+      { icon: CalendarDays, label: "Thời khóa biểu tuần", value: `${myClasses.filter((c) => c.description).length} ca/tuần`, sub: "Đúng tiến độ", dest: "classes", iconBg: "bg-blue-50 text-blue-600", hex: "#3B82F6" },
+      { icon: Building2, label: "Trường liên kết", value: activeSchoolName, sub: "Đối tác đào tạo", dest: "classes", iconBg: "bg-emerald-50 text-emerald-600", hex: "#10B981" },
+      { icon: UserRound, label: "Tài khoản học viên", value: currentUser?.fullName || "Học viên", sub: "Đang hoạt động", dest: "profile", iconBg: "bg-purple-50 text-purple-600", hex: "#8B5CF6" },
+    ];
 
     return (
-      <>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {studentStats.map(([Icon, label, value, tag, dest]) => (
-            <button
-              key={label}
-              onClick={() => navigate(dest as View)}
-              className="panel text-left transition hover:-translate-y-0.5 hover:border-[#EA580C]/30 group"
-            >
-              <span className="grid size-11 place-items-center rounded-xl bg-[#FFF1EB] text-[#EA580C] group-hover:bg-[#EA580C] group-hover:text-white transition">
-                <Icon className="size-5.5" />
-              </span>
-              <p className="mt-4 text-sm text-[#64748B] font-medium">{label}</p>
-              <b className="mt-1 block text-2xl font-extrabold text-[#0F172A] truncate">{value}</b>
-              <small className="font-semibold text-emerald-600">● {tag}</small>
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
-          <section className="panel">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-bold text-base text-[#0F172A]">Lớp học đang theo học</h2>
-                <p className="text-xs text-[#64748B]">Danh sách lớp học và thời khóa biểu cá nhân của bạn</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate("schedule")}
-                className="text-xs font-semibold text-[#EA580C] hover:bg-orange-50"
+      <div className="space-y-6">
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          {studentStats.map((s) => {
+            const Icon = s.icon;
+            return (
+              <button
+                key={s.label}
+                onClick={() => navigate(s.dest as View)}
+                className="flex items-center justify-between gap-3 rounded-2xl bg-white p-5 sm:p-6 border border-[#E2E8F0]/80 shadow-xs text-left transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-[#EA580C]/40"
               >
-                Xem thời khóa biểu tuần →
-              </Button>
-            </div>
-
-            {myClasses.length > 0 ? (
-              <div className="space-y-3">
-                {myClasses.map((cls) => {
-                  const teacher = cls.assignments?.find((a: any) => a.roleInClass === "TEACHER")?.staff?.profile?.fullName;
-
-                  return (
-                    <div
-                      key={cls.id}
-                      className="rounded-2xl border border-orange-200/90 bg-[#FFF7ED]/30 p-4 hover:border-[#EA580C] transition"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-[#EA580C] bg-orange-100 px-2 py-0.5 rounded">
-                          {cls.code}
-                        </span>
-                        <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                          Đang theo học
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-base text-[#0F172A] mt-2">{cls.name}</h3>
-                      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 text-[#475569]">
-                        <div><b>Trường:</b> {cls.school?.name}</div>
-                        <div><b>Lịch học:</b> <span className="text-[#EA580C] font-semibold">{cls.description || "Chưa xếp lịch"}</span></div>
-                        <div className="sm:col-span-2"><b>Giáo viên:</b> {teacher || "Đang cập nhật"}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-10 text-sm text-[#94A3B8] italic">
-                Bạn chưa được ghi danh vào lớp học nào. Vui lòng liên hệ Quản nhiệm trường hoặc Admin để được hỗ trợ.
-              </div>
-            )}
-          </section>
-
-          <section className="panel space-y-4">
-            <h2 className="font-bold text-base text-[#0F172A]">Thông tin học viên</h2>
-            <div className="rounded-xl border border-[#E2E8F0] p-4 bg-[#F8FAFC] space-y-2 text-xs">
-              <div><span className="text-[#64748B]">Mã học viên:</span> <b className="font-mono ml-1 text-[#0F172A]">{currentUser.username}</b></div>
-              <div><span className="text-[#64748B]">Họ và tên:</span> <b className="ml-1 text-[#0F172A]">{currentUser.fullName}</b></div>
-              <div><span className="text-[#64748B]">Email:</span> <b className="ml-1 text-[#0F172A]">{currentUser.email}</b></div>
-              <div><span className="text-[#64748B]">Vai trò:</span> <span className="ml-1 font-bold text-[#EA580C]">Học viên (STUDENT)</span></div>
-            </div>
-
-            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-800 space-y-1.5">
-              <b className="block font-bold">💡 Lưu ý học tập:</b>
-              <p>Học viên vui lòng theo dõi thời khóa biểu hàng tuần, tham gia đầy đủ các buổi học và hoàn thành bài tập đúng hạn để đảm bảo kết quả cam kết đầu ra.</p>
-            </div>
-          </section>
+                <div className="flex items-center gap-4 min-w-0">
+                  <span className={`grid size-14 shrink-0 place-items-center rounded-2xl ${s.iconBg}`}>
+                    <Icon className="size-7" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm text-[#64748B] font-medium">{s.label}</p>
+                    <b className="mt-0.5 block text-xl sm:text-2xl font-extrabold text-[#0F172A] truncate">{s.value}</b>
+                    <small className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                      ↑ {s.sub}
+                    </small>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
-      </>
+      </div>
     );
   }
 
-  const stats = [
-    [UserRound, "Người dùng", usersCount.toLocaleString("vi-VN"), "+12%", "users"],
-    [Building2, "Trường học", schoolsCount.toLocaleString("vi-VN"), "+2 trường", "schools"],
-    [GraduationCap, "Lớp học", classesCount.toLocaleString("vi-VN"), "+18%", "classes"],
-    [CalendarDays, "Lịch giảng dạy", "538 buổi", "+26%", "schedule"],
-  ] as const;
+  const kpiCards = [
+    {
+      id: "users",
+      icon: UserRound,
+      label: "Người dùng",
+      value: usersCount.toLocaleString("vi-VN"),
+      trend: "+12%",
+      trendSub: "so với tháng trước",
+      dest: "users" as View,
+      iconBg: "bg-[#FFF1EB] text-[#EA580C]",
+      sparkColor: "#EA580C",
+    },
+    {
+      id: "schools",
+      icon: Building2,
+      label: "Trường học",
+      value: schoolsCount.toLocaleString("vi-VN"),
+      trend: "+0%",
+      trendSub: "so với tháng trước",
+      dest: "schools" as View,
+      iconBg: "bg-blue-50 text-blue-600",
+      sparkColor: "#3B82F6",
+    },
+    {
+      id: "classes",
+      icon: GraduationCap,
+      label: "Lớp học",
+      value: classesCount.toLocaleString("vi-VN"),
+      trend: "+0%",
+      trendSub: "so với tháng trước",
+      dest: "classes" as View,
+      iconBg: "bg-emerald-50 text-emerald-600",
+      sparkColor: "#10B981",
+    },
+    {
+      id: "schedule",
+      icon: CalendarDays,
+      label: "Lịch giảng dạy",
+      value: totalWeeklySessions > 0 ? `${totalWeeklySessions} ca/tuần` : "Chưa xếp lịch",
+      trend: totalWeeklySessions > 0 ? "Đang diễn ra" : "—",
+      trendSub: "",
+      dest: "classes" as View,
+      iconBg: "bg-purple-50 text-purple-600",
+      sparkColor: "",
+    },
+  ];
+
+  const activityStyles = [
+    { icon: BookOpen, bg: "bg-blue-50 text-blue-600" },
+    { icon: UserRound, bg: "bg-emerald-50 text-emerald-600" },
+    { icon: UserRound, bg: "bg-purple-50 text-purple-600" },
+    { icon: GraduationCap, bg: "bg-[#FFF1EB] text-[#EA580C]" },
+    { icon: BookOpen, bg: "bg-blue-50 text-blue-600" },
+  ];
 
   return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map(([Icon, label, value, trend, dest]) => (
-          <button
-            key={label}
-            onClick={() => navigate(dest as View)}
-            className="panel text-left transition hover:-translate-y-0.5 hover:border-[#EA580C]/30 group"
-          >
-            <span className="grid size-11 place-items-center rounded-xl bg-[#FFF1EB] text-[#EA580C] group-hover:bg-[#EA580C] group-hover:text-white transition">
-              <Icon className="size-5.5" />
-            </span>
-            <p className="mt-4 text-sm text-[#64748B] font-medium">{label}</p>
-            <b className="mt-1 block text-3xl font-extrabold text-[#0F172A]">{value}</b>
-            <small className="font-semibold text-emerald-600">↑ {trend} so với tháng trước</small>
-          </button>
-        ))}
+    <div className="space-y-6">
+      {/* 4 KPI Cards ngang có biểu đồ sóng Sparkline chuẩn thiết kế */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+        {kpiCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <button
+              key={card.id}
+              onClick={() => navigate(card.dest)}
+              className="group relative flex items-center justify-between gap-3 rounded-2xl bg-white p-5 sm:p-6 border border-[#E2E8F0]/80 shadow-xs text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-[#EA580C]/40 overflow-hidden"
+            >
+              <div className="flex items-start gap-4 min-w-0 z-10">
+                <span className={`grid size-14 shrink-0 place-items-center rounded-2xl ${card.iconBg} transition-transform group-hover:scale-105`}>
+                  <Icon className="size-7" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm text-[#64748B] font-medium">{card.label}</p>
+                  <b className="mt-0.5 block text-2xl sm:text-3xl font-extrabold text-[#0F172A] tracking-tight truncate">
+                    {card.value}
+                  </b>
+                  <div className="mt-1.5 flex items-center gap-1 text-xs">
+                    {card.trend !== "—" ? (
+                      <>
+                        <span className="font-bold text-emerald-600">↑ {card.trend}</span>
+                        {card.trendSub && <span className="text-[#94A3B8]">{card.trendSub}</span>}
+                      </>
+                    ) : (
+                      <span className="text-[#94A3B8] font-medium">—</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {card.sparkColor ? (
+                <Sparkline color={card.sparkColor} id={card.id} />
+              ) : (
+                <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-purple-50/70 text-purple-300">
+                  <CalendarDays className="size-7" />
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[.9fr_1.1fr]">
-        <section className="panel">
-          <h2 className="font-bold text-base text-[#0F172A]">Thống kê người dùng theo vai trò</h2>
-          <div className="mt-6 flex flex-col items-center gap-8 sm:flex-row">
-            <div className="donut grid size-44 place-items-center rounded-full shadow-inner">
-              <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow">
-                <b className="text-xl font-extrabold text-[#0F172A]">{usersCount}</b>
-                <span className="text-[10px] text-[#94A3B8] uppercase tracking-wider">Tài khoản</span>
+      {/* Hàng dưới: Biểu đồ Donut Vai trò (5 cột) & Hoạt động gần đây (7 cột) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <section className="lg:col-span-5 rounded-2xl bg-white p-6 border border-[#E2E8F0]/80 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <BarChart3 className="size-5 text-[#EA580C]" />
+              <h2 className="font-bold text-base sm:text-lg text-[#0F172A]">
+                Thống kê người dùng theo vai trò
+              </h2>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1.5 text-xs font-semibold text-[#334155]">
+              Tháng này <ChevronDown className="size-3.5 text-[#64748B]" />
+            </span>
+          </div>
+
+          <div className="my-6 flex flex-col sm:flex-row items-center justify-center gap-8">
+            <div
+              className="grid size-44 shrink-0 place-items-center rounded-full shadow-inner transition-all"
+              style={{ background: donutGradient }}
+            >
+              <div className="grid size-28 place-items-center rounded-full bg-white text-center shadow-xs">
+                <div>
+                  <b className="block text-2xl font-extrabold text-[#0F172A] leading-none">
+                    {usersCount}
+                  </b>
+                  <span className="mt-1 block text-[11px] font-medium text-[#64748B]">
+                    Tổng người dùng
+                  </span>
+                </div>
               </div>
             </div>
-            <div className="w-full space-y-3 text-sm">
-              {[
-                ["Học sinh", "68%"],
-                ["Giáo viên", "20%"],
-                ["Quản nhiệm trường", "7%"],
-                ["Quản trị viên (Admin)", "5%"],
-              ].map((x, i) => (
-                <div className="flex items-center" key={x[0]}>
-                  <span className={`mr-2.5 size-2.5 rounded-full dot-${i}`} />
-                  <span className="flex-1 text-[#475569]">{x[0]}</span>
-                  <b className="text-[#0F172A]">{x[1]}</b>
+
+            <div className="w-full space-y-3.5 text-sm">
+              {roleBreakdown.map((x) => (
+                <div className="flex items-center justify-between gap-3" key={x.label}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className={`size-3 shrink-0 rounded-full ${x.dotColor}`} />
+                    <span className="text-[#475569] font-medium truncate">{x.label}</span>
+                  </div>
+                  <b className="text-[#0F172A] font-bold shrink-0">
+                    {x.count} ({x.pct}%)
+                  </b>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="panel">
-          <div className="flex justify-between items-center">
-            <h2 className="font-bold text-base text-[#0F172A]">Hoạt động hệ thống gần đây</h2>
-            <button className="text-xs font-semibold text-[#EA580C] hover:underline">
+        <section className="lg:col-span-7 rounded-2xl bg-white p-6 border border-[#E2E8F0]/80 shadow-xs">
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <div className="flex items-center gap-2.5">
+              <Clock className="size-5 text-[#EA580C]" />
+              <h2 className="font-bold text-base sm:text-lg text-[#0F172A]">
+                Hoạt động hệ thống gần đây
+              </h2>
+            </div>
+            <button
+              onClick={() => navigate("users")}
+              className="text-xs sm:text-sm font-bold text-[#EA580C] hover:underline"
+            >
               Xem tất cả →
             </button>
           </div>
-          <div className="mt-4 divide-y divide-[#F1F5F9]">
-            {[
-              ["10:42", "Đồng bộ CSDL lên Supabase Cloud", "Hệ thống"],
-              ["09:36", "Cấu hình Ma trận phân quyền động (Dynamic RBAC)", "Admin"],
-              ["08:20", "Phân công Quản nhiệm phụ trách trường THPT Trương Định", "Quản nhiệm"],
-              ["16:45", "Kiểm tra cơ chế Import Excel và xuất file lỗi", "Admin"],
-              ["14:12", "Cấu hình chính sách bảo mật đổi mật khẩu lần đầu", "Bảo mật"],
-            ].map((x) => (
-              <div key={x[1]} className="grid grid-cols-[60px_1fr_auto] gap-3 py-3 text-sm items-center">
-                <span className="text-xs text-[#94A3B8] font-mono">{x[0]}</span>
-                <b className="truncate text-[#1E293B]">{x[1]}</b>
-                <span className="text-xs text-[#64748B]">{x[2]}</span>
+
+          <div className="divide-y divide-[#F1F5F9]">
+            {activities.length > 0 ? (
+              activities.map((x, idx) => {
+                const style = activityStyles[idx % activityStyles.length];
+                const ActIcon = style.icon;
+                return (
+                  <div
+                    key={x.id}
+                    className="flex items-center justify-between gap-3.5 py-3.5 text-sm hover:bg-[#F8FAFC] px-2 rounded-xl transition"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <span className="text-xs text-[#94A3B8] font-medium w-12 shrink-0">
+                        {x.time}
+                      </span>
+                      <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${style.bg}`}>
+                        <ActIcon className="size-4.5" />
+                      </span>
+                      <b className="truncate text-[#1E293B] font-semibold" title={x.title}>
+                        {x.title}
+                      </b>
+                    </div>
+                    <span className="text-xs font-medium text-[#64748B] shrink-0">{x.actor}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="py-10 text-center text-xs text-[#94A3B8] italic">
+                Chưa có hoạt động hệ thống mới ghi nhận
               </div>
-            ))}
+            )}
           </div>
         </section>
       </div>
-    </>
+    </div>
   );
 }

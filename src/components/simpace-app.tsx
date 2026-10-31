@@ -65,6 +65,9 @@ import { ClassDetailView } from "@/components/classes/class-detail-view";
 import { UsersPageView } from "@/components/users/users-page-view";
 import { UserDialog } from "@/components/users/user-dialog";
 import { IeltsTemplatesShowcase } from "@/components/assignments/ielts-templates-showcase";
+import { TopNavbar } from "@/components/layout/top-navbar";
+import { ProfilePageView } from "@/components/profile/profile-page-view";
+import { HelpDialog } from "@/components/help/help-dialog";
 import { ReportsPageView } from "@/components/reports/reports-page-view";
 
 export type View =
@@ -79,7 +82,8 @@ export type View =
   | "custom-module"
   | "materials-global"
   | "assignments-global"
-  | "reports";
+  | "reports"
+  | "profile";
 
 interface SimpaceAppProps {
   initialSession: any;
@@ -108,6 +112,8 @@ export function SimpaceApp({
   const [view, setView] = useState<View>("dashboard");
   const [sidebar, setSidebar] = useState(false);
   const [notice, setNotice] = useState("");
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"matrix" | "ielts-levels">("matrix");
+  const [helpOpen, setHelpOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
 
   // Dữ liệu ứng dụng
@@ -278,7 +284,8 @@ export function SimpaceApp({
     "class-detail": "Chi tiết lớp học",
     schedule: "Lịch học & Giảng dạy",
     import: "Import / Export Excel",
-    settings: canManageSettings ? "Cài đặt & Phân quyền" : "Hồ sơ cá nhân & Bảo mật",
+    settings: "Cài đặt & Phân quyền",
+    profile: "Hồ sơ cá nhân & Bảo mật",
     "custom-module": activeCustomPerm?.name || "Tính năng mở rộng",
     "materials-global":
       currentUser?.role === "ADMIN"
@@ -297,237 +304,46 @@ export function SimpaceApp({
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-[#1E293B]">
-      <div className="flex min-h-screen">
-        {/* Sidebar */}
-        <aside
-          className={`${
-            sidebar ? "fixed inset-y-0 left-0 z-40 flex" : "hidden"
-          } w-64 shrink-0 flex-col border-r border-[#E2E8F0] bg-white lg:flex`}
-        >
-          <div className="flex h-20 items-center justify-between border-b border-[#E2E8F0] px-5 py-3">
-            <SimpaceLogo
-              className="h-11 w-auto max-w-[190px]"
-              onClick={() => navigate("dashboard")}
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="lg:hidden text-[#64748B]"
-              onClick={() => setSidebar(false)}
-              aria-label="Đóng menu"
-            >
-              <X className="size-5" />
-            </Button>
-          </div>
+    <div className="min-h-screen bg-[#F8F9FA] text-[#1E293B] flex flex-col">
+      <TopNavbar
+        view={view}
+        navigate={navigate}
+        currentUser={currentUser}
+        hasPerm={hasPerm}
+        canManageSettings={canManageSettings}
+        permissions={permissions}
+        activeCustomPerm={activeCustomPerm}
+        setActiveCustomPerm={setActiveCustomPerm}
+        onLogout={handleLogout}
+        onOpenSettingsTab={(tabKey) => {
+          setSettingsInitialTab(tabKey);
+          navigate("settings");
+        }}
+        onOpenProfile={() => navigate("profile")}
+        onOpenHelp={() => setHelpOpen(true)}
+      />
 
-          <nav className="flex-1 space-y-1.5 p-3.5">
-            {hasPerm("VIEW_DASHBOARD") && (
-              <NavItem
-                icon={LayoutDashboard}
-                label="Tổng quan"
-                active={view === "dashboard"}
-                onClick={() => navigate("dashboard")}
-              />
-            )}
-            {hasPerm("VIEW_USERS") && (
-              <NavItem
-                icon={Users}
-                label="Quản lý người dùng"
-                active={view === "users"}
-                onClick={() => navigate("users")}
-              />
-            )}
-            {hasPerm("VIEW_SCHOOLS") && (
-              <NavItem
-                icon={Building2}
-                label="Quản lý trường"
-                active={view === "schools"}
-                onClick={() => navigate("schools")}
-              />
-            )}
-            {(hasPerm("VIEW_CLASSES") || hasPerm("VIEW_SCHEDULE")) && (
-              <NavItem
-                icon={GraduationCap}
-                label="Quản lý lớp học"
-                active={view === "classes" || view === "class-detail" || view === "schedule"}
-                onClick={() => navigate("classes")}
-              />
-            )}
-            <NavItem
-              icon={Folder}
-              label={
-                currentUser.role === "ADMIN"
-                  ? "Kho học liệu chung"
-                  : currentUser.role === "STUDENT"
-                  ? "Học liệu của tôi"
-                  : "Kho học liệu"
-              }
-              active={view === "materials-global"}
-              onClick={() => navigate("materials-global")}
-            />
-            <NavItem
-              icon={FileText}
-              label={
-                currentUser.role === "STUDENT"
-                  ? "Bài tập cần làm"
-                  : "Quản lý bài tập"
-              }
-              active={view === "assignments-global"}
-              onClick={() => navigate("assignments-global")}
-            />
-            <NavItem
-              icon={BarChart3}
-              label={
-                currentUser.role === "STUDENT"
-                  ? "Báo cáo học tập"
-                  : "Báo cáo & Thống kê"
-              }
-              active={view === "reports"}
-              onClick={() => navigate("reports")}
-            />
-            <NavItem
-              icon={canManageSettings ? Settings : UserRound}
-              label={canManageSettings ? "Cài đặt & Phân quyền" : "Hồ sơ cá nhân"}
-              active={view === "settings"}
-              onClick={() => navigate("settings")}
-            />
+      {/* Nền sóng cam ấm góc trên phải theo thiết kế */}
+      <div className="pointer-events-none fixed top-0 right-0 w-[600px] h-[340px] bg-gradient-to-bl from-orange-200/35 via-orange-100/15 to-transparent rounded-bl-full blur-2xl z-0" />
 
-            {/* Các màn hình mới được tạo từ giao diện phân quyền */}
-            {permissions
-              .filter(
-                (p) =>
-                  ![
-                    "VIEW_DASHBOARD",
-                    "VIEW_USERS",
-                    "VIEW_SCHOOLS",
-                    "VIEW_CLASSES",
-                    "VIEW_SCHEDULE",
-                    "VIEW_REPORTS",
-                    "IMPORT_EXCEL",
-                    "SYSTEM_SETTINGS",
-                  ].includes(p.featureKey) &&
-                  (currentUser.role === "ADMIN" || p.allowedRoles.includes(currentUser.role as RoleCode))
-              )
-              .map((dyn) => (
-                <NavItem
-                  key={dyn.featureKey}
-                  icon={ShieldCheck}
-                  label={dyn.name}
-                  active={view === "custom-module" && activeCustomPerm?.featureKey === dyn.featureKey}
-                  onClick={() => {
-                    setActiveCustomPerm(dyn);
-                    navigate("custom-module");
-                  }}
-                />
-              ))}
-          </nav>
-
-          <div className="m-3.5 border-t border-[#E2E8F0] pt-3">
-            <button
-              onClick={handleLogout}
-              className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left text-sm hover:bg-[#F1F5F9] transition"
-            >
-              <span className="grid size-9 place-items-center rounded-full bg-primary text-white font-bold text-sm shadow-sm">
-                {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : "A"}
-              </span>
-              <span className="flex-1 overflow-hidden">
-                <b className="block truncate text-[#0F172A]">{currentUser.fullName}</b>
-                <small className="text-[#64748B] block truncate text-xs">
-                  {roleLabel(currentUser.role)}
-                </small>
-              </span>
-              <LogOut className="size-4 shrink-0 text-[#94A3B8] hover:text-[#EF4444]" />
-            </button>
-          </div>
-        </aside>
-
-        {sidebar && (
-          <button
-            className="fixed inset-0 z-30 bg-black/40 lg:hidden"
-            aria-label="Đóng menu"
-            onClick={() => setSidebar(false)}
-          />
-        )}
-
-        {/* Main Content */}
-        <main className="min-w-0 flex-1 flex flex-col">
-          <header className="sticky top-0 z-20 flex h-18 items-center gap-3 border-b border-[#E2E8F0] bg-white/95 px-4 py-3 backdrop-blur md:px-8">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="lg:hidden text-[#64748B]"
-              onClick={() => setSidebar(true)}
-              aria-label="Mở menu"
-            >
-              <Menu className="size-5" />
-            </Button>
-
-            <SimpaceLogo
-              className="h-8 w-auto max-w-[130px] lg:hidden"
-              onClick={() => navigate("dashboard")}
-            />
-
-            <div className="flex-1 min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-[#0F172A] truncate">
-                {title[view]}
-              </h1>
-            </div>
-
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded-full text-[#64748B] hover:text-[#0F172A]"
-                onClick={() => setBellOpen(!bellOpen)}
-                aria-label="Thông báo"
-              >
-                <Bell className="size-5" />
-              </Button>
-              {bellOpen && (
-                <div className="absolute right-0 mt-2 w-72 rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl z-50 animate-in fade-in-50 zoom-in-95">
-                  <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-2 mb-2">
-                    <b className="text-xs text-[#0F172A]">Thông báo hệ thống</b>
-                  </div>
-                  <p className="text-xs text-[#64748B] py-2 text-center italic">
-                    Chưa có thông báo mới.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div
-              className="hidden items-center gap-2.5 sm:flex cursor-pointer hover:opacity-85 transition pl-2 border-l border-[#E2E8F0]"
-              onClick={() => navigate("settings")}
-            >
-              <span className="grid size-9 place-items-center rounded-full bg-primary text-sm font-bold text-white shadow-sm">
-                {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : "U"}
-              </span>
-              <span className="text-sm">
-                <b className="block text-[#0F172A] leading-tight">{currentUser.fullName}</b>
-                <small className="text-[#64748B] text-xs">{roleLabel(currentUser.role)}</small>
-              </span>
-              <ChevronDown className="size-3.5 text-[#94A3B8]" />
-            </div>
-          </header>
-
-          <div className="p-4 md:p-8 flex-1">
-            <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="mb-1 text-xs font-medium text-[#64748B]">
-                  {view === "materials-global" && activeGlobalMaterialClass
-                    ? `${roleBreadcrumbPrefix(currentUser.role)} / Kho học liệu chung / ${activeGlobalMaterialClass.name}`
-                    : view === "assignments-global" && activeGlobalAssignmentClass
-                    ? `${roleBreadcrumbPrefix(currentUser.role)} / Quản lý bài tập / ${activeGlobalAssignmentClass.name}`
-                    : `${roleBreadcrumbPrefix(currentUser.role)} / ${title[view]}`}
-                </p>
-                <h1 className="text-2xl font-bold text-[#0F172A]">
+      <main className="relative z-10 flex-1 w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 2xl:px-12 py-6 sm:py-8">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="mb-1 text-xs font-medium text-[#64748B]">
+              {view === "materials-global" && activeGlobalMaterialClass
+                ? `Trang chủ > Kho học liệu chung > ${activeGlobalMaterialClass.name}`
+                : view === "assignments-global" && activeGlobalAssignmentClass
+                ? `Trang chủ > Quản lý bài tập > ${activeGlobalAssignmentClass.name}`
+                : `Trang chủ > ${title[view]}`}
+            </p>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] flex items-center gap-3">
+                  {view === "dashboard" && <span className="text-3xl sm:text-4xl select-none">👋</span>}
                   {view === "materials-global" && activeGlobalMaterialClass
                     ? activeGlobalMaterialClass.name
                     : view === "assignments-global" && activeGlobalAssignmentClass
                     ? activeGlobalAssignmentClass.name
                     : view === "dashboard"
-                    ? `Xin chào, ${currentUser.fullName}`
+                    ? `Xin chào, ${currentUser.fullName}!`
                     : title[view]}
                 </h1>
                 <p className="mt-1 text-sm text-[#64748B]">
@@ -576,6 +392,7 @@ export function SimpaceApp({
                 classesCount={classes.length}
                 currentUser={currentUser}
                 classes={classes}
+                users={users}
               />
             )}
             {view === "users" && hasPerm("VIEW_USERS") && (
@@ -829,6 +646,13 @@ export function SimpaceApp({
                 onRefreshPermissions={refreshAll}
                 ieltsLevels={ieltsLevels}
                 onRefreshLevels={refreshIeltsLevels}
+                initialTab={settingsInitialTab}
+              />
+            )}
+            {view === "profile" && (
+              <ProfilePageView
+                currentUser={currentUser}
+                users={users}
                 onProfileUpdated={(updated) => {
                   if (updated) {
                     setCurrentUser((prev: any) => ({ ...prev, ...updated }));
@@ -845,9 +669,7 @@ export function SimpaceApp({
                 onNavigateBack={() => navigate("dashboard")}
               />
             )}
-          </div>
-        </main>
-      </div>
+      </main>
 
       {/* MODAL & DRAWER TẠO MỚI */}
       <UserDialog
@@ -972,6 +794,9 @@ export function SimpaceApp({
           setNotice("Đã giao bài tập thành công cho các lớp học được chọn!");
         }}
       />
+
+      {/* Help & System Info Dialog */}
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       {/* Toast Notification */}
       {notice && (

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { getMaterialsSummaryAction } from "@/actions/materials";
 import {
   GraduationCap,
   Folder,
@@ -63,11 +64,35 @@ export function ClassDirectoryTab({
     });
   }, [classes, search, selectedLevel, selectedSchool]);
 
-  // Thống kê 4 Card chuẩn M2A
-  const totalClassesCount = classes.length || 42;
-  const totalFoldersCount = classes.length * 6 || 248;
-  const totalStorageSize = "1.2 GB";
-  const totalDownloadCount = 3876;
+  const [summary, setSummary] = useState<{
+    totalClasses: number;
+    totalFolders: number;
+    formattedStorageSize: string;
+    totalDownloads: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    getMaterialsSummaryAction().then((res) => {
+      if (isMounted && res.success) {
+        setSummary({
+          totalClasses: res.totalClasses,
+          totalFolders: res.totalFolders,
+          formattedStorageSize: res.formattedStorageSize,
+          totalDownloads: res.totalDownloads,
+        });
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Thống kê 4 Card thực tế từ CSDL
+  const totalClassesCount = summary ? summary.totalClasses : classes.length;
+  const totalFoldersCount = summary ? summary.totalFolders : 0;
+  const totalStorageSize = summary ? summary.formattedStorageSize : "0 KB";
+  const totalDownloadCount = summary ? summary.totalDownloads : 0;
 
   return (
     <div className="space-y-6">

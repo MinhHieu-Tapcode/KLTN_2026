@@ -17,6 +17,7 @@ import {
   distributeLearningMaterialsService,
   uploadCoursebookPackageService,
   getLevelRepositoryFoldersService,
+  getMaterialsSummaryService,
 } from "@/services/material.service";
 
 function safeRevalidate(path: string = "/") {
@@ -285,4 +286,19 @@ export async function getLevelRepositoryFoldersAction(): Promise<{
   folders: any[];
 }> {
   return getLevelRepositoryFoldersService();
+}
+
+
+/**
+ * Lấy dữ liệu thống kê tổng hợp thực tế của module Học liệu
+ */
+export async function getMaterialsSummaryAction(): Promise<{
+  success: boolean;
+  totalClasses: number;
+  totalFolders: number;
+  totalStorageBytes: number;
+  formattedStorageSize: string;
+  totalDownloads: number;
+}> {
+  return getMaterialsSummaryService();
 }

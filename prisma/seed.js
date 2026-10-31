@@ -98,10 +98,9 @@ async function main() {
 
   await prisma.classAssignment.upsert({
     where: {
-      classId_userId_roleInClass: {
+      classId_userId: {
         classId: cls.id,
         userId: teacher.id,
-        roleInClass: 'TEACHER',
       },
     },
     update: {},
@@ -137,3 +136,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+

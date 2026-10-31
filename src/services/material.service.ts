@@ -1457,3 +1457,79 @@ export async function getLevelRepositoryFoldersService(): Promise<{
     return { success: false, error: err.message, folders: [] };
   }
 }
+
+
+export function formatStorageSize(bytes: number): string {
+  if (!bytes || bytes <= 0) return "0 KB";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/**
+ * Lấy số liệu thống kê tổng hợp thực tế của module Học liệu:
+ * - Tổng số lớp học
+ * - Tổng số thư mục
+ * - Tổng dung lượng file lưu trữ
+ * - Tổng số lượt tải tài liệu
+ */
+export async function getMaterialsSummaryService(): Promise<{
+  success: boolean;
+  totalClasses: number;
+  totalFolders: number;
+  totalStorageBytes: number;
+  formattedStorageSize: string;
+  totalDownloads: number;
+}> {
+  if (!(await isDbAlive())) {
+    const folders = (globalMaterialsStore.demoFolders || []).filter((f) => f.isActive !== false);
+    const materials = (globalMaterialsStore.demoMaterials || []).filter((m) => m.isActive !== false);
+    const totalStorageBytes = materials.reduce((acc: number, m: any) => acc + (m.fileSize || 0), 0);
+    const totalDownloads = materials.reduce((acc: number, m: any) => acc + (m.downloadCount || 0), 0);
+
+    return {
+      success: true,
+      totalClasses: 1,
+      totalFolders: folders.length,
+      totalStorageBytes,
+      formattedStorageSize: formatStorageSize(totalStorageBytes),
+      totalDownloads,
+    };
+  }
+
+  try {
+    const [totalClasses, totalFolders, materialAgg] = await Promise.all([
+      prisma.class.count({ where: { isActive: true } }),
+      prisma.materialFolder.count({ where: { isActive: true } }),
+      prisma.learningMaterial.aggregate({
+        where: { isActive: true },
+        _sum: {
+          fileSize: true,
+          downloadCount: true,
+        },
+      }),
+    ]);
+
+    const totalStorageBytes = materialAgg._sum.fileSize || 0;
+    const totalDownloads = materialAgg._sum.downloadCount || 0;
+
+    return {
+      success: true,
+      totalClasses,
+      totalFolders,
+      totalStorageBytes,
+      formattedStorageSize: formatStorageSize(totalStorageBytes),
+      totalDownloads,
+    };
+  } catch (err: any) {
+    console.error("[getMaterialsSummaryService] Lỗi:", err);
+    return {
+      success: false,
+      totalClasses: 0,
+      totalFolders: 0,
+      totalStorageBytes: 0,
+      formattedStorageSize: "0 KB",
+      totalDownloads: 0,
+    };
+  }
+}
