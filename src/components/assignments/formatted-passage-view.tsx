@@ -17,7 +17,6 @@ export function FormattedPassageView({
   text,
   fallbackText = "Vui lòng đọc kỹ các câu hỏi bên cột phải và hoàn thành bài tập theo đúng thời lượng quy định.",
 }: FormattedPassageViewProps) {
-  const [fontSize, setFontSize] = React.useState<"normal" | "large">("normal");
   const cleanSource = (text || "").trim();
   if (!cleanSource) {
     return <p className="text-xs text-slate-500 italic">{fallbackText}</p>;
@@ -27,35 +26,7 @@ export function FormattedPassageView({
   const sections = cleanSource.split(/\n*━{5,}\n*/);
 
   return (
-    <div className={`space-y-4 font-serif text-slate-800 ${fontSize === "large" ? "text-[15.5px]" : "text-[13px]"}`}>
-      <div className="flex items-center justify-between pb-1 border-b border-slate-200">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-tight font-sans">
-          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px]">1.1 PASSAGE</span>
-          <span>Bài đọc hiểu</span>
-        </div>
-        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 font-sans">
-          <button
-            type="button"
-            onClick={() => setFontSize("normal")}
-            className={`px-2 py-0.5 rounded text-xs font-bold transition ${
-              fontSize === "normal" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
-            }`}
-            title="Cỡ chữ chuẩn"
-          >
-            A
-          </button>
-          <button
-            type="button"
-            onClick={() => setFontSize("large")}
-            className={`px-2 py-0.5 rounded text-xs font-bold transition ${
-              fontSize === "large" ? "bg-white text-[#EA580C] shadow-2xs font-extrabold" : "text-slate-500 hover:text-slate-800"
-            }`}
-            title="Phóng to cỡ chữ"
-          >
-            A+
-          </button>
-        </div>
-      </div>
+    <div className="space-y-4 font-serif text-slate-800 text-[13.5px] leading-relaxed">
       {sections.map((secText, secIdx) => {
         // Dọn dẹp dòng rác: watermark website, link PDF, số trang rác
         const filteredLines: string[] = [];

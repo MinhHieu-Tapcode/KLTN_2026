@@ -1,39 +1,65 @@
 "use client";
 
 import React from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Tag, Wand2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultipleChoiceEditor } from "@/components/assignments/multiple-choice-editor";
+import { QuestionImageUploader } from "@/components/assignments/question-image-uploader";
+import { getIeltsSubtypesBySkill } from "@/lib/ielts-report-config";
+import { getQuestionTemplatePreset } from "@/lib/exam-parser/question-media-detector";
 
 export interface EbookQuestionCardProps {
   question: any;
+  assignmentSkill?: string;
   isSelected: boolean;
   isQuestionsFinalized: boolean;
   onToggleSelection: (qNum: number) => void;
   onUpdateField: (qNum: number, field: string, value: any) => void;
   onDeleteQuestion: (qNum: number) => void;
+  onApplyImageToRange?: (startNum: number, endNum: number, imageUrl: string) => void;
 }
 
 export function EbookQuestionCard({
   question: q,
+  assignmentSkill = "READING",
   isSelected,
   isQuestionsFinalized,
   onToggleSelection,
   onUpdateField,
   onDeleteQuestion,
+  onApplyImageToRange,
 }: EbookQuestionCardProps) {
+  const subtypeOptions = getIeltsSubtypesBySkill(assignmentSkill);
+
+  const handleApplyPreset = () => {
+    const preset = getQuestionTemplatePreset(
+      q.ieltsQuestionType || subtypeOptions[0]?.code || "",
+      q.questionNumber
+    );
+    if (!preset) return;
+    if (preset.type) onUpdateField(q.questionNumber, "type", preset.type);
+    if (preset.groupTitle) onUpdateField(q.questionNumber, "groupTitle", preset.groupTitle);
+    if (preset.passageText) onUpdateField(q.questionNumber, "passageText", preset.passageText);
+    if (preset.prompt) onUpdateField(q.questionNumber, "prompt", preset.prompt);
+    if (preset.options) onUpdateField(q.questionNumber, "options", preset.options);
+    if (preset.correctAnswer !== undefined) {
+      onUpdateField(q.questionNumber, "correctAnswer", preset.correctAnswer);
+    }
+  };
+
   return (
     <div
-      className={`p-3 rounded-xl border transition space-y-2 text-xs ${
+      id={`ebook-q-card-${q.questionNumber}`}
+      className={`p-3 rounded-xl border transition space-y-2.5 text-xs ${
         isSelected
           ? "border-slate-200 bg-slate-50/70"
           : "border-dashed border-slate-300 bg-slate-100/60 opacity-60"
       }`}
     >
       {/* Thanh tiêu đề câu hỏi: Checkbox chọn câu, Số câu, Loại câu, Điểm số, Nút xóa */}
-      <div className="flex items-center justify-between font-bold text-slate-800">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between font-bold text-slate-800 flex-wrap gap-1.5">
+        <div className="flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-1.5 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -63,6 +89,7 @@ export function EbookQuestionCard({
             <option value="MULTIPLE_CHOICE">Trắc nghiệm</option>
             <option value="TRUE_FALSE_NG">True / False / NG</option>
             <option value="FILL_IN_BLANK">Điền từ (Blank)</option>
+            <option value="MATCHING">Nối thông tin (Matching)</option>
             <option value="ESSAY">Tự luận Viết</option>
             <option value="SPEAKING_RECORD">Ghi âm Nói</option>
           </select>
@@ -95,6 +122,41 @@ export function EbookQuestionCard({
         </div>
       </div>
 
+      {/* Nhãn dạng bài IELTS chi tiết & Nút chèn mẫu */}
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-orange-50/50 border border-orange-200/70 rounded-lg">
+        <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+          <Tag className="size-3.5 text-[#EA580C] shrink-0" />
+          <select
+            value={q.ieltsQuestionType || ""}
+            onChange={(e) => onUpdateField(q.questionNumber, "ieltsQuestionType", e.target.value)}
+            className="flex-1 h-6 text-[11px] rounded border border-orange-200 bg-white font-semibold text-slate-800 px-1.5"
+          >
+            <option value="">-- Tự động nhận diện dạng bài IELTS --</option>
+            {subtypeOptions.map((sub) => (
+              <option key={sub.code} value={sub.code}>
+                {sub.viLabel}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={handleApplyPreset}
+          className="px-2 py-0.5 text-[10px] font-bold text-[#EA580C] bg-white hover:bg-orange-100 border border-orange-200 rounded flex items-center gap-1 transition"
+          title="Điền mẫu câu hỏi chuẩn theo dạng bài đã chọn"
+        >
+          <Wand2 className="size-3" /> Chèn mẫu chuẩn
+        </button>
+      </div>
+
+      {/* Bộ nhận diện & Đính kèm Ảnh minh họa thông minh (Map / Diagram / Chart / Table) */}
+      <QuestionImageUploader
+        question={q}
+        assignmentSkill={assignmentSkill}
+        onImageChange={(url) => onUpdateField(q.questionNumber, "imageUrl", url)}
+        onApplyToRange={onApplyImageToRange}
+      />
+
       {/* Prompt câu hỏi */}
       <div className="space-y-1">
         <Label className="text-[10px] font-semibold text-slate-500">
@@ -111,7 +173,7 @@ export function EbookQuestionCard({
       </div>
 
       {/* Ô đáp án chuẩn theo từng dạng */}
-      {q.type === "MULTIPLE_CHOICE" && (
+      {(q.type === "MULTIPLE_CHOICE" || q.type === "MATCHING") && (
         <MultipleChoiceEditor
           questionNumber={q.questionNumber}
           options={q.options}
@@ -179,7 +241,7 @@ export function EbookQuestionCard({
       {(q.type === "ESSAY" || q.type === "SPEAKING_RECORD") && (
         <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-[11px] text-amber-800">
           ℹ️ Dạng câu hỏi{" "}
-          <b>{q.type === "ESSAY" ? "Tự luận Viết (Task 2)" : "Ghi âm Nói"}</b>: Giáo
+          <b>{q.type === "ESSAY" ? "Tự luận Viết (Task 1 / Task 2)" : "Ghi âm Nói"}</b>: Giáo
           viên sẽ trực tiếp chấm tay theo 4 tiêu chí IELTS.
         </div>
       )}

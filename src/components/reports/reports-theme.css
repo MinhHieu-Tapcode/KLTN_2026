@@ -1,0 +1,108 @@
+/* ==========================================================================
+   DESIGN TOKENS & CHUẨN STYLING MODULE BÁO CÁO - THỐNG KÊ (SIMPACE LMS)
+   Đặc tả chuẩn theo antigravity-prompt-pack.md
+   ========================================================================== */
+
+:root {
+  /* 1. Brand Tokens */
+  --rp-brand: #EA580C;
+  --rp-brand-soft: #FFF7ED;
+  --rp-brand-line: #FDBA74;
+
+  /* 2. Neutral Ink & Canvas */
+  --rp-ink: #0F172A;
+  --rp-ink-2: #475569;
+  --rp-ink-3: #94A3B8;
+  --rp-line: #E2E8F0;
+  --rp-surface: #FFFFFF;
+  --rp-canvas: #F8FAFC;
+
+  /* 3. Semantic Status Colors */
+  --rp-good: #059669;
+  --rp-good-soft: #ECFDF5;
+  --rp-watch: #D97706;
+  --rp-watch-soft: #FFFBEB;
+  --rp-bad: #E11D48;
+  --rp-bad-soft: #FFF1F2;
+
+  /* 4. Radius & Shadows */
+  --rp-radius-card: 16px;
+  --rp-radius-ctl: 12px;
+  --rp-shadow-1: 0 1px 2px rgb(15 23 42 / .06);
+  --rp-shadow-2: 0 6px 20px -8px rgb(15 23 42 / .18);
+
+  /* 5. Transitions & Animations */
+  --rp-dur-fast: 150ms;
+  --rp-dur: 200ms;
+  --rp-dur-count: 400ms;
+  --rp-ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Base Report Wrapper */
+.rp-module {
+  background-color: var(--rp-canvas);
+  color: var(--rp-ink);
+}
+
+/* Thẻ chỉ số KPI Chuẩn */
+.rp-kpi-card {
+  background: var(--rp-surface);
+  border: 1px solid var(--rp-line);
+  border-radius: var(--rp-radius-card);
+  box-shadow: var(--rp-shadow-1);
+  transition: transform var(--rp-dur) var(--rp-ease), 
+              box-shadow var(--rp-dur) var(--rp-ease), 
+              border-color var(--rp-dur) var(--rp-ease);
+}
+
+.rp-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--rp-shadow-2);
+  border-color: var(--rp-brand-line);
+}
+
+/* Số liệu KPI to rõ chuẩn tabular */
+.rp-kpi-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  color: var(--rp-ink);
+  letter-spacing: -0.02em;
+}
+
+/* Thanh điều khiển dính đầu trang */
+.rp-context-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--rp-line);
+  border-radius: var(--rp-radius-card);
+  box-shadow: var(--rp-shadow-1);
+}
+
+/* Hiệu ứng viền sáng 1.2s khi được dẫn tới từ nút Xem chi tiết */
+@keyframes rp-flash {
+  0% {
+    box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.4);
+    border-color: var(--rp-brand);
+  }
+  100% {
+    box-shadow: var(--rp-shadow-1);
+    border-color: var(--rp-line);
+  }
+}
+
+.rp-target-highlight {
+  animation: rp-flash 1.2s var(--rp-ease);
+}
+
+/* Tắt chuyển động khi bật reduce-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

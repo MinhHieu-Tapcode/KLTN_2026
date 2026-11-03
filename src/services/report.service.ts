@@ -4,14 +4,23 @@ import {
   estimateAcademicBand,
   getIeltsSubtypeLabel,
   LISTENING_IELTS_TYPES,
+  percentToCambridgeBand,
   READING_IELTS_TYPES,
   REPORT_THRESHOLDS,
   ReportPeriodKey,
   resolvePeriodRange,
+  resolvePreviousPeriodRange,
   roundIeltsBand,
   SPEAKING_CRITERIA,
   WRITING_CRITERIA,
 } from "@/lib/ielts-report-config";
+import {
+  computeTabSwitchSummary,
+  computeMetricComparison,
+  partitionAssignmentsByPeriod,
+  TabSwitchSummary,
+  MetricComparison,
+} from "./report-metrics.helper";
 import { resolveIeltsQuestionType } from "./assignment-mutation.service";
 import { getReportCommentService } from "./report-comment.service";
 import "./class.service";
@@ -531,13 +540,21 @@ export async function getSchoolReportService(params: {
     return { success: false, error: "Trường học không tồn tại hoặc đã ngừng hoạt động!" };
   }
 
-  let totalStudents = 0;
+  // D5: Đếm học sinh duy nhất trong toàn trường (tránh đếm trùng học sinh học nhiều lớp)
+  const uniqueSchoolStudentIds = new Set<string>();
+  for (const c of school.classes) {
+    for (const e of c.enrollments) {
+      if (e.student?.id) uniqueSchoolStudentIds.add(e.student.id);
+    }
+  }
+  const totalStudents = uniqueSchoolStudentIds.size;
+
   let totalSubmittedSlots = 0;
   let totalPendingNotDueSlots = 0;
   let totalOverdueSlots = 0;
   let totalOpenedSlots = 0;
-  let totalFlaggedSubmissions = 0;
   let totalPendingGrading = 0;
+  const allSchoolSubmissions: any[] = [];
 
   const classRows: Array<{
     classId: string;
@@ -548,6 +565,9 @@ export async function getSchoolReportService(params: {
     averagePercent: number | null;
     completionRatePercent: number;
     supportNeededCount: number;
+    tabSwitchesCount: number;
+    flaggedCount: number;
+    avgTabSwitches: number;
     supportStudents: Array<{
       studentId: string;
       fullName: string;
@@ -561,7 +581,6 @@ export async function getSchoolReportService(params: {
 
   for (const cls of school.classes) {
     const students = cls.enrollments.map((e: any) => e.student);
-    totalStudents += students.length;
 
     // Gộp danh sách bài tập của lớp (từ Assignment trực tiếp và bảng nối AssignmentClass)
     const assignMap = new Map<
@@ -608,11 +627,12 @@ export async function getSchoolReportService(params: {
     }
 
     const classAssignments = Array.from(assignMap.values());
+    const clsSubmissions = classAssignments.flatMap((ca) => ca.submissions);
+    allSchoolSubmissions.push(...clsSubmissions);
+    const clsTabSummary = computeTabSwitchSummary(clsSubmissions);
 
-    // Đếm gian lận & chờ chấm
     for (const ca of classAssignments) {
       for (const sub of ca.submissions) {
-        if (sub.isCheatingFlagged) totalFlaggedSubmissions++;
         if (sub.status === "SUBMITTED") totalPendingGrading++;
         if (
           sub.status === "GRADED" &&
@@ -691,6 +711,9 @@ export async function getSchoolReportService(params: {
       averagePercent: classAveragePercent,
       completionRatePercent: classCompletionRate,
       supportNeededCount: supportStudents.length,
+      tabSwitchesCount: clsTabSummary.totalSwitches,
+      flaggedCount: clsTabSummary.flaggedCount,
+      avgTabSwitches: clsTabSummary.avgSwitchesPerSubmission,
       supportStudents,
     });
   }
@@ -713,6 +736,22 @@ export async function getSchoolReportService(params: {
     totalOpenedSlots > 0
       ? Number(((totalSubmittedSlots / totalOpenedSlots) * 100).toFixed(1))
       : 0;
+
+  // Tính toán chỉ số chuyển tab toàn trường
+  const schoolTabSummary = computeTabSwitchSummary(allSchoolSubmissions);
+
+  // Tính toán so sánh kỳ trước
+  const prevRange = resolvePreviousPeriodRange(params.periodKey);
+  const comparison = computeMetricComparison({
+    currentBand: percentToCambridgeBand(schoolAveragePercent),
+    previousBand: null,
+    currentCompletionRate: schoolCompletionRatePercent,
+    previousCompletionRate: null,
+    currentTabSwitches: schoolTabSummary.totalSwitches,
+    previousTabSwitches: null,
+    hasPreviousPeriod: prevRange.hasPreviousPeriod,
+    previousPeriodLabel: prevRange.label,
+  });
 
   // Tổng hợp xu hướng theo tuần (4 mốc thời gian)
   const weeklyTrend = buildTimeSeriesTrend(allGradedEvents, params.periodKey);
@@ -763,10 +802,15 @@ export async function getSchoolReportService(params: {
         totalClasses: school.classes.length,
         totalStudents,
         schoolAveragePercent,
+        schoolAverageBand: percentToCambridgeBand(schoolAveragePercent),
         completionRatePercent: schoolCompletionRatePercent,
-        flaggedSubmissionsCount: totalFlaggedSubmissions,
+        flaggedSubmissionsCount: schoolTabSummary.flaggedCount,
         pendingGradingCount: totalPendingGrading,
+        totalTabSwitches: schoolTabSummary.totalSwitches,
+        avgTabSwitches: schoolTabSummary.avgSwitchesPerSubmission,
       },
+      tabSwitchSummary: schoolTabSummary,
+      comparison,
       donut: {
         submitted: totalSubmittedSlots,
         pendingNotDue: totalPendingNotDueSlots,
@@ -976,6 +1020,11 @@ export async function getClassReportService(params: {
       now,
     });
 
+    const studentSubs = classAssignments.flatMap((ca) =>
+      ca.submissions.filter((s: any) => s.studentId === st.id)
+    );
+    const stTabSummary = computeTabSwitchSummary(studentSubs);
+
     totalSubmittedSlots += stat.submittedCount;
     totalPendingNotDueSlots += stat.pendingNotDueCount;
     totalOverdueSlots += stat.overdueCount;
@@ -994,6 +1043,9 @@ export async function getClassReportService(params: {
       completionRatePercent: stat.completionRatePercent,
       needsSupport: stat.needsSupport,
       supportReasons: stat.supportReasons,
+      tabSwitchesCount: stTabSummary.totalSwitches,
+      flaggedCount: stTabSummary.flaggedCount,
+      avgTabSwitches: stTabSummary.avgSwitchesPerSubmission,
     };
   });
 
@@ -1065,6 +1117,7 @@ export async function getClassReportService(params: {
     studentName: string;
     assignmentId: string;
     assignmentTitle: string;
+    skill: string;
     tabSwitchCount: number;
     maxTabSwitches: number;
     autoSubmittedReason: string | null;
@@ -1091,13 +1144,15 @@ export async function getClassReportService(params: {
         totalTabSwitchSum += sub.tabSwitchCount || 0;
       }
 
-      if (sub.isCheatingFlagged || sub.autoSubmittedReason) {
+      // D1 & D2: Phân định rõ chỉ gắn cờ khi vượt ngưỡng tab; bổ sung trường skill
+      if (sub.isCheatingFlagged || sub.autoSubmittedReason === "VIOLATED_TAB_SWITCH_LIMIT") {
         flaggedSubmissions.push({
           submissionId: sub.id,
           studentId: sub.studentId,
           studentName: sub.student?.profile?.fullName || sub.student?.username || "Học viên",
           assignmentId: ca.id,
           assignmentTitle: ca.title,
+          skill: ca.skill,
           tabSwitchCount: sub.tabSwitchCount || 0,
           maxTabSwitches: ca.maxTabSwitches || 3,
           autoSubmittedReason: sub.autoSubmittedReason || null,
@@ -1186,6 +1241,23 @@ export async function getClassReportService(params: {
 
   const weeklyTrend = buildTimeSeriesTrend(allGradedEvents, params.periodKey);
 
+  // Tính toán tóm tắt chuyển tab của lớp
+  const allClassSubmissions = classAssignments.flatMap((ca) => ca.submissions);
+  const classTabSummary = computeTabSwitchSummary(allClassSubmissions);
+
+  // So sánh kỳ trước
+  const prevRange = resolvePreviousPeriodRange(params.periodKey);
+  const comparison = computeMetricComparison({
+    currentBand: percentToCambridgeBand(classAveragePercent),
+    previousBand: null,
+    currentCompletionRate: completionRatePercent,
+    previousCompletionRate: null,
+    currentTabSwitches: classTabSummary.totalSwitches,
+    previousTabSwitches: null,
+    hasPreviousPeriod: prevRange.hasPreviousPeriod,
+    previousPeriodLabel: prevRange.label,
+  });
+
   return {
     success: true,
     hasData: classAssignments.length > 0,
@@ -1200,9 +1272,15 @@ export async function getClassReportService(params: {
       kpis: {
         studentCount: students.length,
         classAveragePercent,
+        classAverageBand: percentToCambridgeBand(classAveragePercent),
         assignedCount: classAssignments.length,
         completionRatePercent,
+        totalTabSwitches: classTabSummary.totalSwitches,
+        avgTabSwitchesPerSubmission: classTabSummary.avgSwitchesPerSubmission,
+        flaggedCount: classTabSummary.flaggedCount,
       },
+      tabSwitchSummary: classTabSummary,
+      comparison,
       donut: {
         submitted: totalSubmittedSlots,
         pendingNotDue: totalPendingNotDueSlots,
@@ -1220,6 +1298,7 @@ export async function getClassReportService(params: {
           totalSubmissionsCount > 0
             ? Number(((flaggedSubmissions.length / totalSubmissionsCount) * 100).toFixed(1))
             : 0,
+        totalTabSwitches: totalTabSwitchSum,
         avgTabSwitches:
           totalSubmissionsCount > 0
             ? Number((totalTabSwitchSum / totalSubmissionsCount).toFixed(1))
@@ -1423,6 +1502,9 @@ export async function getStudentReportService(params: {
     correctCount: number | null;
     estimatedBand: number | null; // BR-01: Chỉ có khi đề Reading/Listening đủ 40 câu
     writingSpeakingBand: number | null;
+    tabSwitchCount?: number;
+    isCheatingFlagged?: boolean;
+    autoSubmittedReason?: string | null;
     submittedAt: string | null;
     dueDate: string | null;
     teacherFeedback: string | null;
@@ -1583,6 +1665,9 @@ export async function getStudentReportService(params: {
         correctCount,
         estimatedBand: estBand,
         writingSpeakingBand: wsBand,
+        tabSwitchCount: s.tabSwitchCount || 0,
+        isCheatingFlagged: Boolean(s.isCheatingFlagged),
+        autoSubmittedReason: s.autoSubmittedReason || null,
         submittedAt: s.submittedAt ? s.submittedAt.toISOString() : null,
         dueDate: assign.dueDate ? assign.dueDate.toISOString() : null,
         teacherFeedback: s.teacherFeedback,
@@ -1811,6 +1896,21 @@ export async function getStudentReportService(params: {
       })
     : null;
 
+  const allStudentSubmissions = normalizedAssignments.flatMap((a) => a.submissions);
+  const studentTabSummary = computeTabSwitchSummary(allStudentSubmissions);
+
+  const prevRange = resolvePreviousPeriodRange(params.periodKey);
+  const comparison = computeMetricComparison({
+    currentBand: percentToCambridgeBand(summaryStat.averagePercent),
+    previousBand: null,
+    currentCompletionRate: summaryStat.completionRatePercent,
+    previousCompletionRate: null,
+    currentTabSwitches: studentTabSummary.totalSwitches,
+    previousTabSwitches: null,
+    hasPreviousPeriod: prevRange.hasPreviousPeriod,
+    previousPeriodLabel: prevRange.label,
+  });
+
   return {
     success: true,
     hasData: normalizedAssignments.length > 0,
@@ -1828,6 +1928,7 @@ export async function getStudentReportService(params: {
       periodLabel: range.label,
       kpis: {
         averagePercent: summaryStat.averagePercent,
+        averageBand: percentToCambridgeBand(summaryStat.averagePercent),
         submittedCount: summaryStat.submittedCount,
         assignedCount: summaryStat.openedAssignmentsCount,
         completionRatePercent: summaryStat.completionRatePercent,
@@ -1835,7 +1936,11 @@ export async function getStudentReportService(params: {
         pendingGradingCount: summaryStat.pendingGradingCount,
         needsSupport: summaryStat.needsSupport,
         supportReasons: summaryStat.supportReasons,
+        totalTabSwitches: studentTabSummary.totalSwitches,
+        flaggedCount: studentTabSummary.flaggedCount,
       },
+      tabSwitchSummary: studentTabSummary,
+      comparison,
       fourSkillsComparison,
       attemptTrendLine: attemptTrendLine.map((pt, i) => ({
         label: `Lượt ${i + 1}`,
@@ -1846,6 +1951,9 @@ export async function getStudentReportService(params: {
         ...h,
         rowKey: h.id,
         skill: h.skill.toLowerCase(),
+        tabSwitchCount: (h as any).tabSwitchCount || 0,
+        isCheatingFlagged: Boolean((h as any).isCheatingFlagged),
+        autoSubmittedReason: (h as any).autoSubmittedReason || null,
         scoreDisplay:
           h.status === "OVERDUE"
             ? "Quá hạn (0đ)"
@@ -1860,7 +1968,9 @@ export async function getStudentReportService(params: {
             ? `Band ${h.estimatedBand.toFixed(1)} (Chuẩn 40 câu)`
             : h.writingSpeakingBand !== null
             ? `Band ${h.writingSpeakingBand.toFixed(1)}`
-            : "— (Bài < 40 câu)",
+            : h.percent !== null && h.percent !== undefined
+            ? `Band ${percentToCambridgeBand(h.percent, h.skill)?.toFixed(1)}`
+            : "—",
       })),
       questionTypeAnalysis: {
         reading: readingQuestionTypes,

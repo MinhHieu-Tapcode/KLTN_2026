@@ -12,11 +12,11 @@ import {
   Trash2,
   Loader2,
   BookOpen,
-  Sparkles,
   ArrowLeft,
   UserCheck,
   RefreshCw,
 } from "lucide-react";
+import { AnswerVisibilityMode, validateAssignmentConfig } from "@/lib/assignment-config";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,13 +29,17 @@ import {
   getSubmissionsForAssignmentAction,
   gradeSubmissionAction,
 } from "@/actions/assignments";
+import { recordOutTabAction } from "@/actions/notifications";
 import { IeltsExamPlayer } from "@/components/assignments/ielts-exam-player";
 import { SmartParserModal } from "@/components/assignments/exam-parser";
+import { uploadMaterialFileClient } from "@/lib/upload-material-client";
+import { validateAssignmentMediaRequirements } from "@/lib/exam-parser/question-media-detector";
 import { StudentSubmissionReviewModal } from "@/components/assignments/student-submission-review-modal";
 import { IeltsTemplatesShowcase } from "@/components/assignments/ielts-templates-showcase";
 import {
   IELTS_QUESTION_TYPES,
   ManualAssignmentBuilderModal,
+  buildDefaultQuestionsForSkill,
 } from "@/components/assignments/manual-assignment-builder-modal";
 import {
   TeacherGradingAnswerState,
@@ -119,6 +123,9 @@ export function ClassAssignmentsTab({
   const [manualDuration, setManualDuration] = useState<number>(60);
   const [manualDueDate, setManualDueDate] = useState("");
   const [manualStartDate, setManualStartDate] = useState("");
+  const [manualMaxAttempts, setManualMaxAttempts] = useState<number>(1);
+  const [manualAnswerVisibility, setManualAnswerVisibility] = useState<AnswerVisibilityMode>("AFTER_SUBMIT");
+  const [manualAnswerVisibleAt, setManualAnswerVisibleAt] = useState<string>("");
   const [manualAudioUrl, setManualAudioUrl] = useState("");
   const [manualAudioFileName, setManualAudioFileName] = useState("");
   const [manualAudioFileSize, setManualAudioFileSize] = useState("");
@@ -260,9 +267,11 @@ export function ClassAssignmentsTab({
     });
   };
 
-  const handleManualAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Tải tệp Audio lên máy chủ thật (/uploads/materials/...) thay vì blob URL tạm thời
+  const handleManualAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
     if (!file.type.includes("audio") && !file.name.match(/\.(mp3|wav|m4a|aac|ogg)$/i)) {
       showAlert(
         "Định dạng không hợp lệ",
@@ -271,10 +280,19 @@ export function ClassAssignmentsTab({
       );
       return;
     }
-    const blobUrl = URL.createObjectURL(file);
-    setManualAudioUrl(blobUrl);
-    setManualAudioFileName(file.name);
-    setManualAudioFileSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+    try {
+      const uploaded = await uploadMaterialFileClient(file);
+      setManualAudioUrl(uploaded.url);
+      setManualAudioFileName(file.name);
+      setManualAudioFileSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+      showAlert("Tải Audio thành công", `Đã lưu tệp âm thanh "${file.name}" lên hệ thống.`, "success");
+    } catch (err: any) {
+      showAlert(
+        "Lỗi tải tệp âm thanh",
+        err?.message || "Không thể tải tệp âm thanh lên máy chủ.",
+        "error"
+      );
+    }
   };
 
   const handleSaveManualAssignment = () => {
@@ -298,6 +316,34 @@ export function ClassAssignmentsTab({
       return;
     }
 
+    // Kiểm tra bắt buộc hình ảnh đối với các câu hỏi Map / Diagram / Biểu đồ Task 1
+    const mediaCheck = validateAssignmentMediaRequirements(
+      manualQuestions.map((q, i) => ({ ...q, questionNumber: i + 1 })),
+      manualSkill
+    );
+    if (!mediaCheck.valid) {
+      const missingNums = mediaCheck.missingRequired.map((m) => `Câu ${m.questionNumber}`).join(", ");
+      showAlert(
+        "Thiếu hình ảnh bắt buộc (Map / Diagram / Biểu đồ)",
+        `Các câu hỏi (${missingNums}) thuộc dạng Bản đồ, Sơ đồ hoặc Biểu đồ bắt buộc phải có hình ảnh minh họa để học viên quan sát làm bài. Vui lòng tải ảnh hoặc bấm Ctrl+V dán ảnh vào câu hỏi đó trước khi phát hành!`,
+        "error"
+      );
+      return;
+    }
+
+    const valResult = validateAssignmentConfig({
+      durationMinutes: manualDuration,
+      startDate: manualStartDate || null,
+      dueDate: manualDueDate || null,
+      maxAttempts: manualMaxAttempts,
+      answerVisibility: manualAnswerVisibility,
+      answerVisibleAt: manualAnswerVisibleAt || null,
+    });
+    if (valResult.error) {
+      showAlert("Lỗi cấu hình", valResult.error, "error");
+      return;
+    }
+
     startTransition(async () => {
       const res = await createAssignmentAction({
         classId,
@@ -308,6 +354,9 @@ export function ClassAssignmentsTab({
         durationMinutes: manualDuration,
         dueDate: manualDueDate || null,
         startDate: manualStartDate || null,
+        maxAttempts: valResult.maxAttempts,
+        answerVisibility: valResult.answerVisibility,
+        answerVisibleAt: valResult.answerVisibleAt ? valResult.answerVisibleAt.toISOString() : null,
         audioUrl: manualAudioUrl.trim() || null,
         enableProctoring: manualEnableProctoring,
         maxTabSwitches: manualMaxTabSwitches,
@@ -329,28 +378,13 @@ export function ClassAssignmentsTab({
     setManualTitle("");
     setManualDesc("");
     setManualSkill("READING");
+    setManualDuration(60);
     setManualDueDate("");
     setManualStartDate("");
     setManualAudioUrl("");
     setManualAudioFileName("");
     setManualAudioFileSize("");
-    setManualQuestions([
-      {
-        questionNumber: 1,
-        passageText: "",
-        prompt: "Chọn đáp án đúng nhất cho câu sau:",
-        type: "MULTIPLE_CHOICE",
-        points: 1.0,
-        correctAnswer: "A",
-        explanation: "",
-        options: [
-          { optionLabel: "A", content: "Lựa chọn A", isCorrect: true },
-          { optionLabel: "B", content: "Lựa chọn B", isCorrect: false },
-          { optionLabel: "C", content: "Lựa chọn C", isCorrect: false },
-          { optionLabel: "D", content: "Lựa chọn D", isCorrect: false },
-        ],
-      },
-    ]);
+    setManualQuestions(buildDefaultQuestionsForSkill("READING"));
   };
 
   const handleAddQuestion = (type: string = "MULTIPLE_CHOICE") => {
@@ -435,33 +469,40 @@ export function ClassAssignmentsTab({
     setIsLoading(false);
   };
 
+  // Giám sát Out Tab chuẩn xác (lắng nghe cả visibilitychange và blur, debounce 1000ms để chống đếm trùng)
+  const lastOutTabRef = React.useRef<number>(0);
   useEffect(() => {
     if (!examAssignment || isExamFinished || !examAssignment.enableProctoring) return;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        setTabSwitchCount((prev) => {
-          const nextCount = prev + 1;
-          setShowWarningModal(true);
-          return nextCount;
-        });
-      }
-    };
+    const handleOutTab = () => {
+      const now = Date.now();
+      if (now - lastOutTabRef.current < 1000) return;
+      lastOutTabRef.current = now;
 
-    const handleWindowBlur = () => {
       setTabSwitchCount((prev) => {
         const nextCount = prev + 1;
         setShowWarningModal(true);
         return nextCount;
       });
+
+      recordOutTabAction({ assignmentId: examAssignment.id }).catch(() => {});
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        handleOutTab();
+      }
+    };
+
+    const handleBlur = () => {
+      handleOutTab();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("blur", handleWindowBlur);
-
+    window.addEventListener("blur", handleBlur);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("blur", handleBlur);
     };
   }, [examAssignment, isExamFinished]);
 
@@ -643,7 +684,7 @@ export function ClassAssignmentsTab({
             Quản lý bài tập & Đề thi IELTS ({assignments.length})
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Lớp học: <b className="text-slate-800">{className}</b> • Soạn đề 4 kỹ năng & Giám sát chuyển tab chống gian lận
+            Lớp học: <b className="text-slate-800">{className}</b>
           </p>
         </div>
 
@@ -658,16 +699,6 @@ export function ClassAssignmentsTab({
               <ArrowLeft className="size-3.5" /> Quay lại danh sách lớp
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsTemplatesShowcaseOpen(true)}
-            className="h-9 px-3.5 text-xs rounded-xl border-[#EA580C] text-[#EA580C] bg-orange-50 hover:bg-orange-100 font-bold gap-1.5 shadow-2xs"
-          >
-            <Sparkles className="size-3.5 text-[#EA580C]" />
-            <span>Khuôn Mẫu Giao Diện IELTS (Design System)</span>
-          </Button>
-
           {canManage && (
             <Button
               onClick={() => setCreateMode("choice")}
@@ -748,7 +779,7 @@ export function ClassAssignmentsTab({
                 {item.flaggedCount > 0 && (
                   <div className="p-2 bg-rose-50 rounded-xl border border-rose-200 flex items-center gap-2 text-xs text-rose-700 font-semibold">
                     <ShieldAlert className="size-4 shrink-0 text-rose-600" />
-                    <span>Có {item.flaggedCount} bài vi phạm chuyển tab</span>
+                    <span>Có {item.flaggedCount} bài vi phạm Out Tab</span>
                   </div>
                 )}
               </div>
@@ -879,6 +910,12 @@ export function ClassAssignmentsTab({
         setManualDueDate={setManualDueDate}
         manualStartDate={manualStartDate}
         setManualStartDate={setManualStartDate}
+        manualMaxAttempts={manualMaxAttempts}
+        setManualMaxAttempts={setManualMaxAttempts}
+        manualAnswerVisibility={manualAnswerVisibility}
+        setManualAnswerVisibility={setManualAnswerVisibility}
+        manualAnswerVisibleAt={manualAnswerVisibleAt}
+        setManualAnswerVisibleAt={setManualAnswerVisibleAt}
         manualAudioSourceType={manualAudioSourceType}
         setManualAudioSourceType={setManualAudioSourceType}
         manualAudioUrl={manualAudioUrl}

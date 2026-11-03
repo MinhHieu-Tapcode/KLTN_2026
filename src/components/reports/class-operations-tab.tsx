@@ -2,12 +2,13 @@
 
 import React from "react";
 import { AlertTriangle, Clock, ShieldAlert, UserCheck } from "lucide-react";
-import { ReportKpiCard } from "./report-shared-widgets";
+import { ReportKpiCard, TabSwitchBadge } from "./report-shared-widgets";
 
 export interface ClassOperationsData {
   flaggedCount: number;
   flaggedRatePercent: number;
   avgTabSwitches: number;
+  totalTabSwitches?: number;
   flaggedSubmissions: Array<{
     submissionId: string;
     studentId: string;
@@ -45,96 +46,123 @@ export function ClassOperationsTab({
   userRole: string;
   onSelectStudent: (studentId: string) => void;
 }) {
-  const formatAutoReason = (reason: string | null) => {
+  const formatAutoReason = (reason: string | null, count: number) => {
     if (reason === "VIOLATED_TAB_SWITCH_LIMIT") {
-      return "Vượt giới hạn chuyển tab (Nộp tự động)";
+      return "Vượt giới hạn chuyển tab (Thu bài tự động)";
     }
     if (reason === "TIME_EXPIRED") {
-      return "Hết thời gian làm bài (Nộp tự động)";
+      return "Hết thời gian làm bài (Tự động nộp bài)";
     }
-    return "Cảnh báo chuyển tab bất thường";
+    if (count > 0) {
+      return `Hệ thống ghi nhận ${count} lần rời màn hình`;
+    }
+    return "Cảnh báo giám sát thi";
   };
 
   return (
     <div className="space-y-6">
-      {/* 3 KPI Vận hành lớp (Mục 6.7) */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* 3 Thẻ chỉ số giám sát vận hành lớp */}
+      <div className="rp-kpi-grid sm:grid-cols-3">
         <ReportKpiCard
-          label="Tỷ lệ bài nộp bị gắn cờ gian lận"
+          label="Tỷ lệ bài nộp bị gắn cờ giám sát"
           value={`${operations.flaggedRatePercent}%`}
-          subtext={`${operations.flaggedCount} lượt nộp bài bị gắn cờ hoặc tự động thu bài`}
-          tone="rose"
+          subtext={`${operations.flaggedCount} lượt bài vượt ngưỡng chuyển tab cho phép`}
+          tone={operations.flaggedCount > 0 ? "bad" : "empty"}
+          tooltip="Tỷ lệ các bài thi có số lần chuyển tab vượt ngưỡng maxTabSwitches của đề thi"
         />
         <ReportKpiCard
-          label="Số lần chuyển tab trung bình"
+          label="Số lần rời màn hình trung bình"
           value={`${operations.avgTabSwitches} lần / bài`}
-          subtext="Trung bình trên tổng số lượt nộp trong kỳ"
-          tone="amber"
+          subtext={`Tổng cộng ${operations.totalTabSwitches ?? (operations.avgTabSwitches * operations.flaggedCount).toFixed(0)} lượt rời màn hình trong kỳ`}
+          tone={operations.avgTabSwitches > 1 ? "watch" : "good"}
+          tooltip="Tính trung bình trên mọi lượt nộp bài đã ghi nhận trong khoảng thời gian đã chọn"
         />
         <ReportKpiCard
-          label="Bài Tự luận (Writing/Speaking) chờ chấm"
+          label="Bài Writing / Speaking đang chờ chấm"
           value={operations.pendingGradingCount}
-          subtext="Trạng thái SUBMITTED chưa tính vào ĐTB (BR-08)"
-          tone="indigo"
+          subtext="Bài tự luận cần giáo viên hoàn thành chấm 4 tiêu chí"
+          tone="brand"
+          tooltip="Số bài thi tự luận đã nộp và đang chờ giáo viên chấm điểm để cập nhật điểm Band"
         />
       </div>
 
-      {/* Bảng 1: Danh sách bài nộp bị gắn cờ gian lận / tự động nộp */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-4 flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4 text-rose-600" />
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">
-              Danh sách bài nộp bị gắn cờ gian lận &amp; thu bài tự động
-            </h3>
-            <p className="text-xs text-slate-500">
-              Theo dõi các lượt làm bài vượt giới hạn chuyển tab hoặc hết giờ hệ thống tự động thu bài
-            </p>
+      {/* Bảng 1: Danh sách bài nộp có chuyển tab / vượt ngưỡng */}
+      <div className="rp-card overflow-hidden">
+        <div className="border-b border-[var(--rp-border)] px-5 py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-[var(--rp-bad)] shrink-0" />
+            <div>
+              <h3 className="rp-title">
+                Nhật ký giám sát làm bài &amp; Thu bài tự động
+              </h3>
+              <p className="rp-sub">
+                Chi tiết số lần học sinh chuyển tab và lý do hệ thống can thiệp thu bài
+              </p>
+            </div>
           </div>
+          <span className="rp-badge" data-tone="empty">
+            {operations.flaggedSubmissions.length} lượt cần lưu ý
+          </span>
         </div>
+
         {operations.flaggedSubmissions.length === 0 ? (
-          <p className="py-8 text-center text-xs text-slate-400">
-            Không có bài nộp nào bị gắn cờ gian lận trong khoảng thời gian này.
+          <p className="py-8 text-center text-xs text-[var(--rp-text-muted)]">
+            Không có bài nộp nào bị gắn cờ giám sát hoặc vượt ngưỡng chuyển tab trong kỳ này.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-[11px] font-semibold uppercase text-slate-500">
+          <div className="rp-table-wrap">
+            <table className="rp-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Học sinh</th>
-                  <th className="px-4 py-3">Bài tập</th>
-                  <th className="px-4 py-3 text-center">Kỹ năng</th>
-                  <th className="px-4 py-3 text-center">Số lần chuyển tab</th>
-                  <th className="px-4 py-3">Lý do cảnh báo / Nộp tự động</th>
-                  <th className="px-4 py-3 text-right">Thời gian nộp</th>
+                  <th className="text-left">Học sinh</th>
+                  <th className="text-left">Bài tập</th>
+                  <th className="text-center">Kỹ năng</th>
+                  <th className="text-center">Mức độ rời MH</th>
+                  <th className="text-left">Ghi nhận / Tự nộp</th>
+                  <th className="text-right">Thời gian nộp</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {operations.flaggedSubmissions.map((item) => (
-                  <tr key={item.submissionId} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-semibold text-slate-800">
+                  <tr key={item.submissionId} className="transition group">
+                    <td className="font-bold text-[var(--rp-text)]">
                       <button
                         type="button"
                         onClick={() => onSelectStudent(item.studentId)}
-                        className="hover:text-indigo-600 hover:underline"
+                        className="hover:text-[var(--rp-brand)] hover:underline"
                       >
                         {item.studentName}
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{item.assignmentTitle}</td>
-                    <td className="px-4 py-3 text-center uppercase font-medium text-slate-600">
-                      {item.skill}
+                    <td className="text-[var(--rp-text)] font-medium">
+                      {item.assignmentTitle}
                     </td>
-                    <td className="px-4 py-3 text-center font-bold text-rose-600">
-                      {item.tabSwitchCount} lần
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-semibold text-rose-700">
-                        <AlertTriangle className="h-3 w-3" />
-                        {formatAutoReason(item.autoSubmittedReason)}
+                    <td className="text-center">
+                      <span className="rp-badge uppercase font-bold" data-tone="brand">
+                        {item.skill || "IELTS"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right text-slate-500">
+                    <td className="text-center">
+                      <TabSwitchBadge count={item.tabSwitchCount} />
+                    </td>
+                    <td>
+                      <span
+                        className="rp-badge inline-flex items-center gap-1"
+                        data-tone={
+                          item.autoSubmittedReason === "VIOLATED_TAB_SWITCH_LIMIT"
+                            ? "bad"
+                            : item.autoSubmittedReason === "TIME_EXPIRED"
+                            ? "watch"
+                            : "empty"
+                        }
+                      >
+                        <AlertTriangle className="h-3 w-3 shrink-0" />
+                        <span>
+                          {formatAutoReason(item.autoSubmittedReason, item.tabSwitchCount)}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="text-right text-[var(--rp-text-muted)] font-mono text-[11px]">
                       {item.submittedAt
                         ? new Date(item.submittedAt).toLocaleString("vi-VN")
                         : "—"}
@@ -148,48 +176,66 @@ export function ClassOperationsTab({
       </div>
 
       {/* Bảng 2: Bài tập Writing / Speaking đang chờ chấm */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-4 flex items-center gap-2">
-          <Clock className="h-4 w-4 text-amber-600" />
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">
-              Danh sách bài nộp đang chờ giáo viên chấm điểm (SUBMITTED)
-            </h3>
-            <p className="text-xs text-slate-500">
-              Quy tắc BR-08: Bài chờ chấm được tính là &quot;Đã nộp&quot; nhưng chưa tính vào Điểm trung bình cho đến khi chuyển sang GRADED
-            </p>
+      <div className="rp-card overflow-hidden">
+        <div className="border-b border-[var(--rp-border)] px-5 py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-[var(--rp-watch)] shrink-0" />
+            <div>
+              <h3 className="rp-title">
+                Danh sách bài nộp đang chờ giáo viên chấm điểm
+              </h3>
+              <p className="rp-sub">
+                Các bài đã nộp hoàn tất, sẽ tự động cập nhật vào điểm Band ngay sau khi chấm xong
+              </p>
+            </div>
           </div>
+          <span className="rp-badge" data-tone="watch">
+            {operations.pendingGradingSubmissions.length} bài
+          </span>
         </div>
+
         {operations.pendingGradingSubmissions.length === 0 ? (
-          <p className="py-8 text-center text-xs text-slate-400">
+          <p className="py-8 text-center text-xs text-[var(--rp-text-muted)]">
             Tất cả bài nộp trong kỳ đều đã được chấm điểm hoàn tất.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-[11px] font-semibold uppercase text-slate-500">
+          <div className="rp-table-wrap">
+            <table className="rp-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Học sinh</th>
-                  <th className="px-4 py-3">Bài tập</th>
-                  <th className="px-4 py-3 text-center">Kỹ năng</th>
-                  <th className="px-4 py-3 text-center">Trạng thái</th>
-                  <th className="px-4 py-3 text-right">Ngày nộp</th>
+                  <th className="text-left">Học sinh</th>
+                  <th className="text-left">Bài tập</th>
+                  <th className="text-center">Kỹ năng</th>
+                  <th className="text-center">Trạng thái</th>
+                  <th className="text-right">Ngày nộp</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {operations.pendingGradingSubmissions.map((item) => (
-                  <tr key={item.submissionId} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-semibold text-slate-800">{item.studentName}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.assignmentTitle}</td>
-                    <td className="px-4 py-3 text-center uppercase font-medium text-indigo-600">
-                      {item.skill}
+                  <tr key={item.submissionId} className="transition group">
+                    <td className="font-bold text-[var(--rp-text)]">
+                      <button
+                        type="button"
+                        onClick={() => onSelectStudent(item.studentId)}
+                        className="hover:text-[var(--rp-brand)] hover:underline"
+                      >
+                        {item.studentName}
+                      </button>
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                    <td className="text-[var(--rp-text)] font-medium">
+                      {item.assignmentTitle}
+                    </td>
+                    <td className="text-center">
+                      <span className="rp-badge uppercase font-bold" data-tone="brand">
+                        {item.skill}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <span className="rp-badge" data-tone="watch">
                         ⏳ Chờ chấm (4 tiêu chí)
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right text-slate-500">
+                    <td className="text-right text-[var(--rp-text-muted)] font-mono text-[11px]">
                       {item.submittedAt
                         ? new Date(item.submittedAt).toLocaleString("vi-VN")
                         : "—"}
@@ -202,39 +248,39 @@ export function ClassOperationsTab({
         )}
       </div>
 
-      {/* Bảng 3: Năng suất chấm bài theo Giáo viên (Chỉ Quản nhiệm / Admin thấy - Mục 6.7) */}
+      {/* Bảng 3: Năng suất chấm bài theo Giáo viên */}
       {(userRole === "SCHOOL_MANAGER" || userRole === "ADMIN") && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="border-b border-slate-100 px-5 py-4 flex items-center gap-2">
-            <UserCheck className="h-4 w-4 text-indigo-600" />
+        <div className="rp-card overflow-hidden">
+          <div className="border-b border-[var(--rp-border)] px-5 py-4 flex items-center gap-2">
+            <UserCheck className="h-4 w-4 text-[var(--rp-brand)] shrink-0" />
             <div>
-              <h3 className="text-sm font-bold text-slate-800">
-                Thống kê năng suất chấm bài của Giáo viên phụ trách lớp (Dành riêng Quản nhiệm)
+              <h3 className="rp-title">
+                Tiến độ chấm bài của Giáo viên phụ trách lớp
               </h3>
-              <p className="text-xs text-slate-500">
-                Tổng hợp dựa trên trường graded_by_id của các bài tự luận đã chấm trong kỳ
+              <p className="rp-sub">
+                Tổng hợp số lượng bài tự luận đã chấm xong và đang chờ chấm trong kỳ
               </p>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-[11px] font-semibold uppercase text-slate-500">
+          <div className="rp-table-wrap">
+            <table className="rp-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Giáo viên</th>
-                  <th className="px-4 py-3 text-center">Vai trò trong lớp</th>
-                  <th className="px-4 py-3 text-center">Số bài đã chấm xong</th>
-                  <th className="px-4 py-3 text-center">Số bài của lớp còn chờ chấm</th>
+                  <th className="text-left">Giáo viên</th>
+                  <th className="text-center">Vai trò trong lớp</th>
+                  <th className="text-center">Số bài đã chấm xong</th>
+                  <th className="text-center">Số bài của lớp còn chờ chấm</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {operations.teacherGradingStats.map((t) => (
-                  <tr key={t.staffId}>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{t.staffName}</td>
-                    <td className="px-4 py-3 text-center text-slate-600">{t.roleInClass}</td>
-                    <td className="px-4 py-3 text-center font-bold text-emerald-700">
+                  <tr key={t.staffId} className="transition">
+                    <td className="font-bold text-[var(--rp-text)]">{t.staffName}</td>
+                    <td className="text-center text-[var(--rp-text-dim)]">{t.roleInClass}</td>
+                    <td className="text-center font-bold text-[var(--rp-good)]">
                       {t.gradedCount} bài
                     </td>
-                    <td className="px-4 py-3 text-center font-semibold text-amber-700">
+                    <td className="text-center font-semibold text-[var(--rp-watch)]">
                       {t.pendingCount} bài
                     </td>
                   </tr>

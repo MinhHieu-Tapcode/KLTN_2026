@@ -16,6 +16,7 @@ import { TableCompletionView } from "@/components/assignments/table-completion-v
 import { MatchingHeadingsView } from "@/components/assignments/matching-headings-view";
 import { SummaryCompletionView } from "@/components/assignments/summary-completion-view";
 import { EbookQuestionCard } from "./ebook-question-card";
+import { detectQuestionMediaRequirement } from "@/lib/exam-parser/question-media-detector";
 
 export interface EbookTwoColumnViewerProps {
   parsedEbookData: any;
@@ -34,6 +35,7 @@ export interface EbookTwoColumnViewerProps {
   onUpdateQuestionField: (qNum: number, field: string, value: any) => void;
   onDeleteQuestion: (qNum: number) => void;
   onAddQuestion: (sectionId: string, type: string) => void;
+  onApplyImageToRange?: (startNum: number, endNum: number, imageUrl: string) => void;
 }
 
 export function EbookTwoColumnViewer({
@@ -53,6 +55,7 @@ export function EbookTwoColumnViewer({
   onUpdateQuestionField,
   onDeleteQuestion,
   onAddQuestion,
+  onApplyImageToRange,
 }: EbookTwoColumnViewerProps) {
   const [passageViewMode, setPassageViewMode] = useState<"preview" | "edit">("preview");
 
@@ -366,15 +369,49 @@ export function EbookTwoColumnViewer({
             </div>
           )}
 
+          {/* Banner nhắc đính kèm ảnh nếu hệ thống phát hiện câu hỏi Map / Diagram / Biểu đồ */}
+          {(() => {
+            const curSkill = currentSec ? currentSec.skill : parsedEbookData.skill || "READING";
+            const missingRequired = standaloneQuestionsToShow.filter((q: any) => {
+              if (!selectedQuestionNumbers.includes(q.questionNumber)) return false;
+              const req = detectQuestionMediaRequirement(q, curSkill);
+              return req.level === "REQUIRED" && !q.imageUrl;
+            });
+            if (missingRequired.length === 0) return null;
+            return (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-xs text-rose-900">
+                <AlertCircle className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <b className="block">
+                    Phát hiện {missingRequired.length} câu hỏi có Bản đồ / Sơ đồ / Biểu đồ cần đính kèm ảnh gốc!
+                  </b>
+                  <p className="text-[11px] text-rose-700 mt-0.5">
+                    Các câu{" "}
+                    <b>
+                      {missingRequired.map((q: any) => `Câu ${q.questionNumber}`).join(", ")}
+                    </b>{" "}
+                    thuộc dạng trực quan mà OCR không thể vẽ lại bằng chữ. Vui lòng tải ảnh hoặc bấm{" "}
+                    <kbd className="px-1 py-0.5 bg-white border border-rose-200 rounded font-mono text-[10px]">
+                      Ctrl+V
+                    </kbd>{" "}
+                    dán ảnh chụp màn hình vào câu hỏi bên dưới.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
           {standaloneQuestionsToShow.map((q: any, qIdx: number) => (
             <EbookQuestionCard
               key={q.questionNumber || qIdx}
               question={q}
+              assignmentSkill={currentSec ? currentSec.skill : parsedEbookData.skill || "READING"}
               isSelected={selectedQuestionNumbers.includes(q.questionNumber)}
               isQuestionsFinalized={isQuestionsFinalized}
               onToggleSelection={onToggleQuestionSelection}
               onUpdateField={onUpdateQuestionField}
               onDeleteQuestion={onDeleteQuestion}
+              onApplyImageToRange={onApplyImageToRange}
             />
           ))}
         </div>

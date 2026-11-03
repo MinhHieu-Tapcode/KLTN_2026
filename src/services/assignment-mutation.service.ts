@@ -1,4 +1,6 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
+import { validateAssignmentConfig } from "@/lib/assignment-config";
+import { createNotifications } from "./notification.service";
 import { AssignmentSkill, AssignmentType, QuestionType } from "@prisma/client";
 
 const globalAssignmentsStore = globalThis as unknown as {
@@ -108,6 +110,8 @@ export interface CreateAssignmentInput {
   dueDate?: string | null;
   startDate?: string | null;
   maxAttempts?: number;
+  answerVisibility?: string;
+  answerVisibleAt?: string | null;
   audioUrl?: string | null;
   enableProctoring?: boolean;
   maxTabSwitches?: number;
@@ -122,6 +126,7 @@ export interface CreateAssignmentInput {
     type: string;
     ieltsQuestionType?: string | null;
     groupTitle?: string | null;
+    imageUrl?: string | null;
     points: number;
     correctAnswer?: string;
     explanation?: string;
@@ -144,6 +149,8 @@ export interface UpdateAssignmentInput {
   updateAllClasses?: boolean;
   dueDate?: string | null;
   startDate?: string | null;
+  answerVisibility?: string;
+  answerVisibleAt?: string | null;
   enableProctoring?: boolean;
   maxTabSwitches?: number;
   questions?: Array<{
@@ -154,6 +161,7 @@ export interface UpdateAssignmentInput {
     type: string;
     ieltsQuestionType?: string | null;
     groupTitle?: string | null;
+    imageUrl?: string | null;
     points: number;
     correctAnswer?: string;
     explanation?: string;
@@ -184,14 +192,26 @@ export async function createAssignmentService(
   const primaryClassId = targetClassList[0];
   const maxTabLimit =
     typeof data.maxTabSwitches === "number" && data.maxTabSwitches > 0 ? data.maxTabSwitches : 3;
-  const maxAttempts =
-    typeof data.maxAttempts === "number" && data.maxAttempts > 0 ? data.maxAttempts : 2;
+  const cfg = validateAssignmentConfig(data);
+  if (cfg.error) return { success: false, error: cfg.error };
+  const maxAttempts = cfg.maxAttempts;
+  const answerVisibility = cfg.answerVisibility;
+  const answerVisibleAt = cfg.answerVisibleAt;
 
   const normalizePoints = (qType: QuestionType, rawPts?: number) => {
     // Mục 8.5: Câu Writing/Speaking dùng totalPoints = 9 để dùng chung công thức %
     if (qType === "ESSAY" || qType === "SPEAKING_RECORD") return 9.0;
     return Number(rawPts) || 1.0;
   };
+
+  // Lưu trữ bản đồ hình ảnh câu hỏi (questionNumber -> { imageUrl }) vào JSON description
+  const questionMediaMap: Record<number, { imageUrl?: string }> = {};
+  (data.questions || []).forEach((q, idx) => {
+    const qNum = q.questionNumber || idx + 1;
+    if (q.imageUrl && q.imageUrl.trim()) {
+      questionMediaMap[qNum] = { imageUrl: q.imageUrl.trim() };
+    }
+  });
 
   const saveToDemoStore = () => {
     const assignId = `assign-${Date.now()}`;
@@ -203,6 +223,8 @@ export async function createAssignmentService(
       startDate: data.startDate || new Date().toISOString(),
       enableProctoring: data.enableProctoring !== false,
       maxTabSwitches: maxTabLimit,
+      answerVisibility,
+      answerVisibleAt: answerVisibleAt ? answerVisibleAt.toISOString() : null,
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -224,6 +246,7 @@ export async function createAssignmentService(
           qNum
         ),
         groupTitle: q.groupTitle?.trim() || null,
+        imageUrl: q.imageUrl?.trim() || null,
         points: normalizePoints(dbType, q.points),
         correctAnswer: q.correctAnswer?.trim() || null,
         explanation: q.explanation?.trim() || null,
@@ -249,6 +272,7 @@ export async function createAssignmentService(
         tables: data.tables || [],
         matchingHeadings: data.matchingHeadings || [],
         summaries: data.summaries || [],
+        questionMediaMap,
       }),
       skill: data.skill || "READING",
       type: data.type || "HOMEWORK",
@@ -269,6 +293,7 @@ export async function createAssignmentService(
       tables: data.tables || [],
       matchingHeadings: data.matchingHeadings || [],
       summaries: data.summaries || [],
+      questionMediaMap,
       createdAt: new Date().toISOString(),
       questions: mappedQuestions,
       submissions: [],
@@ -301,6 +326,7 @@ export async function createAssignmentService(
           tables: data.tables || [],
           matchingHeadings: data.matchingHeadings || [],
           summaries: data.summaries || [],
+          questionMediaMap,
         }),
         skill: (data.skill as AssignmentSkill) || "READING",
         type: (data.type as AssignmentType) || "HOMEWORK",
@@ -318,6 +344,8 @@ export async function createAssignmentService(
             startDate: data.startDate ? new Date(data.startDate) : new Date(),
             enableProctoring: data.enableProctoring !== false,
             maxTabSwitches: maxTabLimit,
+            answerVisibility,
+            answerVisibleAt,
           })),
         },
         questions: {
@@ -362,6 +390,32 @@ export async function createAssignmentService(
       },
     });
 
+    // [C7] Bắn thông báo ASSIGNMENT_ASSIGNED cho học sinh các lớp nhận bài
+    try {
+      const enrollments = await prisma.classEnrollment.findMany({
+        where: {
+          classId: { in: targetClassList },
+          status: "STUDYING",
+        },
+        select: { studentId: true, classId: true },
+      });
+      if (enrollments.length > 0) {
+        const notifs = enrollments.map((en) => ({
+          userId: en.studentId,
+          type: "ASSIGNMENT_ASSIGNED" as any,
+          title: "Bài tập mới được giao",
+          message: `Bạn có bài tập mới "${assignment.title}" vừa được giao.`,
+          refType: "ASSIGNMENT" as const,
+          refId: assignment.id,
+          classId: en.classId,
+          dedupeKey: `ASSIGNMENT_ASSIGNED:${assignment.id}:${en.classId}:${en.studentId}`,
+        }));
+        await createNotifications(notifs);
+      }
+    } catch (notifErr: any) {
+      console.warn("[createAssignmentService] Bỏ qua lỗi thông báo:", notifErr?.message);
+    }
+
     return {
       success: true,
       assignmentId: assignment.id,
@@ -392,6 +446,17 @@ export async function updateAssignmentService(
   message?: string;
   error?: string;
 }> {
+  // [C1] Chế độ hiển thị đáp án: chỉ cập nhật khi người dùng gửi lên, kiểm tra hợp lệ trước
+  let visPatch: { answerVisibility?: any; answerVisibleAt?: Date | null } = {};
+  if (data.answerVisibility !== undefined) {
+    const vis = validateAssignmentConfig({
+      answerVisibility: data.answerVisibility,
+      answerVisibleAt: data.answerVisibleAt,
+    });
+    if (vis.error) return { success: false, error: vis.error };
+    visPatch = { answerVisibility: vis.answerVisibility, answerVisibleAt: vis.answerVisibleAt };
+  }
+
   if (!(await isDbAlive())) {
     const assign = (globalAssignmentsStore.demoAssignments || []).find((a) => a.id === assignmentId);
     if (!assign) return { success: false, error: "Không tìm thấy bài tập!" };
@@ -414,6 +479,7 @@ export async function updateAssignmentService(
           if (data.startDate !== undefined) ac.startDate = data.startDate;
           if (data.enableProctoring !== undefined) ac.enableProctoring = data.enableProctoring;
           if (data.maxTabSwitches !== undefined) ac.maxTabSwitches = data.maxTabSwitches;
+          if (visPatch.answerVisibility) Object.assign(ac, visPatch);
         });
       }
     } else if (data.classId && Array.isArray(assign.assignedClasses)) {
@@ -423,6 +489,7 @@ export async function updateAssignmentService(
         if (data.startDate !== undefined) classLink.startDate = data.startDate;
         if (data.enableProctoring !== undefined) classLink.enableProctoring = data.enableProctoring;
         if (data.maxTabSwitches !== undefined) classLink.maxTabSwitches = data.maxTabSwitches;
+        if (visPatch.answerVisibility) Object.assign(classLink, visPatch);
       }
     }
 
@@ -486,6 +553,7 @@ export async function updateAssignmentService(
         startDate: data.startDate ? new Date(data.startDate) : undefined,
         enableProctoring: data.enableProctoring !== undefined ? data.enableProctoring : undefined,
         maxTabSwitches: data.maxTabSwitches !== undefined ? data.maxTabSwitches : undefined,
+        ...visPatch,
       },
     });
   } else if (data.classId) {
@@ -496,6 +564,7 @@ export async function updateAssignmentService(
         startDate: data.startDate ? new Date(data.startDate) : undefined,
         enableProctoring: data.enableProctoring !== undefined ? data.enableProctoring : undefined,
         maxTabSwitches: data.maxTabSwitches !== undefined ? data.maxTabSwitches : undefined,
+        ...visPatch,
       },
     });
   }

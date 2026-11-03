@@ -45,6 +45,7 @@ export function StudentSubmissionReviewModal({
 }: StudentSubmissionReviewModalProps) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [assignment, setAssignment] = useState<any | null>(null);
+  const [activeCriterionFilter, setActiveCriterionFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !assignmentId) {
@@ -76,24 +77,24 @@ export function StudentSubmissionReviewModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl p-6 bg-[#F4F5F7]">
+      <DialogContent className="!w-[95vw] !max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl p-6 bg-[#F8FAFC]">
         <DialogHeader className="border-b border-slate-200 pb-3 bg-white -mx-6 -mt-6 p-6 rounded-t-2xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                 <BookOpen className="size-5 text-[#EA580C]" />
                 <span>Chi tiết bài làm: {assignment?.title || "Đang tải..."}</span>
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500">
-                Xem lại bài làm, các ghi chú sửa bài trực tiếp trên văn bản, điểm 4 tiêu chí và lời giải thích chi tiết
+                Rê chuột hoặc nhấn vào từng cụm từ được đánh dấu để đối chiếu nhận xét và điểm 4 tiêu chí IELTS
               </DialogDescription>
             </div>
 
             {submission && (
               <div className="flex items-center gap-2">
                 {isGraded ? (
-                  <Badge className="bg-emerald-600 text-white text-xs px-3 py-1 font-bold">
-                    Đã chấm: {submission.score ?? 0} / {submission.totalPoints ?? assignment?.totalPoints} điểm
+                  <Badge className="bg-[#EA580C] hover:bg-[#EA580C] text-white text-xs px-3.5 py-1 font-bold rounded-full">
+                    Kết quả: {submission.score ?? 0} / {submission.totalPoints ?? assignment?.totalPoints} điểm
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-xs">
@@ -135,7 +136,7 @@ export function StudentSubmissionReviewModal({
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
                 <ShieldAlert className="size-4 shrink-0 text-rose-600" />
                 <span>
-                  Hệ thống đã ghi nhận <b>{submission.tabSwitchCount} lần rời màn hình làm bài</b> trong quá trình thi.
+                  Hệ thống đã ghi nhận <b>{submission.tabSwitchCount} lần Out Tab (rời màn hình làm bài)</b> trong quá trình thi.
                 </span>
               </div>
             )}
@@ -200,22 +201,37 @@ export function StudentSubmissionReviewModal({
                               typeof found?.score === "number" ? found.score : found?.bandScore;
                             const colorCfg =
                               CRITERION_COLOR_MAP[def.code] || CRITERION_COLOR_MAP.TA_TR;
+                            const isFiltered = activeCriterionFilter === def.code;
 
                             return (
                               <div
                                 key={def.code}
-                                className={`bg-white border border-slate-200 border-t-4 ${colorCfg.borderTopClass} rounded-xl p-3 space-y-1.5 shadow-2xs`}
+                                onClick={() =>
+                                  setActiveCriterionFilter((prev) =>
+                                    prev === def.code ? null : def.code
+                                  )
+                                }
+                                className={`bg-white border rounded-xl p-3 space-y-1.5 cursor-pointer transition ${
+                                  isFiltered
+                                    ? "border-[#EA580C] ring-2 ring-orange-300 bg-[#FFF7ED]"
+                                    : "border-slate-200 hover:border-orange-300 shadow-2xs"
+                                }`}
+                                title="Nhấn để lọc các ghi chú của tiêu chí này dưới bài viết"
                               >
                                 <div className="flex items-center justify-between">
-                                  <b className="text-xs text-slate-900">{def.shortLabel}</b>
+                                  <span
+                                    className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded ${colorCfg.badgeBgClass}`}
+                                  >
+                                    {def.shortLabel}
+                                  </span>
                                   <span
                                     style={{ color: colorCfg.hex }}
-                                    className="text-lg font-extrabold font-mono"
+                                    className="text-lg font-black font-mono"
                                   >
                                     {scoreVal != null ? Number(scoreVal).toFixed(1) : "—"}
                                   </span>
                                 </div>
-                                <span className="block text-[10.5px] text-slate-500">
+                                <span className="block text-[11px] font-semibold text-slate-700">
                                   {def.label}
                                 </span>
                                 {found?.comment && (
@@ -250,6 +266,8 @@ export function StudentSubmissionReviewModal({
                           criteriaDefs={criteriaDefs}
                           readOnly={true}
                           speakingWords={isSpeaking ? speakingTranscript?.words : undefined}
+                          activeCriterionFilter={activeCriterionFilter}
+                          onChangeCriterionFilter={setActiveCriterionFilter}
                         />
                       )}
                     </div>
@@ -295,12 +313,18 @@ export function StudentSubmissionReviewModal({
                           {ans?.studentAnswer || "(Chưa trả lời)"}
                         </b>
                       </div>
-                      {q.correctAnswer && (
+                      {q.correctAnswer ? (
                         <div className="p-2.5 bg-emerald-50/70 rounded-xl border border-emerald-200">
                           <span className="text-[10px] font-semibold text-emerald-700 block">
                             Đáp án chuẩn:
                           </span>
                           <b className="font-mono text-emerald-900">{q.correctAnswer}</b>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-medium text-slate-500 block italic">
+                            Đáp án sẽ hiển thị theo cấu hình mở đáp án của giáo viên.
+                          </span>
                         </div>
                       )}
                     </div>

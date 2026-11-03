@@ -201,17 +201,28 @@ export function ClassesPageView({
               />
             </div>
 
-            {selectedIds.length > 0 && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleBatchDelete}
-                disabled={isDeleting}
-                className="rounded-xl shadow-sm"
-              >
-                <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) lớp đã chọn
-              </Button>
-            )}
+            <div className="flex items-center gap-2.5">
+              {selectedIds.length > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBatchDelete}
+                  disabled={isDeleting}
+                  className="rounded-xl shadow-sm"
+                >
+                  <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) lớp đã chọn
+                </Button>
+              )}
+
+              {canManageClass && onOpenAddClass && (
+                <Button
+                  onClick={() => onOpenAddClass()}
+                  className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
+                >
+                  <Plus className="size-4 mr-1.5" /> Tạo lớp học
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">

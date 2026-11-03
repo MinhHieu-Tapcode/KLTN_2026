@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Building2, CalendarDays, Clock, GraduationCap, List, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Status } from "@/components/shared/common-widgets";
+import { isClassScheduledOnDay } from "@/lib/schedule";
 
 export function SchedulePageView({
   classes,
@@ -162,8 +163,7 @@ export function SchedulePageView({
             <div className="grid gap-3.5 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
               {daysOfWeek.map((day) => {
                 const classesForDay = displayed.filter((c) => {
-                  if (!c.description) return false;
-                  return c.description.toLowerCase().includes(day.toLowerCase());
+                  return isClassScheduledOnDay(c.description, day);
                 });
 
                 return (
@@ -237,14 +237,14 @@ export function SchedulePageView({
               })}
             </div>
 
-            {displayed.some((c) => !daysOfWeek.some((d) => c.description?.includes(d))) && (
+            {displayed.some((c) => !daysOfWeek.some((d) => isClassScheduledOnDay(c.description, d))) && (
               <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
                 <h4 className="font-bold text-xs uppercase tracking-wider text-[#64748B] mb-3">
                   Các lớp học đang diễn ra (Lịch học linh hoạt):
                 </h4>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {displayed
-                    .filter((c) => !daysOfWeek.some((d) => c.description?.includes(d)))
+                    .filter((c) => !daysOfWeek.some((d) => isClassScheduledOnDay(c.description, d)))
                     .map((cls) => (
                       <div
                         key={cls.id}

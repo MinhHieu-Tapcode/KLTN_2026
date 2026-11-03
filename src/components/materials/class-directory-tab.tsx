@@ -1,15 +1,13 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
-import { getMaterialsSummaryAction } from "@/actions/materials";
+import React, { useState, useMemo } from "react";
 import {
-  GraduationCap,
-  Folder,
-  HardDrive,
-  Download,
   Search,
   ArrowRight,
+  Plus,
+  FolderOpen,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface ClassItem {
   id: string;
@@ -17,244 +15,209 @@ interface ClassItem {
   code: string;
   level?: string;
   schoolName?: string;
+  school?: { name?: string };
   materialCount?: number;
+  materialFolders?: Array<{
+    id: string;
+    _count?: { materials?: number };
+  }>;
+  _count?: {
+    materialFolders?: number;
+  };
 }
 
 interface ClassDirectoryTabProps {
   classes: ClassItem[];
+  canAddMaterial?: boolean;
+  onOpenQuickAdd?: () => void;
   onOpenClassMaterials: (cls: ClassItem) => void;
 }
 
 export function ClassDirectoryTab({
   classes = [],
+  canAddMaterial = false,
+  onOpenQuickAdd,
   onOpenClassMaterials,
 }: ClassDirectoryTabProps) {
   const [search, setSearch] = useState("");
-  const [selectedLevel, setSelectedLevel] = useState<string>("ALL");
-  const [selectedSchool, setSelectedSchool] = useState<string>("ALL");
+  const [selectedLevel, setSelectedLevel] = useState("ALL");
+  const [selectedSchool, setSelectedSchool] = useState("ALL");
 
-  // Danh sách trường học duy nhất để đưa vào dropdown lọc
+  // Lấy danh sách trường thực tế từ các lớp học
   const uniqueSchools = useMemo(() => {
-    const set = new Set<string>();
-    classes.forEach((c) => {
-      if (c.schoolName) set.add(c.schoolName);
-    });
-    return Array.from(set);
+    const schools = classes
+      .map((c) => c.school?.name || c.schoolName)
+      .filter((s): s is string => Boolean(s));
+    return Array.from(new Set(schools));
   }, [classes]);
 
-  // Bộ lọc danh sách lớp
   const filteredClasses = useMemo(() => {
     return classes.filter((c) => {
+      const sName = c.school?.name || c.schoolName || "";
       const matchSearch =
+        !search.trim() ||
         c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.code.toLowerCase().includes(search.toLowerCase());
-      if (!matchSearch) return false;
+        c.code.toLowerCase().includes(search.toLowerCase()) ||
+        sName.toLowerCase().includes(search.toLowerCase());
 
-      if (selectedLevel !== "ALL") {
-        if (!c.level || !c.level.toLowerCase().includes(selectedLevel.toLowerCase())) {
-          return false;
-        }
-      }
+      const matchLevel =
+        selectedLevel === "ALL" ||
+        (c.level && c.level.toLowerCase().includes(selectedLevel.toLowerCase()));
 
-      if (selectedSchool !== "ALL") {
-        if (c.schoolName !== selectedSchool) return false;
-      }
+      const matchSchool =
+        selectedSchool === "ALL" || sName === selectedSchool;
 
-      return true;
+      return matchSearch && matchLevel && matchSchool;
     });
   }, [classes, search, selectedLevel, selectedSchool]);
 
-  const [summary, setSummary] = useState<{
-    totalClasses: number;
-    totalFolders: number;
-    formattedStorageSize: string;
-    totalDownloads: number;
-  } | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    getMaterialsSummaryAction().then((res) => {
-      if (isMounted && res.success) {
-        setSummary({
-          totalClasses: res.totalClasses,
-          totalFolders: res.totalFolders,
-          formattedStorageSize: res.formattedStorageSize,
-          totalDownloads: res.totalDownloads,
-        });
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Thống kê 4 Card thực tế từ CSDL
-  const totalClassesCount = summary ? summary.totalClasses : classes.length;
-  const totalFoldersCount = summary ? summary.totalFolders : 0;
-  const totalStorageSize = summary ? summary.formattedStorageSize : "0 KB";
-  const totalDownloadCount = summary ? summary.totalDownloads : 0;
-
   return (
-    <div className="space-y-6">
-      {/* 4 THẺ THỐNG KÊ CHUẨN M2A */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        {/* Card 1: Tổng số lớp */}
-        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center gap-3.5">
-          <div className="size-11 rounded-xl bg-blue-50 text-blue-600 grid place-items-center shrink-0">
-            <GraduationCap className="size-5" />
-          </div>
-          <div>
-            <span className="text-xs text-slate-500 font-medium block">Tổng số lớp</span>
-            <b className="text-lg font-extrabold text-slate-900">{totalClassesCount}</b>
-          </div>
+    <section className="panel">
+      {/* Thanh công cụ đồng bộ chuẩn với trang Trường học & Lớp học */}
+      <div className="mb-4 flex flex-wrap lg:flex-nowrap items-center gap-3">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm kiếm theo tên lớp, mã lớp, trường..."
+            className="field field-search border-[#CBD5E1]"
+          />
         </div>
 
-        {/* Card 2: Thư mục */}
-        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center gap-3.5">
-          <div className="size-11 rounded-xl bg-rose-50 text-rose-600 grid place-items-center shrink-0">
-            <Folder className="size-5" />
-          </div>
-          <div>
-            <span className="text-xs text-slate-500 font-medium block">Thư mục</span>
-            <b className="text-lg font-extrabold text-slate-900">{totalFoldersCount}</b>
-          </div>
-        </div>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <select
+            value={selectedLevel}
+            onChange={(e) => setSelectedLevel(e.target.value)}
+            className="field text-xs bg-white border-[#CBD5E1] !w-[170px] shrink-0"
+          >
+            <option value="ALL">-- Tất cả trình độ --</option>
+            <option value="4.5">Cơ bản (0 - 4.5)</option>
+            <option value="5.5">Trung bình (4.5 - 6.5)</option>
+            <option value="6.5">Nâng cao (6.5 - 9.0)</option>
+          </select>
 
-        {/* Card 3: Dung lượng */}
-        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center gap-3.5">
-          <div className="size-11 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center shrink-0">
-            <HardDrive className="size-5" />
-          </div>
-          <div>
-            <span className="text-xs text-slate-500 font-medium block">Dung lượng</span>
-            <b className="text-lg font-extrabold text-slate-900">{totalStorageSize}</b>
-          </div>
-        </div>
+          {uniqueSchools.length > 0 && (
+            <select
+              value={selectedSchool}
+              onChange={(e) => setSelectedSchool(e.target.value)}
+              className="field text-xs bg-white border-[#CBD5E1] !w-[180px] shrink-0"
+            >
+              <option value="ALL">-- Tất cả trường học --</option>
+              {uniqueSchools.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          )}
 
-        {/* Card 4: Lượt tải */}
-        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center gap-3.5">
-          <div className="size-11 rounded-xl bg-orange-50 text-[#EA580C] grid place-items-center shrink-0">
-            <Download className="size-5" />
-          </div>
-          <div>
-            <span className="text-xs text-slate-500 font-medium block">Lượt tải</span>
-            <b className="text-lg font-extrabold text-slate-900">{totalDownloadCount.toLocaleString()}</b>
-          </div>
+          {canAddMaterial && onOpenQuickAdd && (
+            <Button
+              onClick={onOpenQuickAdd}
+              className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm shrink-0 whitespace-nowrap"
+            >
+              <Plus className="size-4 mr-1.5" /> Thêm học liệu
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* BẢNG DANH MỤC LỚP HỌC M2A */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-        {/* Thanh công cụ lọc */}
-        <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50/50">
-          {/* Ô tìm kiếm */}
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm kiếm lớp học, mã lớp..."
-              className="w-full h-8.5 pl-8 pr-3 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#EA580C]"
-            />
-          </div>
-
-          {/* 2 Dropdown lọc */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className="shrink-0 text-[11px] font-semibold">Trình độ IELTS:</span>
-              <select
-                value={selectedLevel}
-                onChange={(e) => setSelectedLevel(e.target.value)}
-                className="h-8.5 px-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none focus:border-[#EA580C]"
-              >
-                <option value="ALL">Tất cả trình độ</option>
-                <option value="4.5">Cơ bản (4.5 - 5.5)</option>
-                <option value="5.5">Trung cấp (5.5 - 6.5)</option>
-                <option value="6.5">Nâng cao (6.5 - 7.5+)</option>
-              </select>
-            </div>
-
-            {uniqueSchools.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <span className="shrink-0 text-[11px] font-semibold">Trường:</span>
-                <select
-                  value={selectedSchool}
-                  onChange={(e) => setSelectedSchool(e.target.value)}
-                  className="h-8.5 px-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none focus:border-[#EA580C]"
-                >
-                  <option value="ALL">Tất cả trường</option>
-                  {uniqueSchools.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Bảng danh sách lớp */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
+      {/* Bảng danh sách lớp học */}
+      <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+        <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+          <thead>
+            <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+              <th className="px-4 py-3.5 w-14 text-center text-xs font-bold text-[#64748B] uppercase">
+                STT
+              </th>
+              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">
+                Mã lớp
+              </th>
+              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">
+                Tên lớp học
+              </th>
+              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">
+                Trình độ IELTS
+              </th>
+              <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">
+                Trường đối tác
+              </th>
+              <th className="px-4 py-3.5 text-center text-xs font-bold text-[#64748B] uppercase">
+                Học liệu hiện có
+              </th>
+              <th className="px-4 py-3.5 text-right text-xs font-bold text-[#64748B] uppercase">
+                Thao tác
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#F1F5F9] bg-white">
+            {filteredClasses.length === 0 ? (
               <tr>
-                <th className="py-3 px-4 w-12 text-center">STT</th>
-                <th className="py-3 px-4">Tên lớp</th>
-                <th className="py-3 px-4">Mã lớp</th>
-                <th className="py-3 px-4">Trình độ IELTS</th>
-                <th className="py-3 px-4">Trường</th>
-                <th className="py-3 px-4 text-center">Tài liệu</th>
-                <th className="py-3 px-4 text-right">Hành động</th>
+                <td colSpan={7} className="py-10 text-center text-sm text-[#64748B]">
+                  Không tìm thấy lớp học nào phù hợp.
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredClasses.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-xs text-slate-400">
-                    Không tìm thấy lớp học nào phù hợp.
-                  </td>
-                </tr>
-              ) : (
-                filteredClasses.map((cls, idx) => (
-                  <tr key={cls.id} className="hover:bg-slate-50/70 transition">
-                    <td className="py-3 px-4 text-center text-slate-400 font-mono">
+            ) : (
+              filteredClasses.map((cls, idx) => {
+                const realSchoolName = cls.school?.name || cls.schoolName || "Chưa gán trường";
+                const folderCount =
+                  cls.materialFolders?.length ?? cls._count?.materialFolders ?? 0;
+                const fileCount = (cls.materialFolders || []).reduce(
+                  (acc, f) => acc + (f._count?.materials || 0),
+                  0
+                );
+
+                return (
+                  <tr
+                    key={cls.id}
+                    onClick={() => onOpenClassMaterials(cls)}
+                    className="hover:bg-[#F8FAFC] transition cursor-pointer"
+                  >
+                    <td className="px-4 py-3.5 text-center text-xs text-[#64748B] font-mono">
                       {idx + 1}
                     </td>
-                    <td className="py-3 px-4">
-                      <b className="text-slate-900 font-bold">{cls.name}</b>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-slate-600">
+                    <td className="px-4 py-3.5 font-mono text-xs font-semibold text-[#475569]">
                       {cls.code}
                     </td>
-                    <td className="py-3 px-4">
-                      <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold">
-                        {cls.level || "5.5 - 6.5"}
+                    <td className="px-4 py-3.5 font-bold text-[#0F172A]">
+                      {cls.name}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="inline-block px-2.5 py-0.5 rounded-lg bg-[#F1F5F9] text-[#334155] font-mono text-xs font-semibold">
+                        {cls.level || "IELTS"}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-600">
-                      {cls.schoolName || "ĐH Ngoại Thương"}
+                    <td className="px-4 py-3.5 text-sm text-[#475569]">
+                      {realSchoolName}
                     </td>
-                    <td className="py-3 px-4 text-center font-bold text-slate-800">
-                      {cls.materialCount || 12 + (idx % 8)}
+                    <td className="px-4 py-3.5 text-center">
+                      {folderCount > 0 || fileCount > 0 ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 text-[#EA580C] text-xs font-semibold border border-orange-200/70">
+                          <FolderOpen className="size-3.5" />
+                          {folderCount} thư mục • {fileCount} tệp
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[#94A3B8]">Chưa có tài liệu</span>
+                      )}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={() => onOpenClassMaterials(cls)}
-                        className="px-3 py-1.5 rounded-xl border border-orange-200 hover:border-orange-300 bg-orange-50/60 hover:bg-orange-100/70 text-[#EA580C] font-bold text-xs inline-flex items-center gap-1.5 transition shadow-2xs"
+                        className="px-3 py-1.5 rounded-xl border border-orange-200 hover:border-orange-300 bg-orange-50/70 hover:bg-orange-100/80 text-[#EA580C] font-bold text-xs inline-flex items-center gap-1.5 transition"
                       >
-                        Vào kho học liệu lớp <ArrowRight className="size-3.5" />
+                        Mở kho lớp <ArrowRight className="size-3.5" />
                       </button>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </section>
   );
 }

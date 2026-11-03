@@ -2,7 +2,7 @@
 
 import { isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
+import { checkAuth, checkRole, isStudent, ROLE_GROUPS } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import {
   createAssignmentService,
@@ -66,7 +66,10 @@ export async function getAssignmentDetailAction(
     if (!auth.ok) {
       return { success: false, error: auth.error };
     }
-    return await getAssignmentDetailService(assignmentId, auth.session.userId);
+    // [C5] Học sinh chỉ thấy đáp án khi đủ điều kiện theo cấu hình lúc giao bài
+    return await getAssignmentDetailService(assignmentId, auth.session.userId, {
+      hideAnswersUnlessAllowed: isStudent(auth.session),
+    });
   } catch (err: any) {
     console.error("[getAssignmentDetailAction] Lỗi:", err);
     return { success: false, error: err.message || "Không thể tải chi tiết bài tập!" };
@@ -87,6 +90,8 @@ export async function createAssignmentAction(data: {
   dueDate?: string | null;
   startDate?: string | null;
   maxAttempts?: number;
+  answerVisibility?: string;
+  answerVisibleAt?: string | null;
   audioUrl?: string | null;
   enableProctoring?: boolean;
   maxTabSwitches?: number;
@@ -188,6 +193,8 @@ export async function updateAssignmentAction(
     updateAllClasses?: boolean;
     dueDate?: string | null;
     startDate?: string | null;
+    answerVisibility?: string;
+    answerVisibleAt?: string | null;
     enableProctoring?: boolean;
     maxTabSwitches?: number;
     questions?: Array<any>;
@@ -328,6 +335,9 @@ export async function createMultipleAssignmentsAction(
     durationMinutes?: number;
     dueDate?: string | null;
     startDate?: string | null;
+    maxAttempts?: number;
+    answerVisibility?: string;
+    answerVisibleAt?: string | null;
     audioUrl?: string | null;
     enableProctoring?: boolean;
     maxTabSwitches?: number;
@@ -340,11 +350,17 @@ export async function createMultipleAssignmentsAction(
 ): Promise<{ success: boolean; count?: number; assignmentIds?: string[]; error?: string }> {
   try {
     const createdIds: string[] = [];
+    let firstError: string | undefined;
     for (const item of assignments) {
       const res = await createAssignmentAction(item);
       if (res.success && res.assignmentId) {
         createdIds.push(res.assignmentId);
+      } else if (!firstError) {
+        firstError = res.error;
       }
+    }
+    if (createdIds.length === 0 && firstError) {
+      return { success: false, error: firstError };
     }
     return {
       success: true,

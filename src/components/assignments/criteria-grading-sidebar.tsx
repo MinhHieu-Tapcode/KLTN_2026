@@ -1,7 +1,17 @@
 "use client";
 
-import React from "react";
-import { Minus, Plus, Pin, Loader2, CheckCircle2, Save } from "lucide-react";
+import React, { useState } from "react";
+import {
+  Minus,
+  Plus,
+  Pin,
+  Loader2,
+  CheckCircle2,
+  Save,
+  MessageSquarePlus,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import {
   calculateCriteriaBand,
   CRITERION_COLOR_MAP,
@@ -26,6 +36,8 @@ export interface CriteriaGradingSidebarProps {
   isPending: boolean;
   onSaveDraft: () => void;
   onFinalizeGrading: () => void;
+  activeCriterionFilter?: string | null;
+  onChangeCriterionFilter?: (critCode: string | null) => void;
 }
 
 export function CriteriaGradingSidebar({
@@ -45,23 +57,22 @@ export function CriteriaGradingSidebar({
   isPending,
   onSaveDraft,
   onFinalizeGrading,
+  activeCriterionFilter,
+  onChangeCriterionFilter,
 }: CriteriaGradingSidebarProps) {
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+
   const currentScoresArr = criteriaDefs.map((d) => criteriaScores[d.code] ?? null);
   const sectionBand = calculateCriteriaBand(currentScoresArr);
 
-  return (
-    <aside className="bg-white border-l border-slate-200 h-full overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
-      <div className="space-y-3.5">
-        <div>
-          <h3 className="text-sm font-bold text-slate-900">
-            Chấm theo 4 tiêu chí {skillLabel}
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Kéo thanh hoặc bấm − / + (bước 0.5). Có thể ghi nhận xét riêng cho từng tiêu chí.
-          </p>
-        </div>
+  const toggleCommentBox = (code: string) => {
+    setExpandedComments((prev) => ({ ...prev, [code]: !prev[code] }));
+  };
 
-        {/* Bộ chuyển câu/Task nếu bài thi có nhiều câu (VD: Task 1 & Task 2) */}
+  return (
+    <aside className="bg-white border-l border-slate-200 h-full overflow-y-auto p-4 flex flex-col justify-between">
+      <div className="space-y-3">
+        {/* 1. BỘ CHUYỂN TASK / PART NẾU BÀI CÓ NHIỀU PHẦN */}
         {questionsList.length > 1 && (
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
             {questionsList.map((q) => {
@@ -85,8 +96,60 @@ export function CriteriaGradingSidebar({
           </div>
         )}
 
-        {/* Danh sách 4 thẻ tiêu chí (.crit) */}
-        <div className="space-y-3">
+        {/* 2. THẺ TỔNG QUAN BAND & 4 TIÊU CHÍ CHUẨN SIMPACE */}
+        <div className="rounded-2xl border border-orange-200 bg-[#FFF7ED] p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#EA580C] block">
+                {skillLabel} Assessment
+              </span>
+              <b className="text-xs font-bold text-slate-900">Band tổng phần này</b>
+            </div>
+            <div className="px-3 py-1 rounded-xl bg-white border border-orange-200 shadow-2xs text-right">
+              <span className="text-2xl font-black font-mono text-[#EA580C] leading-none">
+                {sectionBand !== null ? sectionBand.toFixed(1) : "—"}
+              </span>
+              <span className="text-[10px] font-bold text-slate-400 ml-0.5">/9.0</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            {criteriaDefs.map((crit) => {
+              const val = criteriaScores[crit.code];
+              const cfg = CRITERION_COLOR_MAP[crit.code] || CRITERION_COLOR_MAP.TA_TR;
+              const isFilterOn = activeCriterionFilter === crit.code;
+              return (
+                <button
+                  key={crit.code}
+                  type="button"
+                  onClick={() =>
+                    onChangeCriterionFilter &&
+                    onChangeCriterionFilter(isFilterOn ? null : crit.code)
+                  }
+                  className={`rounded-xl p-1.5 bg-white border text-center transition ${
+                    isFilterOn
+                      ? "border-[#EA580C] ring-2 ring-orange-300 shadow-2xs"
+                      : "border-orange-200/70 hover:border-orange-300"
+                  }`}
+                  title={`Nhấn để lọc ghi chú của tiêu chí ${crit.shortLabel}`}
+                >
+                  <span
+                    style={{ color: cfg.hex }}
+                    className="block text-[10px] font-extrabold tracking-tight"
+                  >
+                    {crit.shortLabel}
+                  </span>
+                  <span className="block text-xs font-black font-mono text-slate-900">
+                    {val != null ? val.toFixed(1) : "—"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 3. DANH SÁCH 4 TIÊU CHÍ TỐI GIẢN */}
+        <div className="space-y-2.5">
           {criteriaDefs.map((crit) => {
             const val = criteriaScores[crit.code];
             const comment = criteriaComments[crit.code] || "";
@@ -94,6 +157,7 @@ export function CriteriaGradingSidebar({
             const annCount = (annotations || []).filter(
               (a) => a.criterion === crit.code || (crit.code === "TA_TR" && a.criterion === "TA")
             ).length;
+            const isCommentOpen = Boolean(expandedComments[crit.code] || comment.trim());
 
             const stepScore = (delta: number) => {
               const base = typeof val === "number" ? val : 5.0;
@@ -104,20 +168,27 @@ export function CriteriaGradingSidebar({
             return (
               <div
                 key={crit.code}
-                className={`border border-slate-200 border-t-4 ${colorCfg.borderTopClass} rounded-2xl p-3.5 bg-white space-y-2 shadow-2xs`}
+                className="border border-slate-200 rounded-2xl p-3 bg-white space-y-2 shadow-2xs hover:border-slate-300 transition"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <b className="text-[13px] font-bold text-slate-900 block">
-                      {crit.label} ({crit.shortLabel})
-                    </b>
-                    <small className="text-[11px] text-slate-500 block leading-snug">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${colorCfg.badgeBgClass}`}
+                      >
+                        {crit.shortLabel}
+                      </span>
+                      <b className="text-xs font-bold text-slate-900 truncate">
+                        {crit.label}
+                      </b>
+                    </div>
+                    <small className="text-[11px] text-slate-500 block leading-snug mt-0.5">
                       {crit.viDescription}
                     </small>
                   </div>
                   <div
-                    style={{ color: val == null ? "#cbd5e1" : colorCfg.hex }}
-                    className="text-2xl font-extrabold font-mono min-w-[50px] text-right leading-none pt-0.5"
+                    style={{ color: val == null ? "#94a3b8" : colorCfg.hex }}
+                    className="text-xl font-black font-mono min-w-[44px] text-right leading-none pt-0.5"
                   >
                     {val == null ? "—" : val.toFixed(1)}
                   </div>
@@ -128,7 +199,7 @@ export function CriteriaGradingSidebar({
                   <button
                     type="button"
                     onClick={() => stepScore(-0.5)}
-                    className="size-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center shrink-0"
+                    className="size-7 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 transition"
                     title="Giảm 0.5 Band"
                   >
                     <Minus className="size-3.5" />
@@ -146,45 +217,74 @@ export function CriteriaGradingSidebar({
                   <button
                     type="button"
                     onClick={() => stepScore(0.5)}
-                    className="size-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center shrink-0"
+                    className="size-7 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 transition"
                     title="Tăng 0.5 Band"
                   >
                     <Plus className="size-3.5" />
                   </button>
                 </div>
 
-                {/* Ô nhận xét riêng cho tiêu chí này */}
-                <textarea
-                  rows={2}
-                  value={comment}
-                  onChange={(e) => onChangeCriterionComment(crit.code, e.target.value)}
-                  placeholder={`Nhận xét cho tiêu chí ${crit.shortLabel}…`}
-                  className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#EA580C] resize-y"
-                />
+                {/* Dòng chân thẻ: Số ghi chú + Nút mở nhận xét riêng */}
+                <div className="flex items-center justify-between gap-2 pt-0.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChangeCriterionFilter &&
+                      onChangeCriterionFilter(
+                        activeCriterionFilter === crit.code ? null : crit.code
+                      )
+                    }
+                    className={`flex items-center gap-1 font-medium transition ${
+                      annCount > 0
+                        ? "text-slate-700 hover:text-[#EA580C]"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    <Pin className="size-3 shrink-0" />
+                    <span>{annCount} ghi chú trên bài</span>
+                  </button>
 
-                <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                  <Pin className="size-3 text-slate-400 shrink-0" />
-                  <span>{annCount} ghi chú trong bài gắn với tiêu chí này</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleCommentBox(crit.code)}
+                    className="text-[11px] font-bold text-[#EA580C] hover:underline flex items-center gap-1"
+                  >
+                    <MessageSquarePlus className="size-3" />
+                    <span>{isCommentOpen ? "Thu gọn nhận xét" : "+ Nhận xét tiêu chí"}</span>
+                    {isCommentOpen ? (
+                      <ChevronUp className="size-3" />
+                    ) : (
+                      <ChevronDown className="size-3" />
+                    )}
+                  </button>
                 </div>
+
+                {/* Ô nhận xét riêng cho tiêu chí (chỉ mở khi cần hoặc đã có nội dung) */}
+                {isCommentOpen && (
+                  <textarea
+                    rows={2}
+                    value={comment}
+                    onChange={(e) => onChangeCriterionComment(crit.code, e.target.value)}
+                    placeholder={`Nhận xét chi tiết cho tiêu chí ${crit.shortLabel}…`}
+                    className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#EA580C] resize-y"
+                  />
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* Khung Band tổng & Nhận xét chung (.overall) */}
-        <div className="border-2 border-[#EA580C] rounded-2xl p-3.5 bg-[#FFF1EB] space-y-2">
-          <div className="flex items-center justify-between">
-            <b className="text-xs font-bold text-slate-900">Band tổng của phần này</b>
-            <span className="text-2xl font-black font-mono text-[#EA580C]">
-              {sectionBand !== null ? sectionBand.toFixed(1) : "—"}
-            </span>
-          </div>
+        {/* 4. KHUNG NHẬN XÉT TỔNG QUÁT */}
+        <div className="border border-slate-200 rounded-2xl p-3 bg-white space-y-1.5 shadow-2xs">
+          <label className="text-xs font-bold text-slate-900 block">
+            Nhận xét tổng quát & Lời khuyên ôn luyện
+          </label>
           <textarea
             rows={3}
             value={overallFeedback}
             onChange={(e) => onChangeOverallFeedback(e.target.value)}
-            placeholder="Nhận xét chung cho học sinh (điểm mạnh, ưu tiên cải thiện, lời khuyên ôn luyện)…"
-            className="w-full p-2.5 text-xs rounded-xl border border-orange-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#EA580C] resize-y"
+            placeholder="Điểm mạnh của bài làm, lỗi sai trọng tâm cần khắc phục..."
+            className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#EA580C] resize-y"
           />
         </div>
       </div>
@@ -204,7 +304,7 @@ export function CriteriaGradingSidebar({
           type="button"
           disabled={isPending || hasIncompleteCriteria}
           onClick={onFinalizeGrading}
-          title={hasIncompleteCriteria ? "Cần chấm đủ 4 tiêu chí cho mọi phần thi (BR-07)" : ""}
+          title={hasIncompleteCriteria ? "Cần chấm đủ 4 tiêu chí cho mọi phần thi" : ""}
           className="flex-1 py-2.5 px-3 rounded-xl bg-[#EA580C] hover:bg-[#c2410c] text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-45 disabled:cursor-not-allowed shadow-xs"
         >
           {isPending ? (

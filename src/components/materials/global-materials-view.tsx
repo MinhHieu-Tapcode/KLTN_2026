@@ -4,21 +4,20 @@ import React, { useState, useEffect, useTransition } from "react";
 import {
   BookOpen,
   GraduationCap,
-  Plus,
   CircleCheck,
   X,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   distributeLearningMaterialsAction,
   uploadCoursebookPackageAction,
   getLevelRepositoryFoldersAction,
+  deleteMaterialFolderAction,
 } from "@/actions/materials";
 import { getIeltsLevelsAction } from "@/actions/ielts-levels";
-import { MaterialsGlobalSearch, GlobalSearchItem } from "./materials-global-search";
+import { uploadMaterialFileToServer } from "@/lib/upload-material-client";
 import { ClassDirectoryTab } from "./class-directory-tab";
-import { LevelRepositoryTab } from "./level-repository-tab";
-import { QuickAddMaterialModal } from "./quick-add-material-modal";
+import { LevelRepositoryTab, LevelFolderItem } from "./level-repository-tab";
+import { QuickAddMaterialModal, QuickAddSubmitPayload } from "./quick-add-material-modal";
 import { MaterialPreviewModal, PreviewableMaterial } from "./material-preview-modal";
 
 interface GlobalMaterialsViewProps {
@@ -42,31 +41,43 @@ export function GlobalMaterialsView({
   onOpenClassMaterials,
   onRefreshAll,
 }: GlobalMaterialsViewProps) {
-  // 2 Tab chính: Kho giáo trình theo trình độ (M2B) & Danh mục lớp (M2A)
-  const [activeTab, setActiveTab] = useState<"level_repo" | "classes_list">("classes_list");
-  const [levelFolders, setLevelFolders] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<"classes_list" | "level_repo">("classes_list");
+  const [levelFolders, setLevelFolders] = useState<LevelFolderItem[]>([]);
   const [ieltsLevels, setIeltsLevels] = useState<any[]>([]);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickAddDest, setQuickAddDest] = useState<"COMMON" | "CLASSES">("CLASSES");
+
   const [previewMaterial, setPreviewMaterial] = useState<PreviewableMaterial | null>(null);
+  const [previewSiblings, setPreviewSiblings] = useState<PreviewableMaterial[]>([]);
+  const [previewFolderName, setPreviewFolderName] = useState<string>("Tài liệu học tập");
+
   const [toastMessage, setToastMessage] = useState("");
   const [, startTransition] = useTransition();
 
   const isAdmin = currentUser.role === "ADMIN" || currentUser.role === "SCHOOL_MANAGER";
-  const isTeacher = currentUser.role === "TEACHER" || currentUser.role === "TA";
+  const isTeacher = currentUser.role === "TEACHER";
+  const canAddMaterial = isAdmin || isTeacher;
 
   // Lọc các lớp người dùng có quyền tiếp cận
   const accessibleClasses = classes.filter((c) => {
+    if (!c.isActive) return false;
     if (isAdmin) return true;
     if (isTeacher) {
       const myId = currentUser.id || currentUser.userId;
-      const isMyTeacher = c.teacherId === myId || c.teacher?.id === myId;
-      const isMyTA = c.taId === myId || c.ta?.id === myId;
-      return isMyTeacher || isMyTA;
+      return (
+        c.teacherId === myId ||
+        c.teacher?.id === myId ||
+        c.assignments?.some(
+          (a: any) =>
+            a.userId === myId ||
+            a.staff?.id === myId ||
+            (currentUser.username && a.staff?.username === currentUser.username)
+        )
+      );
     }
     return true;
   });
 
-  // Tải danh mục trình độ và giáo trình chuẩn
   const loadLevelRepository = async () => {
     try {
       const [foldersRes, levelsRes] = await Promise.all([
@@ -88,270 +99,196 @@ export function GlobalMaterialsView({
     loadLevelRepository();
   }, []);
 
-  // Tổng hợp dữ liệu cho thanh tìm kiếm toàn cục M8
-  const globalSearchItems: GlobalSearchItem[] = [
-    // 1. Giáo trình dùng chung
-    ...levelFolders.map((f) => ({
-      id: f.id,
-      title: f.name,
-      category: "COMMON" as const,
-      categoryLabel: "Kho chung",
-      level: f.levelName || "IELTS",
-    })),
-    // 2. Lớp học
-    ...accessibleClasses.map((c) => ({
-      id: c.id,
-      title: c.name,
-      category: "CLASS" as const,
-      categoryLabel: "Lớp học",
-      classCode: c.code,
-      className: c.name,
-      level: c.level,
-    })),
-    // 3. File mẫu giáo trình
-    {
-      id: "demo-search-mindset",
-      title: "Mindset for IELTS Level 3 Student's Book (PDF)",
-      category: "FILE" as const,
-      categoryLabel: "Sách PDF",
-      type: "PDF",
-      size: 2155089,
-      fileUrl: "/sample-mindset.pdf",
-    },
-    {
-      id: "demo-search-audio-1",
-      title: "Track 01 - Unit 1: Urban and Rural Life (MP3)",
-      category: "FILE" as const,
-      categoryLabel: "Audio nghe",
-      type: "AUDIO",
-      size: 3450000,
-      fileUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-    },
-  ];
-
-  // Xử lý chọn kết quả từ thanh tìm kiếm M8
-  const handleSelectSearchResult = (item: GlobalSearchItem) => {
-    if (item.category === "CLASS") {
-      const targetClass = accessibleClasses.find((c) => c.id === item.id);
-      if (targetClass) onOpenClassMaterials(targetClass);
-    } else if (item.category === "FILE" && item.fileUrl) {
-      setPreviewMaterial({
-        id: item.id,
-        title: item.title,
-        fileName: `${item.title}.${item.type === "PDF" ? "pdf" : "mp3"}`,
-        fileUrl: item.fileUrl,
-        fileSize: item.size || 2000000,
-        fileType: (item.type as any) || "PDF",
-      });
-    } else if (item.category === "COMMON") {
-      setActiveTab("level_repo");
-    }
-  };
-
-  // Thực thi Nạp gói giáo trình & audio chuẩn M2B.1
-  const handleUploadCoursebookPackage = async (data: {
-    targetLevelId: string;
-    title: string;
-    description: string;
-    pdfFile: File;
-    audioFiles: Array<{ file: File; title: string }>;
-  }) => {
+  const handleQuickAddSubmit = async (data: QuickAddSubmitPayload) => {
     startTransition(async () => {
-      const bookFile = {
-        title: `${data.title} (PDF Sách)`,
-        fileName: data.pdfFile.name,
-        fileSize: data.pdfFile.size,
-        fileUrl: URL.createObjectURL(data.pdfFile),
-        mimeType: data.pdfFile.type || "application/pdf",
-      };
+      try {
+        // 1. Upload các file thực tế lên máy chủ (/uploads/materials/...)
+        const primaryUploaded = await uploadMaterialFileToServer(data.file);
+        const extraUploaded = await Promise.all(
+          (data.extraFiles || []).map((f) => uploadMaterialFileToServer(f))
+        );
+        const audioUploaded = await Promise.all(
+          (data.audioFiles || []).map((f) => uploadMaterialFileToServer(f))
+        );
+        const answerKeyUploaded = data.answerKeyFile
+          ? await uploadMaterialFileToServer(data.answerKeyFile)
+          : undefined;
 
-      const audioFiles = data.audioFiles.map((af, idx) => ({
-        title: af.title || `Track ${(idx + 1).toString().padStart(2, "0")}`,
-        fileName: af.file.name,
-        fileSize: af.file.size,
-        fileUrl: URL.createObjectURL(af.file),
-        mimeType: af.file.type || "audio/mpeg",
-      }));
+        const bookFile = {
+          title:
+            data.materialType === "COURSEBOOK"
+              ? `${data.title} (Sách)`
+              : data.extraFiles && data.extraFiles.length > 0
+              ? data.file.name.replace(/\.[^/.]+$/, "")
+              : data.title,
+          fileName: primaryUploaded.fileName,
+          fileSize: primaryUploaded.fileSize,
+          fileUrl: primaryUploaded.fileUrl,
+          fileType: primaryUploaded.fileType,
+          mimeType: primaryUploaded.mimeType,
+        };
 
-      const res = await uploadCoursebookPackageAction({
-        targetType: "LEVEL",
-        ieltsLevelId: data.targetLevelId,
-        packageTitle: data.title,
-        packageDescription: data.description,
-        bookFile,
-        audioFiles,
-      });
+        const extraFilesMeta = extraUploaded.map((eu) => ({
+          title: eu.fileName.replace(/\.[^/.]+$/, ""),
+          fileName: eu.fileName,
+          fileSize: eu.fileSize,
+          fileUrl: eu.fileUrl,
+          fileType: eu.fileType,
+          mimeType: eu.mimeType,
+        }));
 
-      if (res.success) {
-        setToastMessage(`Đã nạp thành công bộ giáo trình "${data.title}" vào hệ thống!`);
-        await loadLevelRepository();
-        onRefreshAll?.();
-      }
-    });
-  };
+        const audioFilesMeta = audioUploaded.map((au, idx) => ({
+          title:
+            au.fileName.replace(/\.[^/.]+$/, "") ||
+            `Track ${(idx + 1).toString().padStart(2, "0")}`,
+          fileName: au.fileName,
+          fileSize: au.fileSize,
+          fileUrl: au.fileUrl,
+          fileType: "AUDIO" as const,
+          mimeType: au.mimeType,
+        }));
 
-  // Thực thi Thêm nhanh / Phân phối tài liệu M2C
-  const handleQuickAddSubmit = async (data: {
-    title: string;
-    materialType: "COURSEBOOK" | "SUPPLEMENTARY" | "PRACTICE_TEST";
-    file: File;
-    audioFiles: File[];
-    answerKeyFile?: File | null;
-    destination: "COMMON" | "CLASSES";
-    targetLevel?: string;
-    targetClassIds: string[];
-  }) => {
-    startTransition(async () => {
-      const bookFile = {
-        title: data.materialType === "COURSEBOOK" ? `${data.title} (PDF Sách)` : data.title,
-        fileName: data.file.name,
-        fileSize: data.file.size,
-        fileUrl: URL.createObjectURL(data.file),
-        fileType: "PDF" as const,
-        mimeType: data.file.type || "application/pdf",
-      };
+        const answerKeyMeta = answerKeyUploaded
+          ? {
+              title: `${data.title} - Đáp án`,
+              fileName: answerKeyUploaded.fileName,
+              fileSize: answerKeyUploaded.fileSize,
+              fileUrl: answerKeyUploaded.fileUrl,
+              fileType: answerKeyUploaded.fileType,
+              mimeType: answerKeyUploaded.mimeType,
+            }
+          : undefined;
 
-      const audioFiles = (data.audioFiles || []).map((af, idx) => ({
-        title: af.name.replace(/\.[^/.]+$/, "") || `Track ${(idx + 1).toString().padStart(2, "0")}`,
-        fileName: af.name,
-        fileSize: af.size,
-        fileUrl: URL.createObjectURL(af),
-        fileType: "AUDIO" as const,
-        mimeType: af.type || "audio/mpeg",
-      }));
+        // Trường hợp lưu Giáo trình vào Kho chung theo trình độ
+        if (
+          data.materialType === "COURSEBOOK" &&
+          data.destination === "COMMON" &&
+          data.targetLevel
+        ) {
+          const res = await uploadCoursebookPackageAction({
+            targetType: "LEVEL",
+            ieltsLevelId: data.targetLevel,
+            packageTitle: data.title,
+            packageDescription:
+              audioFilesMeta.length > 0
+                ? `Giáo trình kèm ${audioFilesMeta.length} file nghe`
+                : "Giáo trình học tập chuẩn",
+            bookFile,
+            audioFiles: audioFilesMeta,
+            answerKeyFile: answerKeyMeta,
+          });
 
-      const answerKeyFile = data.answerKeyFile
-        ? {
-            title: `${data.title} - Đáp án (Answer Key)`,
-            fileName: data.answerKeyFile.name,
-            fileSize: data.answerKeyFile.size,
-            fileUrl: URL.createObjectURL(data.answerKeyFile),
-            fileType: "PDF" as const,
-            mimeType: data.answerKeyFile.type || "application/pdf",
+          if (res.success) {
+            setToastMessage(`Đã thêm học liệu "${data.title}" vào Kho giáo trình chung!`);
+            setActiveTab("level_repo");
+            await loadLevelRepository();
+            onRefreshAll?.();
+          } else {
+            setToastMessage(res.error || "Không thể lưu giáo trình vào kho chung!");
           }
-        : undefined;
+          return;
+        }
 
-      // 1. Nếu là Sách giáo khoa nạp vào Kho chung cấp Trình độ (Level Repository)
-      if (data.materialType === "COURSEBOOK" && data.destination === "COMMON" && data.targetLevel) {
-        const res = await uploadCoursebookPackageAction({
-          targetType: "LEVEL",
-          ieltsLevelId: data.targetLevel,
-          packageTitle: data.title,
-          packageDescription: "Giáo trình chuẩn kèm toàn bộ audio bài nghe",
+        // Trường hợp phân phối vào Lớp học hoặc Kho chung (Tài liệu bổ trợ / Bộ đề)
+        const allMaterials = [
           bookFile,
-          audioFiles,
-          answerKeyFile,
+          ...extraFilesMeta,
+          ...audioFilesMeta,
+          ...(answerKeyMeta ? [answerKeyMeta] : []),
+        ];
+
+        const res = await distributeLearningMaterialsAction({
+          distributionMode: data.destination === "COMMON" ? "BY_LEVEL" : "BY_CLASSES",
+          targetLevels: data.targetLevel ? [data.targetLevel] : [],
+          targetClassIds: data.targetClassIds,
+          folderName: data.title,
+          folderDescription:
+            data.materialType === "COURSEBOOK"
+              ? "Giáo trình & tài liệu chính khóa"
+              : data.materialType === "PRACTICE_TEST"
+              ? "Bộ đề luyện tập & đáp án"
+              : "Tài liệu học tập & bài giảng",
+          materials: allMaterials,
         });
 
         if (res.success) {
-          setToastMessage(`Đã nạp thành công bộ giáo trình "${data.title}" vào Kho trình độ!`);
+          setToastMessage(`Đã thêm thành công "${data.title}" (${allMaterials.length} tệp)!`);
+          if (data.destination === "COMMON") {
+            setActiveTab("level_repo");
+          }
           await loadLevelRepository();
           onRefreshAll?.();
         } else {
-          setToastMessage(res.error || "Không thể nạp giáo trình vào kho!");
+          setToastMessage(res.error || "Không thể thêm tài liệu!");
         }
-        return;
-      }
-
-      // 2. Phân phối vào các Lớp học hoặc Tài liệu bổ trợ / Bộ đề
-      const folderPrefix =
-        data.materialType === "COURSEBOOK"
-          ? "📚 "
-          : data.materialType === "PRACTICE_TEST"
-          ? "📝 "
-          : "📄 ";
-
-      const folderDesc =
-        data.materialType === "COURSEBOOK"
-          ? `Gói Sách giáo khoa & ${audioFiles.length} file audio bài nghe`
-          : data.materialType === "PRACTICE_TEST"
-          ? "Bộ đề thi và bài tập thực hành"
-          : "Tài liệu học tập bổ trợ cho lớp học";
-
-      const allMaterials = [
-        bookFile,
-        ...audioFiles,
-        ...(answerKeyFile ? [answerKeyFile] : []),
-      ];
-
-      const res = await distributeLearningMaterialsAction({
-        distributionMode: data.destination === "COMMON" ? "BY_LEVEL" : "BY_CLASSES",
-        targetLevels: data.targetLevel ? [data.targetLevel] : [],
-        targetClassIds: data.targetClassIds,
-        folderName: `${folderPrefix}${data.title}`,
-        folderDescription: folderDesc,
-        materials: allMaterials,
-      });
-
-      if (res.success) {
-        setToastMessage(`Đã phân phối tài liệu "${data.title}" thành công!`);
-        await loadLevelRepository();
-        onRefreshAll?.();
-      } else {
-        setToastMessage(res.error || "Không thể phân phối tài liệu!");
+      } catch (err: any) {
+        setToastMessage(err.message || "Có lỗi xảy ra khi tải tệp lên!");
       }
     });
   };
 
+  const handleDeleteLevelFolder = async (folderId: string, folderName: string) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa bộ học liệu "${folderName}" khỏi kho chung?`)) {
+      return;
+    }
+    startTransition(async () => {
+      const res = await deleteMaterialFolderAction(folderId);
+      if (res.success) {
+        setToastMessage(`Đã xóa bộ học liệu "${folderName}"`);
+        await loadLevelRepository();
+        onRefreshAll?.();
+      }
+    });
+  };
+
+  const handleSelectFolderToPreview = (folder: LevelFolderItem) => {
+    const mats: PreviewableMaterial[] =
+      folder.materials && folder.materials.length > 0
+        ? folder.materials
+        : [
+            {
+              id: folder.id,
+              title: folder.name,
+              fileName: "Mindset_for_IELTS_Level_3.pdf",
+              fileUrl: "/sample-mindset.pdf",
+              fileSize: 2155089,
+              fileType: "PDF",
+            },
+          ];
+
+    setPreviewFolderName(folder.name.replace(/^[📚📝📄🎧]+\s*/, ""));
+    setPreviewSiblings(mats);
+    setPreviewMaterial(mats[0]);
+  };
+
   return (
-    <div className="space-y-6 pb-12">
-      {/* HEADER QUẢN LÝ HỌC LIỆU + TÌM KIẾM TOÀN CỤC M8 + NÚT THÊM M2C */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-            <span>Quản lý học liệu</span>
-            <span>/</span>
-            <span className="font-semibold text-slate-800">Kho học liệu trung tâm</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-[#0F172A] tracking-tight">
-            Quản lý học liệu
-          </h2>
-        </div>
-
-        {/* Cụm Tìm kiếm M8 & Nút Thêm M2C */}
-        <div className="flex items-center gap-3 flex-1 md:justify-end">
-          <MaterialsGlobalSearch
-            items={globalSearchItems}
-            onSelectItem={handleSelectSearchResult}
-          />
-
-          {!currentUser.role.includes("STUDENT") && (
-            <Button
-              onClick={() => setIsQuickAddOpen(true)}
-              className="h-10 px-4 rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold text-xs gap-1.5 shadow-sm shrink-0"
-            >
-              <Plus className="size-4" /> Thêm tài liệu
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* 2 TAB CHÍNH: KHO CHUNG (M2B) & DANH MỤC LỚP (M2A) */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-bold text-slate-500">
+    <div className="space-y-4 pb-10">
+      {/* 2 TAB CHÍNH ĐỒNG BỘ, THUẦN VIỆT */}
+      <div className="flex items-center gap-6 border-b border-[#E2E8F0]">
         <button
           type="button"
           onClick={() => setActiveTab("classes_list")}
-          className={`pb-3 px-2 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-1 flex items-center gap-2 border-b-2 text-sm font-semibold transition ${
             activeTab === "classes_list"
               ? "border-[#EA580C] text-[#EA580C]"
-              : "border-transparent hover:text-slate-800"
+              : "border-transparent text-[#64748B] hover:text-[#0F172A]"
           }`}
         >
           <GraduationCap className="size-4" />
-          <span>Danh mục lớp &amp; Thư mục (M2A)</span>
+          <span>Học liệu theo lớp học ({accessibleClasses.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("level_repo")}
-          className={`pb-3 px-2 flex items-center gap-2 border-b-2 transition ${
+          className={`pb-3 px-1 flex items-center gap-2 border-b-2 text-sm font-semibold transition ${
             activeTab === "level_repo"
               ? "border-[#EA580C] text-[#EA580C]"
-              : "border-transparent hover:text-slate-800"
+              : "border-transparent text-[#64748B] hover:text-[#0F172A]"
           }`}
         >
           <BookOpen className="size-4" />
-          <span>Kho giáo trình chuẩn theo trình độ (M2B)</span>
+          <span>Kho giáo trình chung ({levelFolders.length})</span>
         </button>
       </div>
 
@@ -359,6 +296,11 @@ export function GlobalMaterialsView({
       {activeTab === "classes_list" ? (
         <ClassDirectoryTab
           classes={accessibleClasses}
+          canAddMaterial={canAddMaterial}
+          onOpenQuickAdd={() => {
+            setQuickAddDest("CLASSES");
+            setIsQuickAddOpen(true);
+          }}
           onOpenClassMaterials={onOpenClassMaterials}
         />
       ) : (
@@ -366,36 +308,35 @@ export function GlobalMaterialsView({
           levelFolders={levelFolders}
           ieltsLevels={ieltsLevels}
           isAdmin={isAdmin}
-          onUploadCoursebookPackage={handleUploadCoursebookPackage}
-          onSelectFolderToPreview={(folder) => {
-            setPreviewMaterial({
-              id: folder.id,
-              title: folder.name,
-              fileName: "Mindset_for_IELTS_Level_3.pdf",
-              fileUrl: "/sample-mindset.pdf",
-              fileSize: 2155089,
-              fileType: "PDF",
-            });
+          onOpenQuickAdd={() => {
+            setQuickAddDest("COMMON");
+            setIsQuickAddOpen(true);
           }}
+          onDeleteFolder={handleDeleteLevelFolder}
+          onSelectFolderToPreview={handleSelectFolderToPreview}
         />
       )}
 
-      {/* MODAL THÊM NHANH TÀI LIỆU (M2C) */}
+      {/* MODAL THÊM HỌC LIỆU THỐNG NHẤT */}
       <QuickAddMaterialModal
         open={isQuickAddOpen}
         onOpenChange={setIsQuickAddOpen}
         classes={accessibleClasses}
         ieltsLevels={ieltsLevels}
         isTeacher={isTeacher}
+        defaultDestination={quickAddDest}
         onSubmit={handleQuickAddSubmit}
       />
 
-      {/* MODAL XEM TRƯỚC TÀI LIỆU 2 CỘT (M4.4) */}
+      {/* MODAL XEM TÀI LIỆU TRỰC TUYẾN */}
       {previewMaterial && (
         <MaterialPreviewModal
           open={!!previewMaterial}
           onOpenChange={(op) => !op && setPreviewMaterial(null)}
           material={previewMaterial}
+          siblingMaterials={previewSiblings}
+          currentFolderName={previewFolderName}
+          onSelectMaterial={(mat) => setPreviewMaterial(mat)}
           onDownload={(mat) => {
             const a = document.createElement("a");
             a.href = mat.fileUrl;

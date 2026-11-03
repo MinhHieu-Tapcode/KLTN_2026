@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import {
   GraduationCap,
   Loader2,
   FileText,
+  X,
 } from "lucide-react";
 import { MaterialTypeSelector, MaterialTypeOption } from "./quick-add/material-type-selector";
 import { AudioTracksUploader } from "./quick-add/audio-tracks-uploader";
@@ -24,6 +25,7 @@ export interface QuickAddSubmitPayload {
   title: string;
   materialType: MaterialTypeOption;
   file: File;
+  extraFiles?: File[];
   audioFiles: File[];
   answerKeyFile?: File | null;
   destination: "COMMON" | "CLASSES";
@@ -44,46 +46,66 @@ interface QuickAddMaterialModalProps {
   }>;
   ieltsLevels?: Array<{ id: string; name: string; code: string }>;
   isTeacher?: boolean;
+  defaultDestination?: "COMMON" | "CLASSES";
   onSubmit: (data: QuickAddSubmitPayload) => Promise<void>;
 }
+
+const DEFAULT_LEVELS = [
+  { id: "lvl-basic", name: "Cơ bản (0 - 4.5)", code: "BASIC" },
+  { id: "lvl-medium", name: "Trung bình (4.5 - 6.5)", code: "INTERMEDIATE" },
+  { id: "lvl-advanced", name: "Nâng cao (6.5 - 9.0)", code: "ADVANCED" },
+];
 
 export function QuickAddMaterialModal({
   open,
   onOpenChange,
   classes = [],
-  ieltsLevels = [
-    { id: "lvl-foundation", name: "Cơ bản (4.5 - 5.5)", code: "FOUNDATION" },
-    { id: "lvl-intermediate", name: "Trung cấp (5.5 - 6.5)", code: "INTERMEDIATE" },
-    { id: "lvl-advanced", name: "Nâng cao (6.5 - 7.5+)", code: "ADVANCED" },
-  ],
+  ieltsLevels,
   isTeacher = false,
+  defaultDestination,
   onSubmit,
 }: QuickAddMaterialModalProps) {
-  const [materialType, setMaterialType] = useState<MaterialTypeOption>("COURSEBOOK");
+  const effectiveLevels =
+    ieltsLevels && ieltsLevels.length > 0 ? ieltsLevels : DEFAULT_LEVELS;
+
+  const [materialType, setMaterialType] = useState<MaterialTypeOption>("SUPPLEMENTARY");
   const [title, setTitle] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [audioFiles, setAudioFiles] = useState<File[]>([]);
   const [answerKeyFile, setAnswerKeyFile] = useState<File | null>(null);
   const [destination, setDestination] = useState<"COMMON" | "CLASSES">(
-    isTeacher ? "CLASSES" : "COMMON"
+    isTeacher ? "CLASSES" : defaultDestination || "CLASSES"
   );
-  const [targetLevel, setTargetLevel] = useState(ieltsLevels[0]?.id || "lvl-foundation");
+  const [targetLevel, setTargetLevel] = useState(effectiveLevels[0]?.id || "lvl-basic");
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Xử lý toggle một lớp học
+  useEffect(() => {
+    if (open) {
+      if (isTeacher) {
+        setDestination("CLASSES");
+      } else if (defaultDestination) {
+        setDestination(defaultDestination);
+      }
+      if (effectiveLevels.length > 0 && !effectiveLevels.some((l) => l.id === targetLevel)) {
+        setTargetLevel(effectiveLevels[0].id);
+      }
+      if (classes.length === 1 && selectedClassIds.length === 0) {
+        setSelectedClassIds([classes[0].id]);
+      }
+    }
+  }, [open, defaultDestination, isTeacher, effectiveLevels, classes]);
+
   const handleToggleClass = (classId: string) => {
     setSelectedClassIds((prev) =>
       prev.includes(classId) ? prev.filter((id) => id !== classId) : [...prev, classId]
     );
   };
 
-  // Kiểm tra điều kiện nộp form hợp lệ
-  const isAudioMissingForCoursebook = materialType === "COURSEBOOK" && audioFiles.length === 0;
+  // Không ép buộc phải có Audio, cho phép tải tự do mọi định dạng tệp
   const isFormValid =
     title.trim().length > 0 &&
-    selectedFile !== null &&
-    !isAudioMissingForCoursebook &&
+    selectedFiles.length > 0 &&
     (destination === "COMMON" ? Boolean(targetLevel) : selectedClassIds.length > 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,19 +117,18 @@ export function QuickAddMaterialModal({
       await onSubmit({
         title: title.trim(),
         materialType,
-        file: selectedFile!,
+        file: selectedFiles[0],
+        extraFiles: selectedFiles.slice(1),
         audioFiles,
         answerKeyFile,
         destination,
         targetLevel: destination === "COMMON" ? targetLevel : undefined,
         targetClassIds: destination === "CLASSES" ? selectedClassIds : [],
       });
-      // Đặt lại trạng thái sau khi thành công
       setTitle("");
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setAudioFiles([]);
       setAnswerKeyFile(null);
-      setSelectedClassIds([]);
       onOpenChange(false);
     } finally {
       setIsSubmitting(false);
@@ -120,7 +141,7 @@ export function QuickAddMaterialModal({
         <DialogHeader className="border-b border-slate-100 pb-3">
           <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
             <UploadCloud className="size-5 text-[#EA580C]" />
-            Thêm tài liệu học tập
+            Thêm học liệu mới
           </DialogTitle>
         </DialogHeader>
 
@@ -128,71 +149,85 @@ export function QuickAddMaterialModal({
           {/* 1. CHỌN LOẠI HỌC LIỆU */}
           <MaterialTypeSelector value={materialType} onChange={setMaterialType} />
 
-          {/* 2. TÊN TÀI LIỆU / TIÊU ĐỀ */}
+          {/* 2. TÊN THƯ MỤC / TIÊU ĐỀ HỌC LIỆU */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Tên tài liệu / Tiêu đề <span className="text-rose-500">*</span>
+            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+              2. Tên tài liệu / Thư mục lưu trữ <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={
-                materialType === "COURSEBOOK"
-                  ? "VD: Cambridge IELTS 18 Academic (Sách & Audio)..."
-                  : materialType === "PRACTICE_TEST"
-                  ? "VD: Đề thi thử IELTS Listening & Reading Mock Test 01..."
-                  : "VD: Slide Bài giảng Unit 3 - Reading Matching Headings..."
-              }
-              className="w-full h-10 px-3.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-[#EA580C]/15 transition"
+              placeholder="VD: Bài giảng Unit 1 - Reading / Giáo trình Mindset for IELTS..."
+              className="w-full h-10 px-3.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#EA580C]"
             />
           </div>
 
-          {/* 3. CHỌN FILE CHÍNH (SÁCH HOẶC TÀI LIỆU) */}
+          {/* 3. CHỌN TỆP TẢI LÊN (HỖ TRỢ PDF, WORD, EXCEL, PPT, AUDIO, ẢNH PNG/JPG...) */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              {materialType === "COURSEBOOK"
-                ? "Chọn File Sách giáo khoa (PDF) *"
-                : materialType === "PRACTICE_TEST"
-                ? "Chọn File Đề thi (PDF) *"
-                : "Chọn tệp tin tải lên (PDF, Word, PPTX...) *"}
+            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+              3. Chọn tệp tải lên (PDF, Word, Excel, Slide, Audio, Ảnh PNG/JPG...) <span className="text-rose-500">*</span>
             </label>
-            <div className="flex items-center gap-3">
-              <label className="px-4 py-2 border border-slate-200 hover:border-[#EA580C] bg-slate-50 hover:bg-orange-50/40 rounded-xl cursor-pointer text-xs font-semibold text-slate-700 transition">
-                <span>Chọn tệp từ máy tính</span>
+            <div className="space-y-2">
+              <label className="inline-flex items-center gap-2 px-4 py-2.5 border border-dashed border-[#EA580C]/60 hover:border-[#EA580C] bg-orange-50/30 hover:bg-orange-50/70 rounded-xl cursor-pointer text-xs font-bold text-[#EA580C] transition">
+                <UploadCloud className="size-4" />
+                <span>Chọn tệp từ máy tính (có thể chọn nhiều tệp)</span>
                 <input
                   type="file"
-                  required={!selectedFile}
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp3,.wav,.m4a,.ogg,.png,.jpg,.jpeg,.webp,.gif,.txt,.zip"
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) {
-                      setSelectedFile(f);
-                      if (!title.trim()) setTitle(f.name.replace(/\.[^/.]+$/, ""));
+                    const files = e.target.files ? Array.from(e.target.files) : [];
+                    if (files.length > 0) {
+                      setSelectedFiles((prev) => [...prev, ...files]);
+                      if (!title.trim()) {
+                        setTitle(files[0].name.replace(/\.[^/.]+$/, ""));
+                      }
                     }
                   }}
                   className="hidden"
                 />
               </label>
 
-              {selectedFile ? (
-                <div className="flex items-center gap-2 text-xs text-slate-700 font-medium truncate">
-                  <FileText className="size-4 text-[#EA580C] shrink-0" />
-                  <span className="truncate">{selectedFile.name}</span>
-                  <span className="text-slate-400 font-mono text-[11px] shrink-0">
-                    ({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)
-                  </span>
+              {selectedFiles.length > 0 ? (
+                <div className="space-y-1.5 max-h-36 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50">
+                  {selectedFiles.map((f, idx) => (
+                    <div
+                      key={`${f.name}-${idx}`}
+                      className="flex items-center justify-between text-xs bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/80"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <FileText className="size-4 text-[#EA580C] shrink-0" />
+                        <span className="truncate font-medium text-slate-800">{f.name}</span>
+                        <span className="text-slate-400 font-mono text-[11px] shrink-0">
+                          ({(f.size / (1024 * 1024)).toFixed(2)} MB)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedFiles((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <span className="text-xs text-slate-400 italic">Chưa chọn tệp</span>
+                <p className="text-xs text-slate-400">
+                  Chưa chọn tệp nào. Hỗ trợ đầy đủ PDF, DOCX, XLSX, PPTX, MP3, WAV, PNG, JPG...
+                </p>
               )}
             </div>
           </div>
 
-          {/* 4. KHU VỰC AUDIO VÀ ĐÁP ÁN (BẮT BUỘC NẾU LÀ SGK, HOẶC TÙY CHỌN NẾU LÀ ĐỀ THI) */}
+          {/* 4. KHU VỰC ĐÍNH KÈM AUDIO BÀI NGHE TÙY CHỌN */}
           {(materialType === "COURSEBOOK" || materialType === "PRACTICE_TEST") && (
             <AudioTracksUploader
-              isRequired={materialType === "COURSEBOOK"}
+              isRequired={false}
               audioFiles={audioFiles}
               onChangeAudioFiles={setAudioFiles}
               answerKeyFile={answerKeyFile}
@@ -200,13 +235,39 @@ export function QuickAddMaterialModal({
             />
           )}
 
-          {/* 5. ĐỊA CHỈ LƯU TÀI LIỆU (KHO CHUNG HAY LỚP HỌC) */}
+          {/* 5. NƠI LƯU TRỮ */}
           <div className="space-y-3 pt-2 border-t border-slate-100">
             <label className="block text-xs font-bold text-slate-800">
-              Địa chỉ lưu tài liệu:
+              4. Chọn nơi lưu tài liệu:
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label
+                onClick={() => setDestination("CLASSES")}
+                className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                  destination === "CLASSES"
+                    ? "border-[#EA580C] bg-orange-50/40 shadow-sm"
+                    : "border-slate-200 hover:border-slate-300 bg-white"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="destination"
+                  checked={destination === "CLASSES"}
+                  onChange={() => setDestination("CLASSES")}
+                  className="mt-0.5 accent-[#EA580C]"
+                />
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <GraduationCap className="size-4 text-[#EA580C]" />
+                    <b className="text-xs text-slate-900">Lưu vào Lớp học cụ thể</b>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Chọn một hoặc nhiều lớp học để thêm tài liệu vào kho của lớp
+                  </p>
+                </div>
+              </label>
+
               {!isTeacher && (
                 <label
                   onClick={() => setDestination("COMMON")}
@@ -225,51 +286,24 @@ export function QuickAddMaterialModal({
                   />
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <BookOpen className="size-4 text-purple-600" />
-                      <b className="text-xs text-slate-900">Kho học liệu chung</b>
+                      <BookOpen className="size-4 text-[#EA580C]" />
+                      <b className="text-xs text-slate-900">Lưu vào Kho giáo trình chung</b>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Tự động kế thừa cho tất cả các lớp thuộc Trình độ tương ứng
+                      Tự động kế thừa cho toàn bộ các lớp thuộc Trình độ tương ứng
                     </p>
                   </div>
                 </label>
               )}
-
-              <label
-                onClick={() => setDestination("CLASSES")}
-                className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
-                  destination === "CLASSES"
-                    ? "border-[#EA580C] bg-orange-50/40 shadow-sm"
-                    : "border-slate-200 hover:border-slate-300 bg-white"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="destination"
-                  checked={destination === "CLASSES"}
-                  onChange={() => setDestination("CLASSES")}
-                  className="mt-0.5 accent-[#EA580C]"
-                />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <GraduationCap className="size-4 text-sky-600" />
-                    <b className="text-xs text-slate-900">Kho học liệu theo lớp</b>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Chọn danh sách các lớp học cụ thể để phân phối tài liệu
-                  </p>
-                </div>
-              </label>
             </div>
 
-            {/* Chi tiết cho Option 1: Chọn Trình độ */}
             {destination === "COMMON" && !isTeacher && (
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <span className="text-xs font-bold text-slate-800 block">
-                  Chọn Trình độ IELTS kế thừa:
+                  Chọn Trình độ IELTS áp dụng:
                 </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {ieltsLevels.map((lvl) => (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {effectiveLevels.map((lvl) => (
                     <button
                       key={lvl.id}
                       type="button"
@@ -287,11 +321,10 @@ export function QuickAddMaterialModal({
               </div>
             )}
 
-            {/* Chi tiết cho Option 2: Chọn danh sách lớp có 2 bộ lọc */}
             {destination === "CLASSES" && (
               <ClassMultiFilterSelector
                 classes={classes}
-                ieltsLevels={ieltsLevels}
+                ieltsLevels={effectiveLevels}
                 selectedClassIds={selectedClassIds}
                 onToggleClass={handleToggleClass}
                 onSelectMultipleClasses={setSelectedClassIds}
@@ -299,7 +332,7 @@ export function QuickAddMaterialModal({
             )}
           </div>
 
-          <DialogFooter className="gap-2 pt-3 border-t border-slate-100">
+          <DialogFooter className="pt-3 border-t border-slate-100 gap-2">
             <Button
               type="button"
               variant="outline"
@@ -312,16 +345,16 @@ export function QuickAddMaterialModal({
             <Button
               type="submit"
               size="sm"
-              disabled={isSubmitting || !isFormValid}
-              className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold"
+              disabled={!isFormValid || isSubmitting}
+              className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold px-5"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="size-3.5 animate-spin mr-1.5" />
-                  Đang xử lý & lưu...
+                  Đang tải lên...
                 </>
               ) : (
-                "Lưu & Phân phối tài liệu"
+                "Lưu & Tải lên"
               )}
             </Button>
           </DialogFooter>

@@ -15,6 +15,7 @@ import { ClassMaterialsTab } from "@/components/materials/class-materials-tab";
 import { ClassAssignmentsTab } from "@/components/assignments/class-assignments-tab";
 import { InfoCard, Badge, Status } from "@/components/shared/common-widgets";
 import { ClassDetailModals } from "./class-detail-modals";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 
 export function ClassDetailView({
   classItem,
@@ -69,6 +70,9 @@ export function ClassDetailView({
   const [unassignTarget, setUnassignTarget] = useState<{ userId: string; roleName: string } | null>(null);
 
   if (!classItem) return null;
+
+  // Chỉ Admin & Quản nhiệm trường được sửa lớp, gán GV, thêm/chuyển/gỡ học viên. Giáo viên/TA chỉ xem.
+  const canManageClass = hasRole(currentUser, ROLE_GROUPS.ADMIN_AND_MANAGER);
 
   const sameSchoolClasses = (classes || []).filter(
     (c: any) => c.schoolId === classItem.schoolId && c.id !== classItem.id && c.isActive
@@ -174,7 +178,7 @@ export function ClassDetailView({
           <ChevronLeft className="size-4" /> Quay lại danh sách lớp học
         </button>
 
-        {onEditClass && (
+        {canManageClass && onEditClass && (
           <Button
             onClick={() => onEditClass(classItem)}
             className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-semibold shadow-sm"
@@ -272,17 +276,19 @@ export function ClassDetailView({
                   <h2 className="font-bold text-base text-[#0F172A]">
                     Giáo viên phụ trách ({assignedTeachers.length})
                   </h2>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-7 rounded-lg text-[#EA580C] border-orange-200 hover:bg-orange-50"
-                    onClick={() => {
-                      setAssignRole("TEACHER");
-                      setSelectedStaffId("");
-                    }}
-                  >
-                    <Plus className="size-3 mr-1" /> Gán thêm GV
-                  </Button>
+                  {canManageClass && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7 rounded-lg text-[#EA580C] border-orange-200 hover:bg-orange-50"
+                      onClick={() => {
+                        setAssignRole("TEACHER");
+                        setSelectedStaffId("");
+                      }}
+                    >
+                      <Plus className="size-3 mr-1" /> Gán thêm GV
+                    </Button>
+                  )}
                 </div>
                 {assignedTeachers.length > 0 ? (
                   <div className="space-y-2.5">
@@ -298,7 +304,7 @@ export function ClassDetailView({
                           <p className="text-[#64748B] text-xs">{tch.staff?.email}</p>
                           <Badge>Giáo viên giảng dạy</Badge>
                         </div>
-                        {assignedTeachers.length > 1 && (
+                        {canManageClass && assignedTeachers.length > 1 && (
                           <button
                             onClick={() => setUnassignTarget({ userId: tch.userId, roleName: "giáo viên" })}
                             className="text-xs font-semibold text-rose-600 hover:underline ml-2"
@@ -327,14 +333,16 @@ export function ClassDetailView({
                   Quản lý và cập nhật danh sách học sinh ghi danh trong lớp học này
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleOpenAddStudent}
-                className="text-xs rounded-xl text-[#EA580C] border-orange-200 hover:bg-orange-50 font-semibold shadow-xs"
-              >
-                <Plus className="size-3.5 mr-1" /> Thêm học viên vào lớp
-              </Button>
+              {canManageClass && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenAddStudent}
+                  className="text-xs rounded-xl text-[#EA580C] border-orange-200 hover:bg-orange-50 font-semibold shadow-xs"
+                >
+                  <Plus className="size-3.5 mr-1" /> Thêm học viên vào lớp
+                </Button>
+              )}
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
@@ -368,7 +376,7 @@ export function ClassDetailView({
                         </td>
                         <td className="px-4 py-3.5 text-right">
                           <div className="flex justify-end items-center gap-3">
-                            {sameSchoolClasses.length > 0 && (
+                            {canManageClass && sameSchoolClasses.length > 0 && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -385,18 +393,20 @@ export function ClassDetailView({
                                 <ArrowRightLeft className="size-3.5" /> Chuyển lớp
                               </button>
                             )}
-                            <button
-                              onClick={() =>
-                                setRemoveStudentTarget({
-                                  studentId: enr.studentId,
-                                  studentName: enr.student?.profile?.fullName || enr.student?.username,
-                                })
-                              }
-                              className="text-xs font-semibold text-rose-600 hover:underline inline-flex items-center gap-1"
-                              title="Rút học viên khỏi lớp"
-                            >
-                              <Trash2 className="size-3.5" /> Gỡ
-                            </button>
+                            {canManageClass && (
+                              <button
+                                onClick={() =>
+                                  setRemoveStudentTarget({
+                                    studentId: enr.studentId,
+                                    studentName: enr.student?.profile?.fullName || enr.student?.username,
+                                  })
+                                }
+                                className="text-xs font-semibold text-rose-600 hover:underline inline-flex items-center gap-1"
+                                title="Rút học viên khỏi lớp"
+                              >
+                                <Trash2 className="size-3.5" /> Gỡ
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -404,7 +414,7 @@ export function ClassDetailView({
                   ) : (
                     <tr>
                       <td colSpan={6} className="text-center py-8 text-sm text-[#94A3B8] italic">
-                        Chưa có học viên trong lớp. Bấm &quot;Thêm học viên vào lớp&quot; hoặc dùng tính năng Import Excel để thêm học viên!
+                        Chưa có học viên trong lớp.{canManageClass ? " Bấm \"Thêm học viên vào lớp\" hoặc dùng tính năng Import Excel để thêm học viên!" : ""}
                       </td>
                     </tr>
                   )}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2, ChevronRight, Info, Minus, Plus, RefreshCw, Trash2, Users } from "lucide-react";
+import { CheckCircle2, ChevronRight, Edit, Info, Minus, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LevelAllocationPlan, ProposedClass } from "@/actions/bulk-allocation";
 
@@ -25,6 +25,8 @@ export interface BulkAllocationDashboardProps {
   onUpdateCapacity: (newCapacity: number) => void;
   onOpenConfigureModal?: () => void;
   onSelectClassDetail: (cls: ProposedClass) => void;
+  onSelectEditClass?: (cls: ProposedClass) => void;
+  onAddNewClass?: (levelId: string) => void;
   onSelectDeleteClass: (cls: ProposedClass) => void;
 }
 
@@ -37,6 +39,8 @@ export function BulkAllocationDashboard({
   onUpdateCapacity,
   onOpenConfigureModal,
   onSelectClassDetail,
+  onSelectEditClass,
+  onAddNewClass,
   onSelectDeleteClass,
 }: BulkAllocationDashboardProps) {
   const [capacityInput, setCapacityInput] = useState<number>(maxCapacity || 30);
@@ -51,10 +55,10 @@ export function BulkAllocationDashboard({
     });
   }, [levelPlans]);
 
-  // Flatten all classes (Chỉ lấy các lớp có học sinh, loại bỏ lớp rỗng)
+  // Flatten all classes
   const allClasses: ProposedClass[] = [];
   for (const plan of sortedLevelPlans) {
-    allClasses.push(...plan.classes.filter((c) => c.students.length > 0));
+    allClasses.push(...plan.classes);
   }
 
   // Calculate SVG Donut segments
@@ -224,12 +228,23 @@ export function BulkAllocationDashboard({
             <div key={plan.levelId} className="space-y-1.5">
               <div className="text-[11px] font-bold text-slate-700 bg-slate-50 px-2 py-1 rounded-md border border-slate-200/60 flex items-center justify-between">
                 <span>{plan.levelName}</span>
-                <span className="text-[10px] text-slate-500 font-normal">
-                  {plan.studentCount} HS / {plan.classCount} lớp
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    {plan.studentCount} HS / {plan.classes.length} lớp
+                  </span>
+                  {onAddNewClass && (
+                    <button
+                      type="button"
+                      onClick={() => onAddNewClass(plan.levelId)}
+                      className="text-[10px] font-bold text-[#EA580C] hover:underline flex items-center gap-0.5"
+                    >
+                      + Thêm lớp
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {plan.classes.filter((c) => c.students.length > 0).map((cls) => {
+              {plan.classes.map((cls) => {
                 const count = cls.students.length;
                 const cap = cls.capacity || maxCapacity || 30;
                 const ratio = Math.min(100, Math.round((count / cap) * 100));
@@ -242,9 +257,14 @@ export function BulkAllocationDashboard({
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-bold text-slate-800 truncate">{cls.name}</span>
+                        {count === 0 && (
+                          <span className="text-[9px] px-1.5 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded font-bold shrink-0">
+                            Mới tạo
+                          </span>
+                        )}
                       </div>
                       <span className="font-semibold text-slate-700 shrink-0">
-                        <b className="text-[#EA580C]">{count}</b>/{cap} HS
+                        <b className={count === 0 ? "text-slate-400" : "text-[#EA580C]"}>{count}</b>/{cap} HS
                       </span>
                     </div>
 
@@ -261,16 +281,23 @@ export function BulkAllocationDashboard({
                       <button
                         type="button"
                         onClick={() => onSelectClassDetail(cls)}
-                        className="text-[11px] text-[#EA580C] hover:underline font-medium px-2 py-0.5"
+                        className="text-[11px] text-slate-600 hover:text-slate-900 hover:underline font-medium px-1.5 py-0.5"
                       >
-                        Chi tiết lớp
+                        Chi tiết
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => (onSelectEditClass ? onSelectEditClass(cls) : onSelectClassDetail(cls))}
+                        className="text-[11px] text-[#EA580C] hover:text-[#C2410C] font-bold px-1.5 py-0.5 flex items-center gap-1 bg-orange-50/80 rounded border border-orange-200"
+                      >
+                        <Edit className="size-3" /> Chỉnh sửa
                       </button>
                       {plan.classes.length > 1 && (
                         <button
                           type="button"
                           onClick={() => onSelectDeleteClass(cls)}
                           title="Xóa lớp và phân bổ lại học sinh"
-                          className="text-[11px] text-slate-400 hover:text-rose-600 px-1 py-0.5 rounded transition"
+                          className="text-[11px] text-slate-400 hover:text-rose-600 p-0.5 rounded transition ml-0.5"
                         >
                           <Trash2 className="size-3" />
                         </button>

@@ -27,6 +27,11 @@ AI phải trả lời ngắn gọn các mục sau, rồi **chờ người dùng 
 
 Khi yêu cầu mơ hồ, AI **hỏi lại**, không tự đoán luồng.
 
+### 2.3. Quy tắc "Đánh số cam kết" khi nhận yêu cầu (Commitment Checklist)
+Mỗi khi tiếp nhận một yêu cầu (đặc biệt là yêu cầu có kèm hình ảnh khoanh đỏ/chú thích):
+1. AI **bắt buộc** phải trích xuất toàn bộ các điểm cần sửa thành danh sách có đánh số rõ ràng: `[C1]`, `[C2]`, `[C3]`... Trong đó **ưu tiên tuyệt đối các ghi chú đỏ trên ảnh (Visual First)**.
+2. Phân loại rõ ràng: Đâu là việc ở **Tầng Giao diện (UI/UX / CSS / Layout)**, đâu là việc ở **Tầng Dữ liệu/Logic (Backend / Service / Database)**.
+
 ## 3. Quy ước tầng code
 | Tầng | Trách nhiệm | Không được |
 |---|---|---|
@@ -52,6 +57,13 @@ Quy ước thêm:
 - Chạy `npx tsc --noEmit` và `npm run lint`, báo kết quả.
 - Báo cáo: các file đã đổi, mỗi file đổi gì, và **các bước để người dùng tự kiểm tra bằng tay**.
 - Nếu chưa chạy được kiểm tra nào, nói rõ là chưa chạy.
+
+### 5.1. Bảng nghiệm thu trung thực trước khi kết thúc (Definition of Done Matrix)
+Trước khi báo hoàn thành hoặc dừng lượt phản hồi, AI **BẮT BUỘC** phải in ra một **Bảng đối chiếu nghiệm thu (Definition of Done)** cho tất cả các mã cam kết `[C1]`, `[C2]`... đã lập ở mục 2.3:
+| Mã | Nội dung cam kết | Trạng thái (ĐÃ XONG / ĐANG LÀM / CHƯA XONG) | Minh chứng (File / Dòng code / Thành phần UI) | Giải trình nếu chưa xong / Khó khăn kỹ thuật |
+|---|---|---|---|---|
+
+**Luật cấm:** Tuyệt đối KHÔNG được báo chung chung là "Đã hoàn thành" khi bảng đối chiếu vẫn còn mục CHƯA XONG hoặc làm chưa tới. Nếu chưa xong phải nêu rõ nguyên nhân kỹ thuật và các bước tiếp theo để người dùng nắm và quyết định.
 
 ## 6. Bản đồ tài liệu
 - `PROJECT_STRUCTURE.md`: bản đồ thư mục.

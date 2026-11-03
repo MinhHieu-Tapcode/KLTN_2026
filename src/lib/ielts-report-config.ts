@@ -360,6 +360,41 @@ export function estimateAcademicBand(
   return null;
 }
 
+/**
+ * Quy đổi điểm % (0 - 100%) sang IELTS Academic Band Score theo thang điểm Cambridge chuẩn
+ */
+export function percentToCambridgeBand(
+  pct: number | null | undefined,
+  skill?: string
+): number | null {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return null;
+  const clamped = Math.max(0, Math.min(100, pct));
+  const raw40 = (clamped / 100) * 40;
+
+  const normSkill = (skill || "").toUpperCase();
+  if (normSkill === "READING" || normSkill === "LISTENING") {
+    const est = estimateAcademicBand(normSkill, raw40, 40);
+    if (est !== null) return est;
+  }
+
+  // Thang chuẩn Cambridge Academic tổng quát quy đổi từ % sang Band (0.0 - 9.0)
+  if (raw40 >= 39) return 9.0;
+  if (raw40 >= 37) return 8.5;
+  if (raw40 >= 35) return 8.0;
+  if (raw40 >= 32.5) return 7.5;
+  if (raw40 >= 30) return 7.0;
+  if (raw40 >= 26.5) return 6.5;
+  if (raw40 >= 23) return 6.0;
+  if (raw40 >= 18.5) return 5.5;
+  if (raw40 >= 15.5) return 5.0;
+  if (raw40 >= 13) return 4.5;
+  if (raw40 >= 10) return 4.0;
+  if (raw40 >= 7) return 3.5;
+  if (raw40 >= 4) return 3.0;
+  if (raw40 > 0) return 2.5;
+  return 0.0;
+}
+
 // Các ngưỡng cấu hình mặc định cho Module Báo cáo (BR-04, BR-10, BR-11)
 export const REPORT_THRESHOLDS = {
   lowDataMinQuestions: 10, // BR-04: Dưới 10 câu hiển thị cảnh báo "Ít dữ liệu"
@@ -402,6 +437,35 @@ export function resolvePeriodRange(periodKey: ReportPeriodKey = "30_DAYS"): {
   }
   const fromDate = new Date(toDate.getTime() - found.days * 86400000);
   return { periodKey: found.key, label: found.label, fromDate, toDate };
+}
+
+export function resolvePreviousPeriodRange(periodKey: ReportPeriodKey = "30_DAYS"): {
+  periodKey: ReportPeriodKey;
+  label: string;
+  fromDate: Date | null;
+  toDate: Date | null;
+  hasPreviousPeriod: boolean;
+} {
+  const current = resolvePeriodRange(periodKey);
+  if (!current.fromDate) {
+    return {
+      periodKey,
+      label: "Không áp dụng",
+      fromDate: null,
+      toDate: null,
+      hasPreviousPeriod: false,
+    };
+  }
+  const spanMs = current.toDate.getTime() - current.fromDate.getTime();
+  const prevToDate = new Date(current.fromDate.getTime());
+  const prevFromDate = new Date(prevToDate.getTime() - spanMs);
+  return {
+    periodKey,
+    label: `Kỳ liền trước (${Math.round(spanMs / 86400000)} ngày)`,
+    fromDate: prevFromDate,
+    toDate: prevToDate,
+    hasPreviousPeriod: true,
+  };
 }
 
 // ==========================================
@@ -455,67 +519,67 @@ export const CRITERION_COLOR_MAP: Record<
   }
 > = {
   TA_TR: {
-    hex: "#6366f1",
-    shortCode: "TA",
-    borderTopClass: "border-t-indigo-500",
-    borderLeftClass: "border-l-indigo-500",
-    badgeBgClass: "bg-indigo-600 text-white",
-    softBgClass: "bg-indigo-500/15 border-b-2 border-indigo-500",
-    textClass: "text-indigo-600",
+    hex: "#EA580C",
+    shortCode: "TA/TR",
+    borderTopClass: "border-t-[#EA580C]",
+    borderLeftClass: "border-l-[#EA580C]",
+    badgeBgClass: "bg-[#EA580C] text-white",
+    softBgClass: "bg-orange-100/80 border-b-2 border-[#EA580C]",
+    textClass: "text-[#EA580C]",
   },
   TA: {
-    hex: "#6366f1",
+    hex: "#EA580C",
     shortCode: "TA",
-    borderTopClass: "border-t-indigo-500",
-    borderLeftClass: "border-l-indigo-500",
-    badgeBgClass: "bg-indigo-600 text-white",
-    softBgClass: "bg-indigo-500/15 border-b-2 border-indigo-500",
-    textClass: "text-indigo-600",
+    borderTopClass: "border-t-[#EA580C]",
+    borderLeftClass: "border-l-[#EA580C]",
+    badgeBgClass: "bg-[#EA580C] text-white",
+    softBgClass: "bg-orange-100/80 border-b-2 border-[#EA580C]",
+    textClass: "text-[#EA580C]",
   },
   CC: {
-    hex: "#0ea5e9",
+    hex: "#0284c7",
     shortCode: "CC",
-    borderTopClass: "border-t-sky-500",
-    borderLeftClass: "border-l-sky-500",
+    borderTopClass: "border-t-sky-600",
+    borderLeftClass: "border-l-sky-600",
     badgeBgClass: "bg-sky-600 text-white",
-    softBgClass: "bg-sky-500/15 border-b-2 border-sky-500",
-    textClass: "text-sky-600",
+    softBgClass: "bg-sky-100/80 border-b-2 border-sky-600",
+    textClass: "text-sky-700",
   },
   LR: {
-    hex: "#10b981",
+    hex: "#059669",
     shortCode: "LR",
-    borderTopClass: "border-t-emerald-500",
-    borderLeftClass: "border-l-emerald-500",
+    borderTopClass: "border-t-emerald-600",
+    borderLeftClass: "border-l-emerald-600",
     badgeBgClass: "bg-emerald-600 text-white",
-    softBgClass: "bg-emerald-500/15 border-b-2 border-emerald-500",
-    textClass: "text-emerald-600",
+    softBgClass: "bg-emerald-100/80 border-b-2 border-emerald-600",
+    textClass: "text-emerald-700",
   },
   GRA: {
-    hex: "#f59e0b",
+    hex: "#7c3aed",
     shortCode: "GRA",
-    borderTopClass: "border-t-amber-500",
-    borderLeftClass: "border-l-amber-500",
-    badgeBgClass: "bg-amber-500 text-white",
-    softBgClass: "bg-amber-500/15 border-b-2 border-amber-500",
-    textClass: "text-amber-600",
+    borderTopClass: "border-t-violet-600",
+    borderLeftClass: "border-l-violet-600",
+    badgeBgClass: "bg-violet-600 text-white",
+    softBgClass: "bg-violet-100/80 border-b-2 border-violet-600",
+    textClass: "text-violet-700",
   },
   FC: {
-    hex: "#0ea5e9",
+    hex: "#EA580C",
     shortCode: "FC",
-    borderTopClass: "border-t-sky-500",
-    borderLeftClass: "border-l-sky-500",
-    badgeBgClass: "bg-sky-600 text-white",
-    softBgClass: "bg-sky-500/15 border-b-2 border-sky-500",
-    textClass: "text-sky-600",
+    borderTopClass: "border-t-[#EA580C]",
+    borderLeftClass: "border-l-[#EA580C]",
+    badgeBgClass: "bg-[#EA580C] text-white",
+    softBgClass: "bg-orange-100/80 border-b-2 border-[#EA580C]",
+    textClass: "text-[#EA580C]",
   },
   P: {
-    hex: "#ec4899",
+    hex: "#e11d48",
     shortCode: "P",
-    borderTopClass: "border-t-pink-500",
-    borderLeftClass: "border-l-pink-500",
-    badgeBgClass: "bg-pink-600 text-white",
-    softBgClass: "bg-pink-500/15 border-b-2 border-pink-500",
-    textClass: "text-pink-600",
+    borderTopClass: "border-t-rose-600",
+    borderLeftClass: "border-l-rose-600",
+    badgeBgClass: "bg-rose-600 text-white",
+    softBgClass: "bg-rose-100/80 border-b-2 border-rose-600",
+    textClass: "text-rose-700",
   },
 };
 

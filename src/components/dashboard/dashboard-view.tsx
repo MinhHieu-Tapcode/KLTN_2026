@@ -201,17 +201,6 @@ export function DashboardView({
       sparkColor: "#EA580C",
     },
     {
-      id: "schools",
-      icon: Building2,
-      label: "Trường học",
-      value: schoolsCount.toLocaleString("vi-VN"),
-      trend: "+0%",
-      trendSub: "so với tháng trước",
-      dest: "schools" as View,
-      iconBg: "bg-blue-50 text-blue-600",
-      sparkColor: "#3B82F6",
-    },
-    {
       id: "classes",
       icon: GraduationCap,
       label: "Lớp học",
@@ -245,8 +234,8 @@ export function DashboardView({
 
   return (
     <div className="space-y-6">
-      {/* 4 KPI Cards ngang có biểu đồ sóng Sparkline chuẩn thiết kế */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+      {/* 3 KPI Cards ngang có biểu đồ sóng Sparkline chuẩn thiết kế */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {kpiCards.map((card) => {
           const Icon = card.icon;
           return (

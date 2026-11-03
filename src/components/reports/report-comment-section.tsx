@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { CheckCircle2, MessageSquareText, RotateCcw, Save, Sparkles } from "lucide-react";
+import { Bell, CheckCircle2, MessageSquareText, RotateCcw, Save, Sparkles } from "lucide-react";
 import {
   markReportCommentReadAction,
   saveReportCommentAction,
@@ -44,7 +44,7 @@ export function ReportCommentEditorCard({
     if (!trimmed) {
       setFeedback({
         type: "err",
-        text: "Nội dung nhận xét không được để trống hoặc chỉ chứa khoảng trắng (Quy tắc NX-06)!",
+        text: "Nội dung nhận xét không được để trống!",
       });
       return;
     }
@@ -72,7 +72,7 @@ export function ReportCommentEditorCard({
     setContent(res.comment.content);
     setFeedback({
       type: "ok",
-      text: "Đã lưu nhận xét thành công! Học sinh sẽ thấy dấu chấm đỏ thông báo mới (NX-08).",
+      text: "Đã lưu nhận xét thành công! Học sinh sẽ nhận được thông báo mới khi mở báo cáo.",
     });
     onSaved?.(res.comment);
   };
@@ -83,26 +83,26 @@ export function ReportCommentEditorCard({
   };
 
   return (
-    <div className="rounded-xl border border-indigo-100 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-            <MessageSquareText className="h-4 w-4" />
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-50 text-[#EA580C]">
+            <MessageSquareText className="h-4 w-4" strokeWidth={1.75} />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-800">
+            <h3 className="text-sm font-bold text-slate-900">
               {scope === "CLASS" ? "Nhận xét chung của lớp" : "Nhận xét cá nhân cho học sinh"} —{" "}
-              <span className="text-indigo-600">{targetTitle}</span>
+              <span className="text-[#EA580C]">{targetTitle}</span>
             </h3>
-            <p className="text-[11px] text-slate-500">
-              Kỳ báo cáo: <strong>{periodLabel}</strong> (Cập nhật mới sẽ ghi đè nhận xét hiện tại của kỳ này - NX-03, NX-04)
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Kỳ báo cáo: <strong className="text-slate-800 font-semibold">{periodLabel}</strong>
             </p>
           </div>
         </div>
         {savedRecord && (
-          <div className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] text-slate-600">
+          <div className="rounded-lg bg-slate-50 border border-slate-200/80 px-2.5 py-1 text-[11px] text-slate-500">
             Cập nhật lần cuối bởi:{" "}
-            <strong className="text-slate-800">
+            <strong className="text-slate-700 font-semibold">
               {savedRecord.authorName} ({savedRecord.authorRole})
             </strong>{" "}
             — {new Date(savedRecord.updatedAt).toLocaleString("vi-VN")}
@@ -110,7 +110,7 @@ export function ReportCommentEditorCard({
         )}
       </div>
 
-      <div className="mt-4">
+      <div>
         <textarea
           rows={3}
           value={content}
@@ -120,39 +120,39 @@ export function ReportCommentEditorCard({
               ? "Nhập nhận xét chung về tình hình học tập, tiến độ nộp bài và dạng câu hỏi cần cải thiện của cả lớp..."
               : "Nhập nhận xét cá nhân về điểm mạnh, kỹ năng yếu, định hướng ôn luyện IELTS cho học sinh này..."
           }
-          className="w-full rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none"
+          className="w-full rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-[#EA580C] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#EA580C]/20 transition-all resize-y min-h-[90px]"
         />
       </div>
 
       {feedback && (
         <div
-          className={`mt-3 rounded-lg px-3 py-2 text-xs font-medium ${
+          className={`rounded-xl px-3.5 py-2.5 text-xs font-medium border ${
             feedback.type === "ok"
-              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-              : "bg-rose-50 text-rose-700 border border-rose-200"
+              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+              : "bg-rose-50 text-rose-800 border-rose-200"
           }`}
         >
           {feedback.text}
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2 pt-1">
         <button
           type="button"
           onClick={handleReset}
           disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all"
         >
-          <RotateCcw className="h-3.5 w-3.5" />
+          <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
           Hủy thay đổi
         </button>
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-[#EA580C] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#C2410C] transition-all shadow-sm disabled:opacity-50"
         >
-          <Save className="h-3.5 w-3.5" />
+          <Save className="h-3.5 w-3.5" strokeWidth={1.75} />
           {saving ? "Đang lưu..." : "Lưu nhận xét"}
         </button>
       </div>
@@ -183,6 +183,9 @@ export function StudentReadOnlyCommentsView({
     else setStuRead(true);
   };
 
+  const hasAnyComment = Boolean(classComment || studentComment);
+  const hasUnread = (Boolean(classComment) && !clsRead) || (Boolean(studentComment) && !stuRead);
+
   const renderCard = (
     title: string,
     subtitle: string,
@@ -190,47 +193,47 @@ export function StudentReadOnlyCommentsView({
     isRead: boolean,
     type: "CLASS" | "STUDENT"
   ) => (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-bold text-slate-800">{title}</h4>
+            <h4 className="text-sm font-bold text-slate-900">{title}</h4>
             {record && !isRead && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-700">
-                <span className="h-2 w-2 rounded-full bg-rose-600 animate-pulse" />
-                Nhận xét mới (NX-08)
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 border border-orange-200 px-2.5 py-0.5 text-[11px] font-bold text-[#EA580C]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#EA580C] animate-pulse" />
+                Nhận xét mới
               </span>
             )}
           </div>
-          <p className="text-[11px] text-slate-500">{subtitle}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>
         </div>
         {record && !isRead && (
           <button
             type="button"
             onClick={() => handleMarkRead(record.id, type)}
-            className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-all"
           >
-            <CheckCircle2 className="h-3.5 w-3.5" />
+            <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.75} />
             Đánh dấu đã đọc
           </button>
         )}
       </div>
 
       {record ? (
-        <div className="mt-3 space-y-2">
-          <p className="whitespace-pre-line rounded-lg bg-slate-50 p-3.5 text-xs leading-relaxed text-slate-700">
+        <div className="space-y-2.5">
+          <p className="whitespace-pre-line rounded-xl bg-slate-50/80 border border-slate-200/80 p-3.5 text-xs leading-relaxed text-slate-800">
             {record.content}
           </p>
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-1 font-medium text-indigo-600">
-              <Sparkles className="h-3.5 w-3.5" />
-              Người nhận xét: {record.authorName} ({record.authorRole})
+          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-[#EA580C]">
+              <Sparkles className="h-3.5 w-3.5 text-[#EA580C]" strokeWidth={1.75} />
+              Giáo viên nhận xét: {record.authorName} ({record.authorRole})
             </span>
             <span>Cập nhật: {new Date(record.updatedAt).toLocaleString("vi-VN")}</span>
           </div>
         </div>
       ) : (
-        <p className="mt-4 py-4 text-center text-xs italic text-slate-400">
+        <p className="py-6 text-center text-xs italic text-slate-400">
           Chưa có nhận xét cho kỳ báo cáo ({periodLabel}).
         </p>
       )}
@@ -238,21 +241,44 @@ export function StudentReadOnlyCommentsView({
   );
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {renderCard(
-        "1. Nhận xét chung của lớp (Chế độ chỉ đọc - NX-07)",
-        `Áp dụng cho toàn bộ học sinh trong lớp — Kỳ ${periodLabel}`,
-        classComment,
-        clsRead,
-        "CLASS"
+    <div className="space-y-4">
+      {/* NOTE THÔNG BÁO MỀM MẠI KHI CÓ NHẬN XÉT DÀNH CHO HỌC SINH */}
+      {hasAnyComment && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200/90 bg-amber-50/70 p-4 text-xs text-amber-900 shadow-none">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100/90 text-amber-700">
+            <Bell className="h-4 w-4" strokeWidth={1.75} />
+          </div>
+          <div className="flex-1 space-y-0.5">
+            <b className="text-xs font-bold text-amber-950">
+              {hasUnread
+                ? "Bạn có nhận xét mới từ Giáo viên bộ môn!"
+                : "Ghi chú & Nhận xét từ Giáo viên bộ môn"}
+            </b>
+            <p className="text-[11.5px] text-amber-800 leading-relaxed">
+              {hasUnread
+                ? "Thầy cô vừa gửi đánh giá kết quả làm bài thi IELTS của bạn cho kỳ này. Hãy đọc kỹ các lời khuyên bên dưới để khắc phục điểm yếu và nâng cao điểm Band nhé."
+                : "Dưới đây là toàn bộ nhận xét và định hướng ôn tập từ thầy cô dành riêng cho quá trình học tập của bạn."}
+            </p>
+          </div>
+        </div>
       )}
-      {renderCard(
-        "2. Nhận xét cá nhân từ Giáo viên / Quản nhiệm (Chế độ chỉ đọc - NX-07)",
-        `Đánh giá chuyên biệt cho kết quả của bạn — Kỳ ${periodLabel}`,
-        studentComment,
-        stuRead,
-        "STUDENT"
-      )}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {renderCard(
+          "1. Nhận xét chung của lớp",
+          `Áp dụng cho toàn bộ học sinh trong lớp — Kỳ ${periodLabel}`,
+          classComment,
+          clsRead,
+          "CLASS"
+        )}
+        {renderCard(
+          "2. Nhận xét cá nhân từ Giáo viên / Quản nhiệm",
+          `Đánh giá chuyên biệt cho kết quả của bạn — Kỳ ${periodLabel}`,
+          studentComment,
+          stuRead,
+          "STUDENT"
+        )}
+      </div>
     </div>
   );
 }

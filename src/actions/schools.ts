@@ -185,7 +185,7 @@ export async function getSchoolManagersAction() {
   }
 }
 
-// Tạo trường học mới - Bắt buộc Quản nhiệm, Đại diện BGH, SĐT và Địa chỉ
+// Tạo trường học mới - Quản nhiệm không bắt buộc; bắt buộc Đại diện BGH, SĐT và Địa chỉ
 export async function createSchoolAction(data: {
   code?: string;
   name: string;
@@ -199,9 +199,6 @@ export async function createSchoolAction(data: {
     const cleanName = data.name.trim();
     if (!cleanName) {
       return { success: false, error: "Tên trường học là bắt buộc!" };
-    }
-    if (!data.managerId) {
-      return { success: false, error: "Trường học bắt buộc phải có Quản nhiệm phụ trách!" };
     }
     if (!data.contactName?.trim()) {
       return { success: false, error: "Vui lòng nhập tên Đại diện BGH / Giáo vụ liên hệ!" };

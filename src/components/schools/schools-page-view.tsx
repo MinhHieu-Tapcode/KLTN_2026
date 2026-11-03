@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { Edit2, Eye, Search, Trash2 } from "lucide-react";
+import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   deleteSchoolAction,
@@ -22,7 +22,9 @@ import {
 export function SchoolsPageView({
   schools,
   managers = [],
+  currentUser,
   onRefresh,
+  onAdd,
   onEditSchool,
   onEditClass,
   onOpenAddClass,
@@ -196,17 +198,28 @@ export function SchoolsPageView({
           />
         </div>
 
-        {selectedIds.length > 0 && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleBatchDelete}
-            disabled={isDeleting}
-            className="rounded-xl shadow-sm"
-          >
-            <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) trường đã chọn
-          </Button>
-        )}
+        <div className="flex items-center gap-2.5">
+          {selectedIds.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBatchDelete}
+              disabled={isDeleting}
+              className="rounded-xl shadow-sm"
+            >
+              <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) trường đã chọn
+            </Button>
+          )}
+
+          {currentUser?.role === "ADMIN" && onAdd && (
+            <Button
+              onClick={onAdd}
+              className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
+            >
+              <Plus className="size-4 mr-1.5" /> Thêm trường học
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">

@@ -19,12 +19,17 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Clock,
-  Calendar,
   Layers,
   Music,
+  Edit3,
+  Sparkles,
 } from "lucide-react";
 import { createAssignmentAction } from "@/actions/assignments";
+import {
+  AssignmentConfigFields,
+  AssignmentConfigState,
+} from "./assignment-config-fields";
+import { validateAssignmentConfig } from "@/lib/assignment-config";
 
 interface MultiClassAssignmentModalProps {
   open: boolean;
@@ -32,6 +37,8 @@ interface MultiClassAssignmentModalProps {
   accessibleClasses: any[];
   currentUser: any;
   onSuccess: () => void;
+  onOpenManualBuilder?: (classIds: string[]) => void;
+  onOpenSmartParser?: (classIds: string[]) => void;
 }
 
 export function MultiClassAssignmentModal({
@@ -40,6 +47,8 @@ export function MultiClassAssignmentModal({
   accessibleClasses,
   currentUser,
   onSuccess,
+  onOpenManualBuilder,
+  onOpenSmartParser,
 }: MultiClassAssignmentModalProps) {
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [searchClassQuery, setSearchClassQuery] = useState("");
@@ -50,16 +59,23 @@ export function MultiClassAssignmentModal({
   const [description, setDescription] = useState("");
   const [skill, setSkill] = useState<string>("READING");
   const [type, setType] = useState<string>("HOMEWORK");
-  const [durationMinutes, setDurationMinutes] = useState<number>(60);
-  const [dueDate, setDueDate] = useState<string>("");
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [enableProctoring, setEnableProctoring] = useState<boolean>(true);
   const [maxTabSwitches, setMaxTabSwitches] = useState<number>(3);
 
+  // Bộ cấu hình thống nhất CR-02
+  const [config, setConfig] = useState<AssignmentConfigState>({
+    durationMinutes: 60,
+    startDate: "",
+    dueDate: "",
+    maxAttempts: 1,
+    answerVisibility: "AFTER_SUBMIT",
+    answerVisibleAt: "",
+  });
+
   const [errorMessage, setErrorMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  // Danh sách các trình độ từ classes
   const uniqueLevels = Array.from(
     new Set(accessibleClasses.map((c) => c.program || c.level || "IELTS").filter(Boolean))
   );
@@ -106,14 +122,19 @@ export function MultiClassAssignmentModal({
       return;
     }
 
+    const valResult = validateAssignmentConfig(config);
+    if (valResult.error) {
+      setErrorMessage(valResult.error);
+      return;
+    }
+
     startTransition(async () => {
-      // Khởi tạo câu hỏi mẫu ban đầu
       const initialQuestions = [
         {
           questionNumber: 1,
           prompt:
             skill === "WRITING"
-              ? "Viết bài luận tối thiểu 250 từ theo đề bài."
+              ? "Viết bài luận theo đề bài yêu cầu."
               : skill === "SPEAKING"
               ? "Ghi âm bài nói theo chủ đề được giao."
               : "Câu hỏi 1: Lựa chọn đáp án đúng nhất.",
@@ -138,25 +159,29 @@ export function MultiClassAssignmentModal({
         },
       ];
 
-      // Tạo 1 bản ghi Assignment gốc và liên kết sang nhiều lớp qua bảng AssignmentClass
       const res = await createAssignmentAction({
         targetClassIds: selectedClassIds,
         title: title.trim(),
         description: description.trim() || undefined,
         skill,
         type,
-        durationMinutes: Number(durationMinutes) || 60,
-        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+        durationMinutes: config.durationMinutes || 60,
+        startDate: config.startDate || null,
+        dueDate: config.dueDate ? new Date(config.dueDate).toISOString() : null,
+        maxAttempts: valResult.maxAttempts,
+        answerVisibility: valResult.answerVisibility,
+        answerVisibleAt: valResult.answerVisibleAt ? valResult.answerVisibleAt.toISOString() : null,
         audioUrl: audioUrl.trim() || null,
         enableProctoring,
         maxTabSwitches: Number(maxTabSwitches) || 3,
         questions: initialQuestions,
       });
+
       if (res.success) {
         onOpenChange(false);
         onSuccess();
       } else {
-        setErrorMessage(res.error || "Giao bài tập đa lớp thất bại!");
+        setErrorMessage(res.error || "Giao bài tập thất bại!");
       }
     });
   };
@@ -166,10 +191,10 @@ export function MultiClassAssignmentModal({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-6">
         <DialogHeader>
           <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <Layers className="size-5 text-[#EA580C]" /> Giao bài tập cho nhiều lớp học (Cửa 2)
+            <Layers className="size-5 text-[#EA580C]" /> Giao bài tập
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
-            Soạn thông tin đề thi và tích chọn các lớp học mục tiêu để giao bài cùng lúc.
+            Chọn một hoặc nhiều lớp học mục tiêu và cấu hình thông tin đề thi để giao bài.
           </DialogDescription>
         </DialogHeader>
 
@@ -271,7 +296,48 @@ export function MultiClassAssignmentModal({
             </div>
           </div>
 
-          {/* BƯỚC 2: THÔNG TIN BÀI TẬP */}
+          {/* CHUYỂN NHANH SANG SOẠN THỦ CÔNG HOẶC BÓC TÁCH EBOOK CHO CÁC LỚP ĐÃ CHỌN */}
+          {(onOpenManualBuilder || onOpenSmartParser) && (
+            <div className="p-3 rounded-xl border border-orange-200 bg-orange-50/40 space-y-2">
+              <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                Hoặc chọn phương thức soạn đề nâng cao cho các lớp đã chọn:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {onOpenManualBuilder && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={selectedClassIds.length === 0}
+                    onClick={() => {
+                      onOpenChange(false);
+                      onOpenManualBuilder(selectedClassIds);
+                    }}
+                    className="h-8.5 justify-start text-xs border-orange-200 hover:bg-orange-100/60 font-semibold text-slate-800"
+                  >
+                    <Edit3 className="size-3.5 text-[#EA580C] mr-1.5" /> Soạn bài tập thủ công (Studio)
+                  </Button>
+                )}
+                {onOpenSmartParser && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={selectedClassIds.length === 0}
+                    onClick={() => {
+                      onOpenChange(false);
+                      onOpenSmartParser(selectedClassIds);
+                    }}
+                    className="h-8.5 justify-start text-xs border-orange-200 hover:bg-orange-100/60 font-semibold text-[#EA580C]"
+                  >
+                    <Sparkles className="size-3.5 text-[#EA580C] mr-1.5" /> Bóc tách đề thi từ Ebook / PDF
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* BƯỚC 2: THÔNG TIN VÀ CẤU HÌNH GIAO BÀI TẬP */}
           <div className="space-y-3 pt-1">
             <div>
               <Label className="text-xs font-semibold text-slate-700">
@@ -281,7 +347,7 @@ export function MultiClassAssignmentModal({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="VD: Reading Mini Test 01 - Passage 1"
-                className="h-8.5 text-xs rounded-xl mt-1"
+                className="h-8.5 text-xs rounded-xl mt-1 bg-white"
               />
             </div>
 
@@ -297,7 +363,6 @@ export function MultiClassAssignmentModal({
                   <option value="LISTENING">🎧 Listening (Nghe)</option>
                   <option value="WRITING">✍️ Writing (Viết)</option>
                   <option value="SPEAKING">🎙️ Speaking (Nói)</option>
-                  <option value="ALL_SKILLS">🌐 Full 4 Kỹ năng</option>
                 </select>
               </div>
 
@@ -329,35 +394,13 @@ export function MultiClassAssignmentModal({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                  <Clock className="size-3.5 text-slate-500" /> Thời lượng (phút)
-                </Label>
-                <Input
-                  type="number"
-                  min={5}
-                  max={240}
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                  className="h-8.5 text-xs rounded-xl mt-1"
-                />
-              </div>
+            {/* BỘ CẤU HÌNH THỜI GIAN, SỐ LẦN LÀM, VÀ ĐÁP ÁN (CR-02) */}
+            <AssignmentConfigFields
+              config={config}
+              onChange={(patch) => setConfig((prev) => ({ ...prev, ...patch }))}
+            />
 
-              <div>
-                <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                  <Calendar className="size-3.5 text-slate-500" /> Hạn nộp bài
-                </Label>
-                <Input
-                  type="datetime-local"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="h-8.5 text-xs rounded-xl mt-1"
-                />
-              </div>
-            </div>
-
-            {/* Giám sát chuyển tab */}
+            {/* Giám sát Out Tab */}
             <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -366,11 +409,13 @@ export function MultiClassAssignmentModal({
                   onChange={(e) => setEnableProctoring(e.target.checked)}
                   className="size-4 rounded accent-[#EA580C] cursor-pointer"
                 />
-                <span className="font-semibold text-slate-800">Ghi nhận số lần rời tab vào bài làm</span>
+                <span className="font-semibold text-slate-800">
+                  Ghi nhận hành vi Out Tab (rời màn hình làm bài)
+                </span>
               </label>
               {enableProctoring && (
                 <span className="text-emerald-700 font-medium text-[11px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  Tự động ghi nhận (không tự động thu bài)
+                  Tự động ghi nhận (tối đa 3 lần cảnh báo)
                 </span>
               )}
             </div>

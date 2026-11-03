@@ -30,7 +30,7 @@ export interface SpeakingAudioTranscriptBarProps {
 }
 
 const WAVE_BARS = Array.from({ length: 68 }, (_, i) =>
-  Math.round(10 + Math.abs(Math.sin(i * 0.7) * Math.cos(i * 0.23)) * 32)
+  Math.round(8 + Math.abs(Math.sin(i * 0.7) * Math.cos(i * 0.23)) * 28)
 );
 
 export function SpeakingAudioTranscriptBar({
@@ -125,13 +125,17 @@ export function SpeakingAudioTranscriptBar({
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-2xs sticky top-0 z-20 space-y-3">
+    <div className="bg-white border border-orange-200/80 rounded-2xl p-3.5 sm:px-5 shadow-2xs sticky top-0 z-20 space-y-2.5">
       {audioUrl && (
         <audio
           ref={audioRef}
           src={audioUrl}
           onLoadedMetadata={() => {
-            if (audioRef.current && Number.isFinite(audioRef.current.duration) && audioRef.current.duration > 1) {
+            if (
+              audioRef.current &&
+              Number.isFinite(audioRef.current.duration) &&
+              audioRef.current.duration > 1
+            ) {
               setDurationSec(Math.round(audioRef.current.duration));
             }
           }}
@@ -141,14 +145,14 @@ export function SpeakingAudioTranscriptBar({
       )}
 
       {/* Hàng 1: Nút Play + Thanh sóng âm (Waveform) + Thời gian + Nút tạo Transcript */}
-      <div className="flex items-center gap-3.5 flex-wrap sm:flex-nowrap">
+      <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
         <button
           type="button"
           onClick={handleTogglePlay}
-          className="size-11 rounded-full bg-[#EA580C] hover:bg-[#c2410c] text-white flex items-center justify-center shrink-0 shadow-xs transition"
+          className="size-10 rounded-full bg-[#EA580C] hover:bg-[#c2410c] text-white flex items-center justify-center shrink-0 shadow-xs transition"
           title={isPlaying ? "Tạm dừng" : "Phát bản ghi âm của học viên"}
         >
-          {isPlaying ? <Pause className="size-4.5" /> : <Play className="size-4.5 ml-0.5" />}
+          {isPlaying ? <Pause className="size-4" /> : <Play className="size-4 ml-0.5" />}
         </button>
 
         <div
@@ -157,7 +161,7 @@ export function SpeakingAudioTranscriptBar({
             const ratio = (e.clientX - rect.left) / Math.max(1, rect.width);
             handleSeek(ratio * durationSec);
           }}
-          className="flex-1 flex items-center gap-[2px] h-11 cursor-pointer select-none px-1"
+          className="flex-1 flex items-center gap-[2px] h-9 cursor-pointer select-none px-2 py-1 rounded-xl bg-[#FFF7ED]/70 border border-orange-100"
           title="Nhấn vào sóng âm để tua đến vị trí bất kỳ"
         >
           {WAVE_BARS.map((h, idx) => {
@@ -167,14 +171,14 @@ export function SpeakingAudioTranscriptBar({
                 key={idx}
                 style={{ height: `${h}px` }}
                 className={`flex-1 rounded-xs transition-colors ${
-                  played ? "bg-[#EA580C]" : "bg-slate-300 hover:bg-slate-400"
+                  played ? "bg-[#EA580C]" : "bg-orange-200/70 hover:bg-orange-300"
                 }`}
               />
             );
           })}
         </div>
 
-        <div className="text-xs font-mono font-bold text-slate-500 w-22 text-right shrink-0">
+        <div className="text-xs font-mono font-extrabold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg shrink-0">
           {formatClock(currentTimeSec)} / {formatClock(durationSec)}
         </div>
 
@@ -184,58 +188,93 @@ export function SpeakingAudioTranscriptBar({
             size="sm"
             disabled={isGenerating}
             onClick={handleGenerateTranscript}
-            className="h-9 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold gap-1.5 shrink-0"
+            className="h-9 px-3.5 rounded-xl bg-[#EA580C] hover:bg-[#c2410c] text-white text-xs font-bold gap-1.5 shrink-0 shadow-xs"
           >
             {isGenerating ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Sparkles className="size-3.5" />
             )}
-            <span>{isGenerating ? "Đang tạo bản ghi..." : "Tạo bản ghi chữ (AI)"}</span>
+            <span>{isGenerating ? "Đang phân tích AI..." : "Bóc tách chữ (AI Whisper)"}</span>
           </Button>
         )}
       </div>
 
       {transcribeError && (
-        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
+        <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
           <AlertTriangle className="size-4 text-rose-600 shrink-0" />
           <span>{transcribeError}</span>
         </div>
       )}
 
-      {/* Hàng 2: Cảnh báo AI Whisper + Sửa văn bản + Công tắc duyệt cho học sinh xem */}
+      {/* Hàng 2: Thanh công cụ gọn trên 1 hàng duy nhất */}
       {transcript && (
-        <div className="space-y-2.5 pt-1 border-t border-slate-100">
-          <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-start gap-2 leading-relaxed">
-              <AlertTriangle className="size-4 text-amber-700 shrink-0 mt-0.5" />
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+              <Sparkles className="size-3.5 text-[#EA580C] shrink-0" />
               <span>
-                Bản ghi chữ do AI (Whisper) tạo theo yêu cầu, <b>có thể bỏ sót từ đệm hoặc nghe nhầm từ phát âm sai</b>. Hãy dùng làm tham chiếu và bấm vào từng từ để nghe lại audio.
+                Bản ghi AI Whisper (tham chiếu) · <b className="text-slate-700">Nhấn vào từng từ</b> dưới bài để nghe lại đúng mốc giây
               </span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
                 onClick={() => setIsEditingText((v) => !v)}
-                className="px-2.5 py-1 rounded-lg border border-amber-300 bg-white hover:bg-amber-50 text-amber-900 text-[11px] font-bold flex items-center gap-1"
+                className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1 transition ${
+                  isEditingText
+                    ? "border-[#EA580C] bg-[#FFF7ED] text-[#EA580C]"
+                    : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                }`}
               >
                 <Edit3 className="size-3" />
-                <span>{isEditingText ? "Đóng sửa" : "Sửa bản ghi"}</span>
+                <span>{isEditingText ? "Đóng sửa chữ" : "Sửa bản ghi"}</span>
               </button>
+
               <button
                 type="button"
                 disabled={isGenerating}
                 onClick={handleGenerateTranscript}
-                className="px-2.5 py-1 rounded-lg border border-amber-300 bg-white hover:bg-amber-50 text-amber-900 text-[11px] font-bold flex items-center gap-1"
+                className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center gap-1 transition"
+                title="Chạy lại AI Whisper"
               >
-                <RefreshCw className={`size-3 ${isGenerating ? "animate-spin" : ""}`} />
+                <RefreshCw className={`size-3 ${isGenerating ? "animate-spin text-[#EA580C]" : ""}`} />
                 <span>Tạo lại</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onChangeTranscript({
+                    ...transcript,
+                    isVisibleToStudent: !transcript.isVisibleToStudent,
+                  })
+                }
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border flex items-center gap-1 transition ${
+                  transcript.isVisibleToStudent
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/70"
+                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                }`}
+                title="Bật/tắt hiển thị bản phiên âm cho học viên khi xem kết quả"
+              >
+                {transcript.isVisibleToStudent ? (
+                  <>
+                    <Eye className="size-3 text-emerald-600" />
+                    <span>HV được xem chữ</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="size-3 text-slate-500" />
+                    <span>Đang ẩn chữ với HV</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
 
           {isEditingText && (
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="p-3 rounded-xl bg-[#FFF7ED]/60 border border-orange-200 space-y-2">
               <label className="text-[11px] font-bold text-slate-700 block">
                 Chỉnh sửa văn bản phiên âm (nếu AI nghe nhầm từ):
               </label>
@@ -243,7 +282,7 @@ export function SpeakingAudioTranscriptBar({
                 rows={3}
                 value={draftText}
                 onChange={(e) => setDraftText(e.target.value)}
-                className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#EA580C]"
+                className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EA580C]"
               />
               <div className="flex justify-end gap-2">
                 <Button
@@ -261,49 +300,11 @@ export function SpeakingAudioTranscriptBar({
                   onClick={handleSaveEditedText}
                   className="h-7 text-xs rounded-lg bg-[#EA580C] hover:bg-[#c2410c] text-white gap-1"
                 >
-                  <Check className="size-3" /> Cập nhật văn bản
+                  <Check className="size-3" /> Lưu văn bản
                 </Button>
               </div>
             </div>
           )}
-
-          {/* Công tắc cho phép học viên xem bản phiên âm */}
-          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-            <div className="flex items-center gap-2 text-slate-700">
-              {transcript.isVisibleToStudent ? (
-                <Eye className="size-4 text-emerald-600 shrink-0" />
-              ) : (
-                <EyeOff className="size-4 text-slate-400 shrink-0" />
-              )}
-              <div>
-                <b className="text-slate-900">
-                  Hiển thị bản ghi chữ & ghi chú trực tiếp cho học viên xem
-                </b>
-                <span className="block text-[11px] text-slate-500">
-                  {transcript.isVisibleToStudent
-                    ? "Đang bật: Học viên sẽ thấy bản ghi chữ kèm các vết sửa lỗi khi xem lại bài."
-                    : "Đang tắt: Học viên chỉ thấy file ghi âm, bảng điểm 4 tiêu chí và nhận xét."}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                onChangeTranscript({
-                  ...transcript,
-                  isVisibleToStudent: !transcript.isVisibleToStudent,
-                })
-              }
-              className={`px-3 py-1.5 rounded-xl font-bold text-xs border transition shrink-0 ${
-                transcript.isVisibleToStudent
-                  ? "bg-emerald-600 text-white border-emerald-600"
-                  : "bg-white text-slate-600 border-slate-300 hover:bg-slate-100"
-              }`}
-            >
-              {transcript.isVisibleToStudent ? "Cho học viên xem" : "Ẩn với học viên"}
-            </button>
-          </div>
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { Search, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteUserAction, deleteMultipleUsersAction } from "@/actions/users";
 import { ConfirmDialog } from "@/components/shared/common-widgets";
@@ -11,6 +11,7 @@ export function UsersPageView({
   users,
   currentUser,
   onRefresh,
+  onOpenAddUser,
   onEditUser,
   onViewUser,
 }: {
@@ -168,7 +169,7 @@ export function UsersPageView({
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           {selectedIds.length > 0 && (
             <Button
               variant="destructive"
@@ -178,6 +179,15 @@ export function UsersPageView({
               className="rounded-xl shadow-sm"
             >
               <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) người dùng đã chọn
+            </Button>
+          )}
+
+          {(currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && onOpenAddUser && (
+            <Button
+              onClick={onOpenAddUser}
+              className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
+            >
+              <Plus className="size-4 mr-1.5" /> Thêm người dùng
             </Button>
           )}
         </div>

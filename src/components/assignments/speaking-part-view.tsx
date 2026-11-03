@@ -1,37 +1,83 @@
 "use client";
+
 import React, { useState, useEffect, useRef } from "react";
-import { Mic, Square, Play, Pause, RotateCcw, Clock, User, Volume2 } from "lucide-react";
+import { Mic, Square, Play, Pause, Clock, User, Upload, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { uploadMaterialFileClient } from "@/lib/upload-material-client";
+
 interface SpeakingPartViewProps {
   part: "PART_1" | "PART_2" | "PART_3";
   questionText: string;
+  imageUrl?: string | null;
   cueCardBulletPoints?: string[];
-  onRecordingComplete?: (audioBlob: Blob, durationSec: number, dataUrl?: string) => void;
+  initialAudioUrl?: string | null;
+  onRecordingComplete?: (audioBlob: Blob | null, durationSec: number, dataUrl?: string) => void;
   disabled?: boolean;
 }
+
+function parseCueCardFromText(rawText: string, explicitBullets?: string[]) {
+  if (explicitBullets && explicitBullets.length > 0) {
+    return { mainTopic: rawText, bullets: explicitBullets };
+  }
+  const lines = (rawText || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const bullets: string[] = [];
+  const topicLines: string[] = [];
+
+  for (const line of lines) {
+    if (/^(?:[-•*]|you should say)/i.test(line)) {
+      if (!/^you should say/i.test(line)) {
+        bullets.push(line.replace(/^[-•*]\s*/, ""));
+      }
+    } else if (bullets.length > 0 && /^and explain/i.test(line)) {
+      bullets.push(line);
+    } else {
+      topicLines.push(line);
+    }
+  }
+
+  return {
+    mainTopic: topicLines.join(" ") || "Talk about a place you would like to visit.",
+    bullets:
+      bullets.length > 0
+        ? bullets
+        : [
+            "Where it is",
+            "What you can do there",
+            "Who you would go with",
+            "And explain why you like it",
+          ],
+  };
+}
+
 export function SpeakingPartView({
   part,
   questionText,
-  cueCardBulletPoints = [
-    "Who the person is",
-    "When you met them",
-    "Why they inspired you",
-    "And explain how they have influenced you",
-  ],
+  imageUrl,
+  cueCardBulletPoints,
+  initialAudioUrl,
   onRecordingComplete,
   disabled = false,
 }: SpeakingPartViewProps) {
   const [isRecording, setIsRecording] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(initialAudioUrl || null);
   const [isPlayingBack, setIsPlayingBack] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const [prepTimeLeft, setPrepTimeLeft] = useState(60);
   const [speakTimeLeft, setSpeakTimeLeft] = useState(120);
   const [cuePhase, setCuePhase] = useState<"PREP" | "SPEAK">("PREP");
   const [notes, setNotes] = useState("");
+
+  const { mainTopic, bullets } = parseCueCardFromText(questionText, cueCardBulletPoints);
+
   useEffect(() => {
     if (part !== "PART_2") return;
     const interval = setInterval(() => {
@@ -49,6 +95,7 @@ export function SpeakingPartView({
     }, 1000);
     return () => clearInterval(interval);
   }, [part, cuePhase]);
+
   useEffect(() => {
     let timer: any = null;
     if (isRecording) {
@@ -58,6 +105,32 @@ export function SpeakingPartView({
     }
     return () => clearInterval(timer);
   }, [isRecording]);
+
+  const saveAudioBlobToServer = async (blob: Blob, duration: number) => {
+    setIsUploadingAudio(true);
+    const file = new File([blob], `speaking_response_${Date.now()}.webm`, {
+      type: blob.type || "audio/webm",
+    });
+    const res = await uploadMaterialFileClient(file);
+    setIsUploadingAudio(false);
+
+    if (res.success && res.fileUrl) {
+      setAudioUrl(res.fileUrl);
+      onRecordingComplete?.(blob, duration, res.fileUrl);
+      return;
+    }
+
+    // Dự phòng nếu mất mạng tạm thời
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const fallbackUrl =
+        typeof reader.result === "string" ? reader.result : URL.createObjectURL(blob);
+      setAudioUrl(fallbackUrl);
+      onRecordingComplete?.(blob, duration, fallbackUrl);
+    };
+    reader.readAsDataURL(blob);
+  };
+
   const startRecording = async () => {
     if (disabled) return;
     try {
@@ -70,16 +143,11 @@ export function SpeakingPartView({
       };
       recorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const dataUrl = typeof reader.result === "string" ? reader.result : URL.createObjectURL(audioBlob);
-          setAudioUrl(dataUrl);
-          onRecordingComplete?.(audioBlob, recordSeconds, dataUrl);
-        };
-        reader.readAsDataURL(audioBlob);
+        saveAudioBlobToServer(audioBlob, recordSeconds);
       };
       recorder.start();
       setIsRecording(true);
+      setCuePhase("SPEAK");
       setRecordSeconds(0);
       setAudioUrl(null);
     } catch {
@@ -87,6 +155,7 @@ export function SpeakingPartView({
       setRecordSeconds(0);
     }
   };
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       mediaRecorderRef.current.stop();
@@ -94,156 +163,196 @@ export function SpeakingPartView({
     }
     setIsRecording(false);
   };
+
+  const handleUploadAudioFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingAudio(true);
+    const res = await uploadMaterialFileClient(file);
+    setIsUploadingAudio(false);
+    if (res.success && res.fileUrl) {
+      setAudioUrl(res.fileUrl);
+      onRecordingComplete?.(file, 60, res.fileUrl);
+    }
+    e.target.value = "";
+  };
+
   const formatTimer = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   };
+
   return (
     <div className="space-y-4">
-      {/* 4.1 Part 1 & Part 3 (Q&A) */}
       {part !== "PART_2" ? (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 pb-1 border-b border-slate-200">
-            <span className="px-2.5 py-1 rounded-md bg-[#EA580C] text-white font-bold text-xs uppercase tracking-wider">
-              {part === "PART_1" ? "4.1 Part 1 (Q&A Phỏng vấn)" : "4.1 Part 3 (Q&A Thảo luận chuyên sâu)"}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#EA580C] text-white font-bold text-[11px]">
+              Speaking
+            </span>
+            <span className="text-xs font-extrabold text-slate-900">
+              {part === "PART_1" ? "Part 1 — Introduction & Interview" : "Part 3 — Two-way Discussion"}
             </span>
           </div>
-          {/* Bong bóng câu hỏi Giám khảo (Examiner) */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-start gap-3">
-            <div className="size-8 rounded-full bg-slate-900 text-white flex items-center justify-center shrink-0">
+          <div className="p-4 rounded-2xl bg-[#FFF7ED] border border-orange-200/80 flex items-start gap-3">
+            <div className="size-9 rounded-full bg-[#EA580C] text-white flex items-center justify-center shrink-0">
               <User className="size-4" />
             </div>
             <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                Examiner (Giám khảo)
+              <span className="text-[11px] font-bold text-[#EA580C] uppercase tracking-wider block mb-0.5">
+                Examiner Question
               </span>
-              <p className="text-xs sm:text-sm font-semibold text-slate-900 leading-relaxed font-sans">
+              <p className="text-sm font-bold text-slate-900 leading-relaxed">
                 {questionText || "Do you live in a house or an apartment? Why do you prefer it?"}
               </p>
             </div>
           </div>
         </div>
       ) : (
-        /* 4.2 Part 2 (Cue Card) */
+        /* GIAO DIỆN PART 2 - CUE CARD CHUẨN SIMPACE */
         <div className="space-y-4">
-          <div className="flex items-center justify-between pb-1 border-b border-slate-200">
-            <span className="px-2.5 py-1 rounded-md bg-[#EA580C] text-white font-bold text-xs uppercase tracking-wider">
-              4.2 Part 2 (Cue Card - Thuyết trình độc thoại)
+          <div className="space-y-1">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#EA580C] text-white font-bold text-[11px]">
+              Speaking
             </span>
+            <h3 className="text-base font-extrabold text-slate-900 pt-0.5">Part 2 – Cue Card</h3>
+            <p className="text-xs text-slate-500">
+              Your cue card is below. You have 1 minute to prepare and up to 2 minutes to speak.
+            </p>
           </div>
-          {/* 2 Đồng hồ đếm ngược */}
-          <div className="grid grid-cols-2 gap-3">
-            <div
-              className={`p-3 rounded-xl border text-center transition-all ${
-                cuePhase === "PREP"
-                  ? "bg-amber-50 border-amber-300 shadow-sm ring-1 ring-amber-400/30"
-                  : "bg-slate-50 border-slate-200 opacity-60"
-              }`}
-            >
-              <div className="text-[11px] font-bold text-slate-600 flex items-center justify-center gap-1 mb-1">
-                <Clock className="size-3 text-amber-600" /> Thời gian chuẩn bị
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
+            {/* Khung trái: Thẻ Cue Card nền cam nhạt (kèm ảnh nếu có) */}
+            <div className="md:col-span-8 p-5 rounded-2xl bg-[#FFF7ED] border border-orange-200/80 space-y-3">
+              <div className="flex flex-col sm:flex-row gap-4 items-start">
+                {imageUrl && (
+                  <img
+                    src={imageUrl}
+                    alt="Cue card topic"
+                    className="w-full sm:w-40 h-32 object-cover rounded-xl border border-orange-200 shrink-0"
+                  />
+                )}
+                <div className="space-y-2 flex-1">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#EA580C]">
+                    Cue Card Topic
+                  </span>
+                  <h4 className="font-extrabold text-sm text-slate-900 leading-snug">{mainTopic}</h4>
+                  <p className="text-xs font-semibold text-slate-700">You should say:</p>
+                  <ul className="text-xs text-slate-800 space-y-1 pl-4 list-disc leading-relaxed">
+                    {bullets.map((pt, idx) => (
+                      <li key={idx}>{pt}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <div className="text-base font-extrabold font-mono text-amber-700">
-                {formatTimer(prepTimeLeft)}
+
+              <div className="pt-2 border-t border-orange-200/60">
+                <textarea
+                  disabled={disabled}
+                  maxLength={250}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ghi chú nhanh từ khóa trong 1 phút chuẩn bị (Notes / Scratchpad)..."
+                  rows={2}
+                  className="w-full p-2.5 text-xs rounded-xl border border-orange-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#EA580C] resize-none"
+                />
               </div>
             </div>
-            <div
-              className={`p-3 rounded-xl border text-center transition-all ${
-                cuePhase === "SPEAK"
-                  ? "bg-emerald-50 border-emerald-300 shadow-sm ring-1 ring-emerald-400/30"
-                  : "bg-slate-50 border-slate-200 opacity-60"
-              }`}
-            >
-              <div className="text-[11px] font-bold text-slate-600 flex items-center justify-center gap-1 mb-1">
-                <Mic className="size-3 text-emerald-600" /> Thời gian nói
+
+            {/* Khung phải: Đồng hồ tròn SIMPACE */}
+            <div className="md:col-span-4 flex flex-col items-center justify-center p-4">
+              <div className="size-36 rounded-full border-8 border-orange-100 border-t-[#EA580C] border-r-[#EA580C] flex flex-col items-center justify-center bg-white shadow-sm">
+                <span className="text-2xl font-extrabold font-mono text-slate-900">
+                  {isRecording
+                    ? formatTimer(recordSeconds)
+                    : cuePhase === "PREP"
+                    ? formatTimer(prepTimeLeft)
+                    : formatTimer(speakTimeLeft)}
+                </span>
+                <span className="text-[11px] font-semibold text-slate-500 mt-0.5">
+                  {isRecording
+                    ? "Recording..."
+                    : cuePhase === "PREP"
+                    ? "Preparation"
+                    : "Speaking Time"}
+                </span>
               </div>
-              <div className="text-base font-extrabold font-mono text-emerald-700">
-                {formatTimer(speakTimeLeft)}
-              </div>
+              {cuePhase === "PREP" && !isRecording && (
+                <button
+                  type="button"
+                  onClick={() => setCuePhase("SPEAK")}
+                  className="mt-2 text-[11px] font-semibold text-[#EA580C] hover:underline"
+                >
+                  Bỏ qua chuẩn bị → Bắt đầu nói ngay
+                </button>
+              )}
             </div>
-          </div>
-          {/* Thẻ đề bài Cue Card */}
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2.5 shadow-2xs font-serif">
-            <h4 className="font-sans font-bold text-sm text-slate-900 border-b border-slate-100 pb-2">
-              {questionText || "Describe a person who inspired you."}
-            </h4>
-            <p className="text-xs text-slate-600 font-sans italic">You should say:</p>
-            <ul className="text-xs text-slate-800 space-y-1 pl-4 list-disc font-sans leading-relaxed">
-              {cueCardBulletPoints.map((pt, idx) => (
-                <li key={idx}>{pt}</li>
-              ))}
-            </ul>
-          </div>
-          {/* Khung ghi chú nháp (Scratchpad) */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
-              <span>Ghi chú nháp (Scratchpad):</span>
-              <span className="font-mono text-slate-400">{notes.length}/200</span>
-            </div>
-            <textarea
-              disabled={disabled}
-              maxLength={200}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Viết các ý chính hoặc từ khóa chuẩn bị tại đây..."
-              rows={3}
-              className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#EA580C] resize-none"
-            />
           </div>
         </div>
       )}
 
-      {/* Khung ghi âm micro dùng chung cho cả Part 1, Part 2 và Part 3 */}
-      <div className="p-5 rounded-2xl border border-slate-200 bg-white text-center space-y-3.5 shadow-2xs">
-        <div className="flex items-center justify-center gap-1.5 h-12">
-          {[4, 8, 14, 22, 16, 26, 12, 18, 24, 10, 6, 16, 20, 8].map((height, i) => (
-            <div
-              key={i}
-              style={{
-                height: isRecording
-                  ? `${Math.max(6, (height * ((recordSeconds % 3) + 1)) % 32)}px`
-                  : "6px",
-              }}
-              className={`w-1 rounded-full transition-all duration-200 ${
-                isRecording ? "bg-[#EA580C]" : "bg-slate-200"
-              }`}
-            />
-          ))}
+      {/* Thanh điều khiển Ghi âm & Tải file âm thanh */}
+      <div className="p-4 rounded-2xl border border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 h-8 px-3 rounded-xl bg-slate-50 border border-slate-200">
+            {[6, 12, 20, 14, 24, 10, 18, 22, 12, 8].map((h, i) => (
+              <div
+                key={i}
+                style={{
+                  height: isRecording
+                    ? `${Math.max(5, (h * ((recordSeconds % 3) + 1)) % 24)}px`
+                    : "5px",
+                }}
+                className={`w-1 rounded-full transition-all ${
+                  isRecording ? "bg-[#EA580C]" : "bg-slate-300"
+                }`}
+              />
+            ))}
+          </div>
+          <div className="text-xs">
+            {isUploadingAudio ? (
+              <span className="font-bold text-[#EA580C] flex items-center gap-1.5">
+                <Loader2 className="size-3.5 animate-spin" /> Đang lưu bản thu âm...
+              </span>
+            ) : isRecording ? (
+              <span className="font-bold text-[#EA580C] animate-pulse">
+                ● Đang thu âm ({formatTimer(recordSeconds)})
+              </span>
+            ) : audioUrl ? (
+              <span className="font-bold text-emerald-700">
+                ✓ Đã lưu bản thu âm trả lời
+              </span>
+            ) : (
+              <span className="text-slate-600 font-medium">
+                Bấm <b>Start Speaking</b> để thu âm hoặc tải file ghi âm lên
+              </span>
+            )}
+          </div>
         </div>
-        <div className="text-xs font-semibold text-slate-600">
-          {isRecording ? (
-            <span className="text-[#EA580C] animate-pulse font-bold">● Đang ghi âm bài nói...</span>
-          ) : audioUrl ? (
-            <span className="text-emerald-700 font-bold">Đã ghi âm xong bài nói</span>
-          ) : (
-            <span>Nhấn nút bên dưới để bắt đầu thu âm trả lời</span>
-          )}
-        </div>
-        <div className="text-sm font-mono font-bold text-slate-800">
-          {formatTimer(recordSeconds)} / 02:00
-        </div>
-        <div className="flex items-center justify-center gap-2 pt-1">
+
+        <div className="flex items-center gap-2 flex-wrap justify-center">
           {!isRecording ? (
             <Button
               type="button"
               onClick={startRecording}
-              disabled={disabled}
-              className="bg-[#EA580C] hover:bg-[#c2410c] text-white text-xs font-bold rounded-xl px-4 py-2 gap-1.5 shadow-sm"
+              disabled={disabled || isUploadingAudio}
+              className="bg-[#EA580C] hover:bg-[#c2410c] text-white text-xs font-bold rounded-xl px-5 h-9 gap-1.5 shadow-sm"
             >
               <Mic className="size-3.5" />
-              Bắt đầu ghi âm
+              {audioUrl ? "Thu âm lại" : "Start Speaking"}
             </Button>
           ) : (
             <Button
               type="button"
               onClick={stopRecording}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl px-4 py-2 gap-1.5 shadow-sm"
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl px-5 h-9 gap-1.5 shadow-sm"
             >
               <Square className="size-3.5 fill-white" />
-              Dừng ghi âm
+              Dừng & Lưu bài nói
             </Button>
           )}
+
           {audioUrl && !isRecording && (
             <Button
               type="button"
@@ -259,13 +368,28 @@ export function SpeakingPartView({
                   }
                 }
               }}
-              className="border-slate-300 text-xs font-semibold rounded-xl px-3 gap-1.5 text-slate-700 hover:bg-slate-50"
+              className="border-slate-300 text-xs font-semibold rounded-xl px-3 h-9 gap-1.5 text-slate-700"
             >
               {isPlayingBack ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
               {isPlayingBack ? "Tạm dừng" : "Nghe lại"}
             </Button>
           )}
+
+          {!isRecording && (
+            <label className="px-3 h-9 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition">
+              <Upload className="size-3.5 text-slate-500" />
+              <span>Tải file âm thanh</span>
+              <input
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a,.webm"
+                className="hidden"
+                disabled={disabled || isUploadingAudio}
+                onChange={handleUploadAudioFile}
+              />
+            </label>
+          )}
         </div>
+
         {audioUrl && (
           <audio
             ref={playbackAudioRef}

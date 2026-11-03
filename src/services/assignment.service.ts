@@ -19,6 +19,8 @@ import {
   buildWordTokensFromRawText,
 } from "@/lib/ielts-report-config";
 import { resolveIeltsQuestionType } from "./assignment-mutation.service";
+import { canStudentViewAnswers } from "@/lib/assignment-config";
+import { createNotifications } from "./notification.service";
 
 const DEMO_STORE_VERSION = "v2026-reports-v3";
 
@@ -1126,7 +1128,8 @@ function resolveLegacyShortPassageText(rawPassage?: string | null, assignmentTit
 
 export async function getAssignmentDetailService(
   assignmentId: string,
-  studentId: string
+  studentId: string,
+  opts?: { hideAnswersUnlessAllowed?: boolean }
 ): Promise<{ success: boolean; assignment?: any; error?: string }> {
   if (!(await isDbAlive())) {
     const found =
@@ -1258,6 +1261,25 @@ export async function getAssignmentDetailService(
 
   const latestSubmission = assignment.submissions[0] || null;
 
+  // [C5] Chặn lộ đáp án với học sinh theo chế độ hiển thị đã cấu hình khi giao bài
+  let revealAnswers = true;
+  if (opts?.hideAnswersUnlessAllowed) {
+    const link = latestSubmission?.assignmentClassId
+      ? await prisma.assignmentClass.findUnique({ where: { id: latestSubmission.assignmentClassId } })
+      : await prisma.assignmentClass.findFirst({
+          where: {
+            assignmentId,
+            isActive: true,
+            class: { enrollments: { some: { studentId } } },
+          },
+        });
+    revealAnswers = canStudentViewAnswers({
+      mode: link?.answerVisibility,
+      visibleAt: link?.answerVisibleAt,
+      submissionStatus: latestSubmission?.status,
+    });
+  }
+
   let parsedMeta: any = null;
   try {
     if (assignment.description && assignment.description.startsWith("{")) {
@@ -1360,14 +1382,15 @@ export async function getAssignmentDetailService(
           q.ieltsQuestionType ||
           resolveIeltsQuestionType(null, q.type, assignment.skill, q.questionNumber),
         groupTitle: q.groupTitle,
+        imageUrl: parsedMeta?.questionMediaMap?.[q.questionNumber]?.imageUrl || (q as any).imageUrl || null,
         points: q.points,
-        correctAnswer: q.correctAnswer,
-        explanation: q.explanation,
+        correctAnswer: revealAnswers ? q.correctAnswer : null,
+        explanation: revealAnswers ? q.explanation : null,
         options: q.options.map((opt) => ({
           id: opt.id,
           optionLabel: opt.optionLabel,
           content: opt.content,
-          isCorrect: opt.isCorrect,
+          isCorrect: revealAnswers ? opt.isCorrect : false,
         })),
       })),
       latestSubmission: latestSubmission
@@ -1384,7 +1407,7 @@ export async function getAssignmentDetailService(
               questionId: ans.questionId,
               studentAnswer: ans.studentAnswer,
               audioUrl: ans.audioUrl,
-              isCorrect: ans.isCorrect,
+              isCorrect: revealAnswers ? ans.isCorrect : null,
               awardedPoints: ans.awardedPoints,
               teacherComment: ans.teacherComment,
               criteriaScores: (ans.criteriaScores || []).map((cs) => ({
@@ -1490,6 +1513,12 @@ export async function submitAssignmentService(
     const myPrevCount = (assign.submissions || []).filter(
       (s: any) => s.studentId === (studentInfo.userId || "demo-student-1")
     ).length;
+    if (myPrevCount >= (assign.maxAttempts || 1)) {
+      return {
+        success: false,
+        error: `Bạn đã dùng hết số lần được làm bài (${assign.maxAttempts || 1} lần)!`,
+      };
+    }
 
     const submissionId = `sub-${Date.now()}`;
     const newSub = {
@@ -1594,6 +1623,14 @@ export async function submitAssignmentService(
     },
   });
 
+  // [C4] Giới hạn số lần làm bài theo cấu hình khi giao bài
+  if (previousSubmissionsCount >= (assignment.maxAttempts || 1)) {
+    return {
+      success: false,
+      error: `Bạn đã dùng hết số lần được làm bài (${assignment.maxAttempts || 1} lần)!`,
+    };
+  }
+
   const isObjectiveOnly = allObjective(assignment.questions);
   const maxTabLimit = classLink?.maxTabSwitches ?? assignment.maxTabSwitches ?? 3;
 
@@ -1617,6 +1654,44 @@ export async function submitAssignmentService(
       },
     },
   });
+
+  // [C7] Thông báo SUBMISSION_RECEIVED cho giáo viên và SUBMISSION_GRADED cho học sinh nếu tự chấm
+  try {
+    const classStaff = await prisma.classAssignment.findMany({
+      where: {
+        classId: targetClassId,
+        roleInClass: { in: ["TEACHER", "TEACHING_ASSISTANT"] },
+      },
+      select: { userId: true },
+    });
+    const stName = studentInfo.fullName || studentInfo.email || "Học sinh";
+    const notifs: any[] = classStaff.map((cs) => ({
+      userId: cs.userId,
+      type: "SUBMISSION_RECEIVED" as any,
+      title: "Học sinh đã nộp bài",
+      message: `Học sinh ${stName} đã nộp bài "${assignment.title}".`,
+      refType: "SUBMISSION" as const,
+      refId: submission.id,
+      classId: targetClassId,
+      dedupeKey: `SUBMISSION_RECEIVED:${submission.id}:${cs.userId}`,
+    }));
+
+    if (isObjectiveOnly) {
+      notifs.push({
+        userId: studentInfo.userId,
+        type: "SUBMISSION_GRADED" as any,
+        title: "Bài tập đã được chấm điểm",
+        message: `Bài tập "${assignment.title}" của bạn đã có điểm: ${totalScore}/${maxScore}.`,
+        refType: "SUBMISSION" as const,
+        refId: submission.id,
+        classId: targetClassId,
+        dedupeKey: `SUBMISSION_GRADED:${submission.id}:${studentInfo.userId}:AUTO`,
+      });
+    }
+    await createNotifications(notifs);
+  } catch (notifErr: any) {
+    console.warn("[submitAssignmentService] Bỏ qua lỗi gửi thông báo:", notifErr?.message);
+  }
 
   return {
     success: true,
@@ -1927,6 +2002,38 @@ export async function gradeSubmissionService(
       gradedById,
     },
   });
+
+  // [C7] Thông báo SUBMISSION_GRADED cho học sinh khi chấm điểm xong
+  if (!isDraftMode) {
+    try {
+      const subInfo = await prisma.assignmentSubmission.findUnique({
+        where: { id: data.submissionId },
+        select: {
+          id: true,
+          studentId: true,
+          classId: true,
+          score: true,
+          assignment: { select: { title: true } },
+        },
+      });
+      if (subInfo) {
+        await createNotifications([
+          {
+            userId: subInfo.studentId,
+            type: "SUBMISSION_GRADED" as any,
+            title: "Bài làm đã được chấm điểm",
+            message: `Bài tập "${subInfo.assignment.title}" của bạn đã được giáo viên chấm xong: ${calculatedTotalScore} điểm.`,
+            refType: "SUBMISSION" as const,
+            refId: subInfo.id,
+            classId: subInfo.classId || undefined,
+            dedupeKey: `SUBMISSION_GRADED:${subInfo.id}:${subInfo.studentId}:${Math.floor(Date.now() / 60000)}`,
+          },
+        ]);
+      }
+    } catch (notifErr: any) {
+      console.warn("[gradeSubmissionService] Bỏ qua lỗi gửi thông báo:", notifErr?.message);
+    }
+  }
 
   return {
     success: true,

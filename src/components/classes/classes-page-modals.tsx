@@ -3,6 +3,7 @@
 import React from "react";
 import { Building2, Clock, GraduationCap, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isClassScheduledOnDay } from "@/lib/schedule";
 
 const DAYS_OF_WEEK = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
 
@@ -55,8 +56,7 @@ export function ClassesTimetableGrid({
       <div className="grid gap-3.5 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
         {DAYS_OF_WEEK.map((day) => {
           const classesForDay = scheduleClasses.filter((c) => {
-            if (!c.description) return false;
-            return c.description.toLowerCase().includes(day.toLowerCase());
+            return isClassScheduledOnDay(c.description, day);
           });
 
           return (
@@ -132,14 +132,14 @@ export function ClassesTimetableGrid({
         })}
       </div>
 
-      {scheduleClasses.some((c) => !DAYS_OF_WEEK.some((d) => c.description?.includes(d))) && (
+      {scheduleClasses.some((c) => !DAYS_OF_WEEK.some((d) => isClassScheduledOnDay(c.description, d))) && (
         <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
           <h4 className="font-bold text-xs uppercase tracking-wider text-[#64748B] mb-3">
             Các lớp học đang diễn ra (Lịch học linh hoạt):
           </h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {scheduleClasses
-              .filter((c) => !DAYS_OF_WEEK.some((d) => c.description?.includes(d)))
+              .filter((c) => !DAYS_OF_WEEK.some((d) => isClassScheduledOnDay(c.description, d)))
               .map((cls) => (
                 <div
                   key={cls.id}

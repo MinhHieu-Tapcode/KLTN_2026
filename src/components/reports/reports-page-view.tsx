@@ -11,7 +11,11 @@ import { ReportPeriodKey } from "@/lib/ielts-report-config";
 import { ScopeOption } from "@/services/report.service";
 import { ClassReportData, ClassReportView } from "./class-report-view";
 import { ReportFilterBar, ReportLevel } from "./report-filter-bar";
-import { ReportEmptyState } from "./report-shared-widgets";
+import {
+  formatBandLabel,
+  percentToBand,
+  ReportEmptyState,
+} from "./report-shared-widgets";
 import { SchoolReportData, SchoolReportView } from "./school-report-view";
 import { StudentReportData, StudentReportView } from "./student-report-view";
 
@@ -159,40 +163,78 @@ export function ReportsPageView({
   const handleExportCsv = () => {
     const rows: string[][] = [];
     if (level === "SCHOOL" && schoolData.report) {
-      rows.push(["Mã lớp", "Tên lớp", "Sĩ số", "Bài đã giao", "ĐTB (%)", "Tỷ lệ hoàn thành (%)", "HV cần hỗ trợ"]);
+      const schoolBand = percentToBand(schoolData.report.kpis.schoolAveragePercent);
+      rows.push([
+        "Mã lớp",
+        "Tên lớp",
+        "Sĩ số",
+        "Bài đã giao",
+        "ĐTB (Band 9.0)",
+        "Chênh lệch so với TB Trường",
+        "Tỷ lệ hoàn thành (%)",
+        "HV cần hỗ trợ",
+      ]);
       for (const c of schoolData.report.classRows) {
+        const clsBand = percentToBand(c.averagePercent);
+        const delta =
+          clsBand !== null && schoolBand !== null
+            ? Math.round((clsBand - schoolBand) * 10) / 10
+            : null;
         rows.push([
           c.classCode,
           c.className,
           String(c.studentCount),
           String(c.assignmentCount),
-          c.averagePercent !== null ? String(c.averagePercent) : "Chưa có điểm",
+          formatBandLabel(clsBand),
+          delta !== null ? `${delta > 0 ? "+" : ""}${delta.toFixed(1)} Band` : "--",
           String(c.completionRatePercent),
           String(c.supportNeededCount),
         ]);
       }
     } else if (level === "CLASS" && classData.report) {
-      rows.push(["Họ và tên", "Tài khoản", "Bài đã nộp", "Quá hạn", "Chờ chấm", "ĐTB (%)", "Cần hỗ trợ"]);
+      const classBand = percentToBand(classData.report.kpis.classAveragePercent);
+      rows.push([
+        "Họ và tên",
+        "Tài khoản",
+        "Bài đã nộp",
+        "ĐTB (Band 9.0)",
+        "Chênh lệch so với TB Lớp",
+        "Quá hạn",
+        "Chờ chấm",
+        "Trạng thái học tập",
+      ]);
       for (const s of classData.report.studentRows) {
+        const stuBand = percentToBand(s.averagePercent);
+        const delta =
+          stuBand !== null && classBand !== null
+            ? Math.round((stuBand - classBand) * 10) / 10
+            : null;
         rows.push([
           s.fullName,
           s.username,
           `${s.submittedCount}/${s.assignedCount}`,
+          formatBandLabel(stuBand),
+          delta !== null ? `${delta > 0 ? "+" : ""}${delta.toFixed(1)} Band` : "--",
           String(s.overdueCount),
           String(s.pendingGradingCount),
-          s.averagePercent !== null ? String(s.averagePercent) : "Chưa có điểm",
           s.supportReasons.join("; ") || "Ổn định",
         ]);
       }
     } else if (level === "STUDENT" && studentData.report) {
-      rows.push(["Bài tập", "Kỹ năng", "Lần làm", "Kết quả gốc", "% Chuẩn hóa", "Band ước tính", "Trạng thái"]);
+      rows.push([
+        "Bài tập",
+        "Kỹ năng",
+        "Lần làm",
+        "Kết quả gốc",
+        "Điểm Band (9.0)",
+        "Trạng thái",
+      ]);
       for (const h of studentData.report.submissionHistory) {
         rows.push([
           h.assignmentTitle,
           h.skill.toUpperCase(),
           String(h.attemptNumber),
           h.scoreDisplay,
-          h.percentDisplay,
           h.estimatedBandDisplay,
           h.status,
         ]);
@@ -212,7 +254,7 @@ export function ReportsPageView({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="rp-module space-y-4">
       <ReportFilterBar
         level={level}
         setLevel={setLevel}
@@ -233,8 +275,11 @@ export function ReportsPageView({
       />
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-xs font-medium text-slate-500 shadow-sm">
-          Đang tổng hợp dữ liệu báo cáo IELTS Academic...
+        <div className="space-y-3">
+          <div className="rp-progress" />
+          <div className="rp-card rp-card--pad text-center text-xs font-semibold text-[var(--rp-text-muted)]">
+            Đang tổng hợp dữ liệu báo cáo IELTS Academic...
+          </div>
         </div>
       ) : errorMsg ? (
         <ReportEmptyState
@@ -243,40 +288,46 @@ export function ReportsPageView({
           onResetPeriod={() => setPeriodKey("ALL")}
         />
       ) : level === "SCHOOL" && schoolData.report ? (
-        <SchoolReportView
-          report={schoolData.report}
-          hasData={schoolData.hasData}
-          onSelectClass={(classId) => {
-            setSelectedClassId(classId);
-            const cls = scopeOptions.classes.find((c) => c.id === classId);
-            if (cls?.students[0]) setSelectedStudentId(cls.students[0].id);
-            setLevel("CLASS");
-          }}
-          onSelectStudent={(classId, studentId) => {
-            setSelectedClassId(classId);
-            setSelectedStudentId(studentId);
-            setLevel("STUDENT");
-          }}
-          onResetPeriod={() => setPeriodKey("ALL")}
-        />
+        <div className="rp-enter-up" key="view-school">
+          <SchoolReportView
+            report={schoolData.report}
+            hasData={schoolData.hasData}
+            onSelectClass={(classId) => {
+              setSelectedClassId(classId);
+              const cls = scopeOptions.classes.find((c) => c.id === classId);
+              if (cls?.students[0]) setSelectedStudentId(cls.students[0].id);
+              setLevel("CLASS");
+            }}
+            onSelectStudent={(classId, studentId) => {
+              setSelectedClassId(classId);
+              setSelectedStudentId(studentId);
+              setLevel("STUDENT");
+            }}
+            onResetPeriod={() => setPeriodKey("ALL")}
+          />
+        </div>
       ) : level === "CLASS" && classData.report ? (
-        <ClassReportView
-          report={classData.report}
-          hasData={classData.hasData}
-          userRole={currentUser.role}
-          onSelectStudent={(studentId) => {
-            setSelectedStudentId(studentId);
-            setLevel("STUDENT");
-          }}
-          onResetPeriod={() => setPeriodKey("ALL")}
-        />
+        <div className="rp-enter-down" key="view-class">
+          <ClassReportView
+            report={classData.report}
+            hasData={classData.hasData}
+            userRole={currentUser.role}
+            onSelectStudent={(studentId) => {
+              setSelectedStudentId(studentId);
+              setLevel("STUDENT");
+            }}
+            onResetPeriod={() => setPeriodKey("ALL")}
+          />
+        </div>
       ) : level === "STUDENT" && studentData.report ? (
-        <StudentReportView
-          report={studentData.report}
-          hasData={studentData.hasData}
-          userRole={currentUser.role}
-          onResetPeriod={() => setPeriodKey("ALL")}
-        />
+        <div className="rp-enter-down" key="view-student">
+          <StudentReportView
+            report={studentData.report}
+            hasData={studentData.hasData}
+            userRole={currentUser.role}
+            onResetPeriod={() => setPeriodKey("ALL")}
+          />
+        </div>
       ) : (
         <ReportEmptyState onResetPeriod={() => setPeriodKey("ALL")} />
       )}

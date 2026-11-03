@@ -507,6 +507,7 @@ export function BulkIeltsWizard({
           }}
           onBackToStep1={() => setExcelStep("upload")}
           onCommittedSuccess={onCommittedSuccess}
+          users={users}
         />
       )}
     </div>

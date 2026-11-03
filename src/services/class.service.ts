@@ -2,7 +2,7 @@ import { prisma, isDbAlive } from "@/lib/prisma";
 import type { SessionPayload } from "@/lib/auth";
 import { isSchoolManager, isStudent, isTeacherOrTA } from "@/lib/permissions";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
-import { areSchedulesConflicting } from "@/lib/schedule";
+import { areSchedulesConflicting, validateScheduleString } from "@/lib/schedule";
 
 const globalClassesStore = globalThis as unknown as {
   demoClasses?: any[];
@@ -206,8 +206,19 @@ export async function getClassesService(
             student: { include: { profile: true } },
           },
         },
+        materialFolders: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            _count: {
+              select: {
+                materials: { where: { isActive: true } },
+              },
+            },
+          },
+        },
         _count: {
-          select: { enrollments: true },
+          select: { enrollments: true, materialFolders: true },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -282,6 +293,12 @@ export async function createClassService(data: {
     }
 
     const tasToAssign = (data.taIds || (data.taId ? [data.taId] : [])).filter(Boolean);
+
+    // [C13] Kiểm tra giờ từng buổi học (giờ kết thúc phải sau giờ bắt đầu)
+    const scheduleError = validateScheduleString(data.schedule);
+    if (scheduleError) {
+      return { success: false, error: scheduleError };
+    }
 
     let code = data.code?.trim().toUpperCase();
     if (!code) {
@@ -474,6 +491,13 @@ export async function updateClassService(
 
     if (!currentClass) {
       return { success: false, error: "Không tìm thấy lớp học!" };
+    }
+
+    if (data.schedule !== undefined) {
+      const scheduleError = validateScheduleString(data.schedule);
+      if (scheduleError) {
+        return { success: false, error: scheduleError };
+      }
     }
 
     const newSchedule =

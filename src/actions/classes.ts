@@ -1,6 +1,7 @@
 "use server";
 
 import { getSession } from "@/lib/auth";
+import { checkRole, ROLE_GROUPS } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
 import {
@@ -21,6 +22,17 @@ import {
   getSchoolClassesWithStudentsService,
   getEligibleSchoolStudentsForClassService,
 } from "@/services/class.service";
+
+// Chỉ Admin & Quản nhiệm trường mới được thay đổi thông tin lớp / nhân sự / danh sách học viên
+async function requireClassManager(): Promise<{ success: false; error: string } | null> {
+  const session = await getSession();
+  const auth = checkRole(
+    session,
+    ROLE_GROUPS.ADMIN_AND_MANAGER,
+    "Chỉ Quản trị viên hoặc Quản nhiệm trường mới có quyền thay đổi thông tin lớp học!"
+  );
+  return auth.ok ? null : { success: false, error: auth.error };
+}
 
 function safeRevalidate(path: string) {
   try {
@@ -98,6 +110,8 @@ export async function updateClassAction(
     schedule?: string;
   }
 ): Promise<{ success: boolean; error?: string }> {
+  const denied = await requireClassManager();
+  if (denied) return denied;
   const res = await updateClassService(id, data);
   if (res.success) safeRevalidate("/classes");
   return res;
@@ -128,6 +142,8 @@ export async function assignStaffToClassAction(
   userId: string,
   roleInClass: StaffClassRole
 ) {
+  const denied = await requireClassManager();
+  if (denied) return denied;
   const res = await assignStaffToClassService(classId, userId, roleInClass);
   if (res.success) safeRevalidate("/classes");
   return res;
@@ -137,6 +153,8 @@ export async function removeStaffFromClassAction(
   classId: string,
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const denied = await requireClassManager();
+  if (denied) return denied;
   const res = await removeStaffFromClassService(classId, userId);
   if (res.success) safeRevalidate("/classes");
   return res;
@@ -147,6 +165,8 @@ export async function enrollStudentToClassAction(
   classId: string,
   studentId: string
 ) {
+  const denied = await requireClassManager();
+  if (denied) return denied;
   const res = await enrollStudentToClassService(classId, studentId);
   if (res.success) safeRevalidate("/classes");
   return res;
@@ -157,6 +177,8 @@ export async function removeStudentFromClassAction(
   classId: string,
   studentId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const denied = await requireClassManager();
+  if (denied) return denied;
   const res = await removeStudentFromClassService(classId, studentId);
   if (res.success) safeRevalidate("/classes");
   return res;
@@ -175,6 +197,8 @@ export async function transferStudentClassAction(
   targetClassId: string,
   studentId: string
 ) {
+  const denied = await requireClassManager();
+  if (denied) return denied;
   const res = await transferStudentClassService(
     currentClassId,
     targetClassId,

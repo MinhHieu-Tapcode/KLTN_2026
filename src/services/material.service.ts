@@ -1,5 +1,6 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { MaterialType } from "@prisma/client";
+import { createNotifications } from "./notification.service";
 import type { SessionPayload } from "@/lib/auth";
 import { isAdmin, isSchoolManager, isTeacherOrTA } from "@/lib/permissions";
 
@@ -140,6 +141,94 @@ if (!globalMaterialsStore.demoMaterials) {
   ];
 }
 
+
+/**
+ * Đảm bảo bảng ielts_levels luôn có ít nhất 3 cấp độ chuẩn và phân giải ID trình độ hợp lệ,
+ * tránh lỗi Foreign Key (material_folders_ieltsLevelId_fkey) khi tạo thư mục/giáo trình.
+ */
+async function resolveValidIeltsLevelId(rawLevel?: string | null): Promise<string | null> {
+  if (!rawLevel) return null;
+  try {
+    let allLevels = await prisma.ieltsLevel.findMany({
+      where: { isActive: true },
+      orderBy: { minScore: "asc" },
+    });
+
+    if (allLevels.length === 0) {
+      const defaults = [
+        { code: "BASIC", name: "Cơ bản", minScore: 0.0, maxScore: 4.5, sortOrder: 1 },
+        { code: "INTERMEDIATE", name: "Trung bình", minScore: 4.5, maxScore: 6.5, sortOrder: 2 },
+        { code: "ADVANCED", name: "Nâng cao", minScore: 6.5, maxScore: 9.0, sortOrder: 3 },
+      ];
+      for (const d of defaults) {
+        await prisma.ieltsLevel.upsert({
+          where: { code: d.code },
+          update: {},
+          create: d,
+        });
+      }
+      allLevels = await prisma.ieltsLevel.findMany({
+        where: { isActive: true },
+        orderBy: { minScore: "asc" },
+      });
+    }
+
+    // 1. Khớp trực tiếp theo ID hoặc Code
+    const direct = allLevels.find(
+      (l) =>
+        l.id === rawLevel ||
+        l.code.toLowerCase() === rawLevel.toLowerCase() ||
+        l.name.toLowerCase() === rawLevel.toLowerCase()
+    );
+    if (direct) return direct.id;
+
+    // 2. Khớp theo mã quy ước từ giao diện cũ (lvl-basic, lvl-foundation, lvl-medium, lvl-intermediate, lvl-advanced)
+    const lower = rawLevel.toLowerCase();
+    if (lower.includes("basic") || lower.includes("foundation") || lower.includes("co ban") || lower.includes("cơ bản")) {
+      return allLevels[0]?.id || null;
+    }
+    if (lower.includes("medium") || lower.includes("intermediate") || lower.includes("trung")) {
+      return (allLevels[1] || allLevels[0])?.id || null;
+    }
+    if (lower.includes("advanced") || lower.includes("high") || lower.includes("nang cao") || lower.includes("nâng cao")) {
+      return (allLevels[allLevels.length - 1] || allLevels[0])?.id || null;
+    }
+
+    // 3. Khớp theo khoảng điểm số trong chuỗi (VD: "5.5 - 6.5", "4.5 - 5.5")
+    const numMatch = rawLevel.match(/(\d+(\.\d+)?)/);
+    if (numMatch) {
+      const score = parseFloat(numMatch[1]);
+      const byRange = allLevels.find((l) => score >= l.minScore && score <= l.maxScore);
+      if (byRange) return byRange.id;
+    }
+
+    return allLevels[0]?.id || null;
+  } catch (e) {
+    console.warn("[resolveValidIeltsLevelId] Lỗi:", e);
+    return null;
+  }
+}
+
+/**
+ * Tra cứu tên hiển thị thực tế của người tạo / người tải lên từ bảng User
+ */
+async function buildUserAuthorMap(userIds: string[]): Promise<Record<string, string>> {
+  const map: Record<string, string> = { SYSTEM: "Quản trị viên" };
+  const cleanIds = Array.from(new Set(userIds.filter((id) => id && id !== "SYSTEM")));
+  if (cleanIds.length === 0) return map;
+
+  try {
+    const users = await prisma.user.findMany({
+      where: { id: { in: cleanIds } },
+      include: { profile: true, role: true },
+    });
+    for (const u of users) {
+      map[u.id] = u.profile?.fullName || u.username || u.email || "Giáo viên";
+    }
+  } catch {}
+  return map;
+}
+
 export async function getMaterialFoldersService(params: {
   classId?: string;
   ieltsLevelId?: string;
@@ -187,19 +276,9 @@ export async function getMaterialFoldersService(params: {
           select: { id: true, level: true, ieltsLevelId: true },
         });
 
-        let targetLevelId = cls?.ieltsLevelId;
+        let targetLevelId = cls?.ieltsLevelId || null;
         if (!targetLevelId && cls?.level) {
-          const matchedLvl = await prisma.ieltsLevel.findFirst({
-            where: {
-              isActive: true,
-              OR: [
-                { name: { contains: cls.level, mode: "insensitive" } },
-                { code: { contains: cls.level, mode: "insensitive" } },
-              ],
-            },
-            select: { id: true },
-          });
-          if (matchedLvl) targetLevelId = matchedLvl.id;
+          targetLevelId = await resolveValidIeltsLevelId(cls.level);
         }
 
         if (targetLevelId) {
@@ -234,6 +313,8 @@ export async function getMaterialFoldersService(params: {
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
 
+    const authorMap = await buildUserAuthorMap(folders.map((f) => f.createdById));
+
     const formatted = folders.map((f) => ({
       id: f.id,
       name: f.name,
@@ -242,6 +323,7 @@ export async function getMaterialFoldersService(params: {
       ieltsLevelId: f.ieltsLevelId,
       parentId: f.parentId,
       createdById: f.createdById,
+      authorName: authorMap[f.createdById] || (f.classId ? "Giáo viên" : "Quản trị viên"),
       isInherited: !f.classId && !!f.ieltsLevelId,
       levelName: f.ieltsLevel?.name || null,
       fileCount: f.materials.length,
@@ -298,12 +380,16 @@ export async function createMaterialFolderService(
   }
 
   try {
+    const validLevelId = data.ieltsLevelId
+      ? await resolveValidIeltsLevelId(data.ieltsLevelId)
+      : null;
+
     const newFolder = await prisma.materialFolder.create({
       data: {
         name: data.name.trim(),
         description: data.description?.trim() || null,
         classId: data.classId || null,
-        ieltsLevelId: data.ieltsLevelId || null,
+        ieltsLevelId: validLevelId,
         parentId: data.parentId || null,
         createdById: session.userId || "SYSTEM",
       },
@@ -370,6 +456,8 @@ export async function getLearningMaterialsService(
       orderBy: { createdAt: "desc" },
     });
 
+    const authorMap = await buildUserAuthorMap(materials.map((m) => m.uploadedById));
+
     return {
       success: true,
       materials: materials.map((m) => ({
@@ -383,6 +471,7 @@ export async function getLearningMaterialsService(
         mimeType: m.mimeType,
         downloadCount: m.downloadCount,
         uploadedById: m.uploadedById,
+        authorName: authorMap[m.uploadedById] || "Giáo viên",
         createdAt: m.createdAt.toISOString(),
       })),
     };
@@ -454,6 +543,35 @@ export async function uploadLearningMaterialService(
         uploadedById: session.userId || "SYSTEM",
       },
     });
+
+    // [C7] Thông báo MATERIAL_ADDED cho học sinh nếu thư mục thuộc lớp học
+    try {
+      const folder = await prisma.materialFolder.findUnique({
+        where: { id: data.folderId },
+        select: { classId: true, name: true },
+      });
+      if (folder?.classId) {
+        const enrollments = await prisma.classEnrollment.findMany({
+          where: { classId: folder.classId, status: "STUDYING" },
+          select: { studentId: true },
+        });
+        if (enrollments.length > 0) {
+          const notifs = enrollments.map((en) => ({
+            userId: en.studentId,
+            type: "MATERIAL_ADDED" as any,
+            title: "Học liệu mới liên quan đến lớp",
+            message: `Tài liệu mới "${material.title}" vừa được thêm vào thư mục "${folder.name}".`,
+            refType: "MATERIAL" as const,
+            refId: material.id,
+            classId: folder.classId,
+            dedupeKey: `MATERIAL_ADDED:${material.id}:${en.studentId}`,
+          }));
+          await createNotifications(notifs);
+        }
+      }
+    } catch (notifErr: any) {
+      console.warn("[uploadLearningMaterialService] Bỏ qua lỗi thông báo:", notifErr?.message);
+    }
 
     return { success: true, material };
   } catch (err: any) {
@@ -807,14 +925,48 @@ export async function distributeLearningMaterialsService(
       data.targetLevels &&
       data.targetLevels.length > 0
     ) {
-      whereClause.AND = [
-        ...(whereClause.AND || []),
-        {
-          OR: data.targetLevels.map((lvl) => ({
-            level: { contains: lvl, mode: "insensitive" },
-          })),
-        },
-      ];
+      let totalCreatedMaterials = 0;
+      for (const rawLvl of data.targetLevels) {
+        const validLevelId = await resolveValidIeltsLevelId(rawLvl);
+        if (!validLevelId) continue;
+
+        const folder = await prisma.materialFolder.create({
+          data: {
+            ieltsLevelId: validLevelId,
+            classId: null,
+            name: cleanFolderName,
+            description:
+              data.folderDescription?.trim() ||
+              "Tài liệu học tập chuẩn thuộc Kho học liệu chung",
+            createdById: session.userId || "SYSTEM",
+          },
+        });
+
+        const createdMats = await Promise.all(
+          data.materials.map((m) =>
+            prisma.learningMaterial.create({
+              data: {
+                folderId: folder.id,
+                title: m.title.trim(),
+                fileName: m.fileName,
+                fileSize: m.fileSize,
+                fileType: m.fileType as MaterialType,
+                fileUrl: m.fileUrl,
+                mimeType: m.mimeType || null,
+                uploadedById: session.userId || "SYSTEM",
+              },
+            })
+          )
+        );
+        totalCreatedMaterials += createdMats.length;
+      }
+
+      return {
+        success: true,
+        targetClassCount: data.targetLevels.length,
+        materialCount: data.materials.length,
+        totalDistributed: totalCreatedMaterials,
+      };
     } else if (
       data.distributionMode === "BY_CLASSES" &&
       data.targetClassIds &&
@@ -1203,40 +1355,20 @@ export async function uploadCoursebookPackageService(
         },
       });
 
-      if (data.audioFiles.length > 0) {
-        await Promise.all(
-          data.audioFiles.map((af, idx) =>
-            prisma.learningMaterial.create({
-              data: {
-                folderId: audioSubFolder.id,
-                title:
-                  af.title.trim() ||
-                  `Track ${(idx + 1).toString().padStart(2, "0")}`,
-                fileName: af.fileName,
-                fileSize: af.fileSize,
-                fileType: "AUDIO",
-                fileUrl: af.fileUrl,
-                mimeType: af.mimeType || "audio/mpeg",
-                uploadedById: session.userId || "SYSTEM",
-              },
-            })
-          )
-        );
+
+    } else if (data.targetType === "LEVEL" && data.ieltsLevelId) {
+      const validLevelId = await resolveValidIeltsLevelId(data.ieltsLevelId);
+      if (!validLevelId) {
+        return { success: false, error: "Không tìm thấy trình độ IELTS hợp lệ để lưu giáo trình!" };
       }
 
-      return {
-        success: true,
-        folderId: parentFolder.id,
-        audioFolderId: audioSubFolder.id,
-      };
-    } else if (data.targetType === "LEVEL" && data.ieltsLevelId) {
       const parentFolder = await prisma.materialFolder.create({
         data: {
           name: parentFolderName,
           description:
             data.packageDescription ||
             "Giáo trình chuẩn cấp Trình độ do Trung tâm phê duyệt",
-          ieltsLevelId: data.ieltsLevelId,
+          ieltsLevelId: validLevelId,
           parentId: data.parentId || null,
           createdById: session.userId || "SYSTEM",
         },
@@ -1272,17 +1404,19 @@ export async function uploadCoursebookPackageService(
         });
       }
 
-      const audioSubFolder = await prisma.materialFolder.create({
-        data: {
-          name: audioFolderName,
-          description: `Danh sách ${data.audioFiles.length} bài nghe cho bộ sách ${rawTitle}`,
-          ieltsLevelId: data.ieltsLevelId,
-          parentId: parentFolder.id,
-          createdById: session.userId || "SYSTEM",
-        },
-      });
+      let audioSubFolderId: string | undefined = undefined;
+      if (data.audioFiles && data.audioFiles.length > 0) {
+        const audioSubFolder = await prisma.materialFolder.create({
+          data: {
+            name: audioFolderName,
+            description: `Danh sách ${data.audioFiles.length} bài nghe cho bộ sách ${rawTitle}`,
+            ieltsLevelId: validLevelId,
+            parentId: parentFolder.id,
+            createdById: session.userId || "SYSTEM",
+          },
+        });
+        audioSubFolderId = audioSubFolder.id;
 
-      if (data.audioFiles.length > 0) {
         await Promise.all(
           data.audioFiles.map((af, idx) =>
             prisma.learningMaterial.create({
@@ -1306,7 +1440,7 @@ export async function uploadCoursebookPackageService(
       return {
         success: true,
         folderId: parentFolder.id,
-        audioFolderId: audioSubFolder.id,
+        audioFolderId: audioSubFolderId,
       };
     } else if (data.targetType === "MULTI_CLASSES") {
       const whereClause: any = { isActive: true };
@@ -1425,32 +1559,62 @@ export async function getLevelRepositoryFoldersService(): Promise<{
         parentId: null,
       },
       include: {
-        materials: { where: { isActive: true }, select: { id: true } },
-        subFolders: { where: { isActive: true }, select: { id: true } },
+        materials: {
+          where: { isActive: true },
+          orderBy: { createdAt: "asc" },
+        },
+        subFolders: {
+          where: { isActive: true },
+          include: {
+            materials: {
+              where: { isActive: true },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+        },
         ieltsLevel: {
           select: { id: true, name: true, code: true, minScore: true, maxScore: true },
         },
       },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     });
+
+    const authorMap = await buildUserAuthorMap(folders.map((f) => f.createdById));
 
     return {
       success: true,
-      folders: folders.map((f) => ({
-        id: f.id,
-        name: f.name,
-        description: f.description,
-        classId: null,
-        ieltsLevelId: f.ieltsLevelId,
-        levelName: f.ieltsLevel?.name || "Trình độ chung",
-        levelCode: f.ieltsLevel?.code,
-        minScore: f.ieltsLevel?.minScore,
-        maxScore: f.ieltsLevel?.maxScore,
-        fileCount: f.materials.length,
-        subFolderCount: f.subFolders.length,
-        createdAt: f.createdAt.toISOString(),
-        updatedAt: f.updatedAt.toISOString(),
-      })),
+      folders: folders.map((f) => {
+        const subAudioMats = f.subFolders.flatMap((sf) => sf.materials || []);
+        const directAudioMats = f.materials.filter((m) => m.fileType === "AUDIO");
+        const allMaterials = [...f.materials, ...subAudioMats].map((m) => ({
+          id: m.id,
+          title: m.title,
+          fileName: m.fileName,
+          fileUrl: m.fileUrl,
+          fileSize: m.fileSize,
+          fileType: m.fileType,
+          mimeType: m.mimeType,
+        }));
+
+        return {
+          id: f.id,
+          name: f.name,
+          description: f.description,
+          classId: null,
+          ieltsLevelId: f.ieltsLevelId,
+          levelName: f.ieltsLevel?.name || "Trình độ chung",
+          levelCode: f.ieltsLevel?.code,
+          minScore: f.ieltsLevel?.minScore,
+          maxScore: f.ieltsLevel?.maxScore,
+          author: authorMap[f.createdById] || "Quản trị viên",
+          fileCount: f.materials.length,
+          audioCount: subAudioMats.length + directAudioMats.length,
+          subFolderCount: f.subFolders.length,
+          materials: allMaterials,
+          createdAt: f.createdAt.toISOString(),
+          updatedAt: f.updatedAt.toISOString(),
+        };
+      }),
     };
   } catch (err: any) {
     console.error("[getLevelRepositoryFoldersService] Lỗi:", err);

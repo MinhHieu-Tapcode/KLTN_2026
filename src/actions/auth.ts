@@ -59,7 +59,7 @@ function getDemoUserPayload(identifier: string, password: string): {
     clean === "teacher_huong"
   ) {
     return {
-      userId: "demo-staff-1",
+      userId: "teacher-1",
       username: "teacher_huong",
       email: "teacher@simpace.vn",
       role: "TEACHER",

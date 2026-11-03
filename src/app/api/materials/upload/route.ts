@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from "next/server";
+import * as fs from "fs";
+import * as path from "path";
+
+export const runtime = "nodejs";
+
+function detectMaterialType(
+  fileName: string,
+  mimeType?: string
+): "PDF" | "AUDIO" | "DOCUMENT" | "VIDEO" | "OTHER" {
+  const ext = (fileName.split(".").pop() || "").toLowerCase();
+  const mime = (mimeType || "").toLowerCase();
+
+  if (ext === "pdf" || mime.includes("pdf")) return "PDF";
+  if (
+    ["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(ext) ||
+    mime.startsWith("audio/")
+  ) {
+    return "AUDIO";
+  }
+  if (
+    ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "odt"].includes(ext) ||
+    mime.includes("word") ||
+    mime.includes("spreadsheet") ||
+    mime.includes("presentation") ||
+    mime.includes("excel")
+  ) {
+    return "DOCUMENT";
+  }
+  if (
+    ["mp4", "mkv", "mov", "avi", "webm"].includes(ext) ||
+    mime.startsWith("video/")
+  ) {
+    return "VIDEO";
+  }
+  return "OTHER";
+}
+
+function sanitizeFileName(name: string): string {
+  // Giữ lại chữ cái, số, dấu gạch ngang, gạch dưới, dấu chấm
+  const cleaned = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+  return cleaned || "material_file";
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
+
+    if (!file) {
+      return NextResponse.json(
+        { success: false, error: "Không tìm thấy tệp tin tải lên!" },
+        { status: 400 }
+      );
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const uploadDir = path.join(process.cwd(), "public", "uploads", "materials");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const safeName = sanitizeFileName(file.name);
+    const uniqueFileName = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safeName}`;
+    const filePath = path.join(uploadDir, uniqueFileName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    const fileUrl = `/uploads/materials/${uniqueFileName}`;
+    const fileType = detectMaterialType(file.name, file.type);
+
+    return NextResponse.json({
+      success: true,
+      fileUrl,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || "application/octet-stream",
+      fileType,
+    });
+  } catch (err: any) {
+    console.error("[POST /api/materials/upload] Lỗi:", err);
+    return NextResponse.json(
+      {
+        success: false,
+        error: err.message || "Không thể lưu tệp tin lên máy chủ!",
+      },
+      { status: 500 }
+    );
+  }
+}

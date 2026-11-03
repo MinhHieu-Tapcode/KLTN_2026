@@ -65,6 +65,12 @@ export interface ProposedClass {
   name: string;
   capacity: number;
   students: ValidatedStudentRow[];
+  status?: string;
+  schedule?: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  teacherIds?: string[];
 }
 
 export interface LevelAllocationPlan {
@@ -773,9 +779,15 @@ export async function commitBulkAllocationService(
 
     for (const plan of plans) {
       for (const propClass of plan.classes) {
-        if (propClass.students.length === 0) continue;
+        if (propClass.capacity <= 0) continue;
 
         let classRecord = globalStore.demoClasses.find((c: any) => c.code === propClass.code);
+        const assignedTeachers = (propClass.teacherIds || []).map((tId: string) => ({
+          userId: tId,
+          roleInClass: "TEACHER",
+          staff: globalStore.demoUsers?.find((u: any) => u.id === tId),
+        }));
+
         if (!classRecord) {
           classRecord = {
             id: `class-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -786,14 +798,27 @@ export async function commitBulkAllocationService(
             level: plan.levelName,
             ieltsLevelId: plan.levelId,
             capacity: propClass.capacity,
-            status: "ACTIVE",
+            status: propClass.status || "ACTIVE",
+            description: propClass.schedule || propClass.description || "",
+            startDate: propClass.startDate || "",
+            endDate: propClass.endDate || "",
             isActive: true,
             school: { id: school.id, name: school.name, code: school.code },
-            assignments: [],
+            assignments: assignedTeachers,
             enrollments: [],
             _count: { enrollments: 0 },
           };
           globalStore.demoClasses.push(classRecord);
+        } else {
+          classRecord.name = propClass.name;
+          classRecord.capacity = propClass.capacity;
+          if (propClass.status) classRecord.status = propClass.status;
+          if (propClass.schedule || propClass.description) {
+            classRecord.description = propClass.schedule || propClass.description;
+          }
+          if (propClass.startDate) classRecord.startDate = propClass.startDate;
+          if (propClass.endDate) classRecord.endDate = propClass.endDate;
+          if (assignedTeachers.length > 0) classRecord.assignments = assignedTeachers;
         }
 
         for (const student of propClass.students) {
@@ -899,26 +924,67 @@ export async function commitBulkAllocationService(
       const validDbLevelId = matchedDbLevel ? matchedDbLevel.id : null;
 
       for (const propClass of plan.classes) {
-        if (propClass.students.length === 0) continue;
+        if (propClass.capacity <= 0) continue;
 
         let classRecord = await tx.class.findUnique({
           where: { code: propClass.code },
         });
 
+        const classData = {
+          schoolId,
+          code: propClass.code,
+          name: propClass.name,
+          program: "IELTS" as const,
+          level: plan.levelName,
+          ieltsLevelId: validDbLevelId,
+          capacity: propClass.capacity || 30,
+          status: (propClass.status as any) || "ACTIVE",
+          startDate: propClass.startDate ? new Date(propClass.startDate) : null,
+          endDate: propClass.endDate ? new Date(propClass.endDate) : null,
+          description: propClass.schedule || propClass.description || null,
+          isActive: true,
+        };
+
         if (!classRecord) {
           classRecord = await tx.class.create({
+            data: classData,
+          });
+        } else {
+          classRecord = await tx.class.update({
+            where: { id: classRecord.id },
             data: {
-              schoolId,
-              code: propClass.code,
               name: propClass.name,
-              program: "IELTS",
-              level: plan.levelName,
-              ieltsLevelId: validDbLevelId,
               capacity: propClass.capacity,
-              status: "ACTIVE",
-              isActive: true,
+              status: (propClass.status as any) || classRecord.status,
+              startDate: propClass.startDate ? new Date(propClass.startDate) : classRecord.startDate,
+              endDate: propClass.endDate ? new Date(propClass.endDate) : classRecord.endDate,
+              description: propClass.schedule || propClass.description || classRecord.description,
             },
           });
+        }
+
+        // Lưu phân công Giáo viên giảng dạy (teacherIds)
+        if (propClass.teacherIds && propClass.teacherIds.length > 0) {
+          for (const tid of propClass.teacherIds) {
+            if (!tid) continue;
+            const existingAss = await tx.classAssignment.findUnique({
+              where: {
+                classId_userId: {
+                  classId: classRecord.id,
+                  userId: tid,
+                },
+              },
+            });
+            if (!existingAss) {
+              await tx.classAssignment.create({
+                data: {
+                  classId: classRecord.id,
+                  userId: tid,
+                  roleInClass: "TEACHER",
+                },
+              });
+            }
+          }
         }
 
         for (const student of propClass.students) {

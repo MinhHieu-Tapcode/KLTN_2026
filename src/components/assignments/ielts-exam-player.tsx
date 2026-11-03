@@ -1,10 +1,14 @@
+"use client";
+
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { FormattedPassageView } from "@/components/assignments/formatted-passage-view";
 import {
   getDefaultEnvisioningFlowcharts,
+  groupQuestionsIntoSimpaceClusters,
   ListeningStickyAudioHeader,
+  SimpaceQuestionClusterRenderer,
   SpecializedQuestionGroups,
-  StandaloneQuestionCard,
 } from "@/components/assignments/ielts-question-renderer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +22,11 @@ import {
   BookOpen,
   Headphones,
   Eye,
+  PenTool,
+  Mic,
+  CheckCircle2,
 } from "lucide-react";
+import { recordOutTabAction } from "@/actions/notifications";
 
 export interface IeltsExamPlayerProps {
   assignment: any;
@@ -41,9 +49,13 @@ export function IeltsExamPlayer({
   const skill = (assignment.skill || "READING").toUpperCase();
   const isListening = skill === "LISTENING";
   const isReading = skill === "READING";
+  const isWriting = skill === "WRITING";
+  const isSpeaking = skill === "SPEAKING";
+
   let flowcharts = assignment.flowcharts || assignment.parsedData?.flowcharts || [];
   const tables = assignment.tables || assignment.parsedData?.tables || [];
-  const matchingHeadings = assignment.matchingHeadings || assignment.parsedData?.matchingHeadings || [];
+  const matchingHeadings =
+    assignment.matchingHeadings || assignment.parsedData?.matchingHeadings || [];
   const summaries = assignment.summaries || assignment.parsedData?.summaries || [];
 
   if ((!flowcharts || flowcharts.length === 0) && assignment.questions) {
@@ -68,14 +80,46 @@ export function IeltsExamPlayer({
     (q: any) => !specializedQuestionNumbers.has(Number(q.questionNumber))
   );
 
-  const [studentAnswers, setStudentAnswers] = useState<Record<string, any>>(initialAnswers);
+  const storageKey = `simpace_exam_autosave_${assignment.id || "temp"}`;
+
+  const [studentAnswers, setStudentAnswers] = useState<Record<string, any>>(() => {
+    if (!isPreview && typeof window !== "undefined" && assignment.id) {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.answers && Object.keys(parsed.answers).length > 0) {
+            return { ...initialAnswers, ...parsed.answers };
+          }
+        }
+      } catch {}
+    }
+    return initialAnswers;
+  });
+
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<number>>(new Set());
   const [activeQuestionNumber, setActiveQuestionNumber] = useState<number>(1);
   const [activeSectionIndex, setActiveSectionIndex] = useState<number>(0);
   const [textSize, setTextSize] = useState<"normal" | "large">("normal");
+  const [lastSavedText, setLastSavedText] = useState<string>("Đã lưu tự động");
 
-  const durationMinutes = Number(assignment.durationMinutes) || (isListening ? 30 : 60);
-  const [timeLeftSeconds, setTimeLeftSeconds] = useState<number>(durationMinutes * 60);
+  const durationMinutes =
+    Number(assignment.durationMinutes) || (isListening ? 30 : isSpeaking ? 15 : 60);
+
+  const [timeLeftSeconds, setTimeLeftSeconds] = useState<number>(() => {
+    if (!isPreview && typeof window !== "undefined" && assignment.id) {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.timeLeftSeconds === "number" && parsed.timeLeftSeconds > 15) {
+            return parsed.timeLeftSeconds;
+          }
+        }
+      } catch {}
+    }
+    return durationMinutes * 60;
+  });
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -90,29 +134,78 @@ export function IeltsExamPlayer({
   const sections: any[] = assignment.sections || [];
   const currentSection = sections.length > 0 ? sections[activeSectionIndex] : null;
 
+  // Tự động lưu nháp vào localStorage mỗi khi học viên trả lời
+  useEffect(() => {
+    if (isPreview || typeof window === "undefined" || !assignment.id) return;
+    try {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          answers: studentAnswers,
+          timeLeftSeconds,
+          updatedAt: Date.now(),
+        })
+      );
+      setLastSavedText("Đã lưu tự động");
+    } catch {}
+  }, [studentAnswers, timeLeftSeconds, isPreview, assignment.id, storageKey]);
+
+  const handleFinalSubmit = (
+    answers: Record<string, any>,
+    meta?: { tabSwitchCount?: number; autoSubmittedReason?: string }
+  ) => {
+    if (typeof window !== "undefined" && assignment.id) {
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {}
+    }
+    onSubmit(answers, meta);
+  };
+
+  const lastOutTabRef = useRef<number>(0);
   useEffect(() => {
     if (!enableProctoring) return;
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        setTabSwitches((prev) => {
-          const next = prev + 1;
-          setProctorWarning(
-            `Nhắc nhở: Hệ thống ghi nhận bạn vừa rời khỏi màn hình làm bài (lần thứ ${next}). Lịch sử rời tab sẽ được gửi cho giáo viên.`
-          );
-          return next;
-        });
+    const handleOutTab = () => {
+      const now = Date.now();
+      if (now - lastOutTabRef.current < 1000) return;
+      lastOutTabRef.current = now;
+
+      setTabSwitches((prev) => {
+        const next = prev + 1;
+        setProctorWarning(
+          `Nhắc nhở: Hệ thống ghi nhận bạn vừa rời khỏi màn hình làm bài (Out Tab lần thứ ${next}). Vi phạm Out Tab sẽ được báo cáo cho giáo viên phụ trách.`
+        );
+        return next;
+      });
+
+      if (!isPreview && assignment?.id) {
+        recordOutTabAction({ assignmentId: assignment.id }).catch(() => {});
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        handleOutTab();
+      }
+    };
+
+    const handleBlur = () => {
+      handleOutTab();
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [enableProctoring]);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [enableProctoring, isPreview, assignment?.id]);
 
   useEffect(() => {
     if (timeLeftSeconds <= 0) {
       if (!isPreview) {
-        onSubmit(studentAnswers, {
+        handleFinalSubmit(studentAnswers, {
           tabSwitchCount: tabSwitches,
           autoSubmittedReason: "TIME_EXPIRED",
         });
@@ -123,7 +216,7 @@ export function IeltsExamPlayer({
       setTimeLeftSeconds((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(timer);
-  }, [isPreview, timeLeftSeconds, studentAnswers, tabSwitches, onSubmit]);
+  }, [isPreview, timeLeftSeconds, studentAnswers, tabSwitches]);
 
   const formatTime = (totalSec: number) => {
     const mins = Math.floor(totalSec / 60);
@@ -148,84 +241,130 @@ export function IeltsExamPlayer({
     }
   };
 
-  const answeredCount = Object.keys(studentAnswers).filter((k) => studentAnswers[k] !== "").length;
+  const answeredCount = questions.filter((q: any, idx: number) => {
+    const qNum = Number(q.questionNumber) || idx + 1;
+    const val = studentAnswers[q.id || `q_${qNum}`] ?? studentAnswers[qNum];
+    return Boolean(val && String(val).trim() !== "");
+  }).length;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-100 flex flex-col h-screen overflow-hidden text-slate-900 select-none">
-      {/* 1. THANH TIÊU ĐỀ TRÊN CÙNG (COMPUTER-DELIVERED IELTS HEADER) */}
-      <header className="h-14 bg-slate-900 text-white px-4 sm:px-6 flex items-center justify-between shadow-md shrink-0 z-30">
-        <div className="flex items-center gap-3">
-          <Badge className="bg-[#EA580C] text-white text-xs font-bold gap-1 px-2.5 py-1">
-            {isListening ? <Headphones className="size-3.5" /> : <BookOpen className="size-3.5" />}
-            IELTS {skill}
-          </Badge>
-          {isPreview && (
-            <Badge
-              variant="outline"
-              className="border-amber-400/60 bg-amber-500/10 text-amber-300 text-xs font-semibold gap-1 px-2.5 py-1"
-            >
-              <Eye className="size-3.5" /> Chế độ xem trước của Giáo viên
+  const progressPercent =
+    questions.length > 0 ? Math.min(100, Math.round((answeredCount / questions.length) * 100)) : 0;
+
+  const renderSkillIcon = () => {
+    if (isListening) return <Headphones className="size-3.5" />;
+    if (isWriting) return <PenTool className="size-3.5" />;
+    if (isSpeaking) return <Mic className="size-3.5" />;
+    return <BookOpen className="size-3.5" />;
+  };
+
+  const standaloneClusters = groupQuestionsIntoSimpaceClusters(standaloneQuestions);
+
+  // Khóa cuộn trang nền khi mở màn hình làm bài toàn màn hình để không xuất hiện 2 thanh cuộn
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, []);
+
+  const playerContent = (
+    <div className="fixed inset-0 z-[100] bg-[#F8FAFC] flex flex-col w-screen h-[100dvh] max-h-[100dvh] overflow-hidden text-slate-900 select-none">
+      {/* 1. THANH HEADER TRÊN CÙNG CHUẨN THIẾT KẾ MỚI SIMPACE (LIGHT MODE + PROGRESS BAR CAM) */}
+      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2.5 shrink-0 z-30 shadow-2xs">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <Badge className="bg-[#EA580C] hover:bg-[#EA580C] text-white text-xs font-bold gap-1.5 px-3 py-1 rounded-full shrink-0">
+              {renderSkillIcon()}
+              <span>SIMPACE • {skill}</span>
             </Badge>
-          )}
-          <span className="font-bold text-sm tracking-tight text-slate-100 hidden sm:inline">
-            {assignment.title}
-          </span>
-        </div>
+            {isPreview && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-50 text-amber-800 text-xs font-semibold gap-1 px-2.5 py-0.5 shrink-0"
+              >
+                <Eye className="size-3.5" /> Chế độ xem trước
+              </Badge>
+            )}
+            <span className="font-extrabold text-sm tracking-tight text-slate-900 truncate hidden sm:inline">
+              {assignment.title}
+            </span>
+          </div>
 
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-800 border border-slate-700">
-          <Clock className="size-4 text-amber-400" />
-          <span className="font-mono font-bold text-sm text-amber-300">
-            {formatTime(timeLeftSeconds)}
-          </span>
-          <span className="text-[10px] text-slate-400 hidden md:inline">còn lại</span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {!isPreview && enableProctoring && (
-            <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-300">
-              <ShieldAlert className="size-3.5 text-amber-400" />
-              <span>Rời tab: </span>
-              <b className={tabSwitches > 0 ? "text-amber-400" : "text-emerald-400"}>
-                {tabSwitches} lần
-              </b>
+          {/* Cụm Đồng hồ + Số câu theo đúng thiết kế SIMPACE */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-3.5 py-1 rounded-full bg-orange-50 border border-orange-200">
+              <Clock className="size-4 text-[#EA580C]" />
+              <span className="font-mono font-extrabold text-sm text-slate-900">
+                {formatTime(timeLeftSeconds)}
+              </span>
             </div>
-          )}
 
-          {isPreview ? (
+            <span className="text-xs font-mono font-extrabold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+              {activeQuestionNumber} / {questions.length || 1}
+            </span>
+          </div>
+
+          {/* Cụm Trạng thái Lưu tự động + Nộp bài */}
+          <div className="flex items-center gap-2.5">
+            {!isPreview && (
+              <span className="hidden xl:flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                <CheckCircle2 className="size-3.5" />
+                <span>{lastSavedText}</span>
+              </span>
+            )}
+
+            {!isPreview && enableProctoring && (
+              <div className="hidden lg:flex items-center gap-1 text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                <ShieldAlert className="size-3.5 text-[#EA580C]" />
+                <span>Out Tab:</span>
+                <b className={tabSwitches > 0 ? "text-rose-600" : "text-emerald-600"}>
+                  {tabSwitches}
+                </b>
+              </div>
+            )}
+
+            {isPreview && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onClose}
+                className="h-9 px-3.5 border-slate-200 text-slate-700 hover:bg-slate-100 font-bold text-xs rounded-xl gap-1.5"
+              >
+                <ChevronLeft className="size-3.5" /> Quay lại
+              </Button>
+            )}
+
             <Button
               type="button"
-              size="sm"
+              variant="ghost"
+              size="icon"
               onClick={onClose}
-              className="h-8.5 px-4 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold text-xs rounded-xl shadow-sm gap-1.5"
+              title="Đóng màn hình"
+              className="size-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
             >
-              <ChevronLeft className="size-3.5" /> Quay lại duyệt đề (Bước 4)
+              <X className="size-4" />
             </Button>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => onSubmit(studentAnswers, { tabSwitchCount: tabSwitches })}
-              className="h-8.5 px-4 bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold text-xs rounded-xl shadow-sm gap-1.5"
-            >
-              <Send className="size-3.5" /> Nộp bài thi
-            </Button>
-          )}
+          </div>
+        </div>
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            title={isPreview ? "Đóng xem trước" : "Đóng màn hình"}
-            className="size-8 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800"
-          >
-            <X className="size-4" />
-          </Button>
+        {/* Thanh tiến độ màu cam đặc trưng của thiết kế SIMPACE */}
+        <div className="w-full h-1.5 bg-orange-100 rounded-full overflow-hidden mt-2">
+          <div
+            style={{ width: `${Math.max(4, progressPercent)}%` }}
+            className="h-full bg-[#EA580C] rounded-full transition-all duration-300"
+          />
         </div>
       </header>
 
       {proctorWarning && (
-        <div className="bg-rose-600 text-white text-xs font-semibold px-4 py-2 flex items-center justify-between shrink-0 animate-pulse">
+        <div className="bg-rose-600 text-white text-xs font-semibold px-4 py-2 flex items-center justify-between shrink-0">
           <span>{proctorWarning}</span>
           <button
             type="button"
@@ -237,15 +376,15 @@ export function IeltsExamPlayer({
         </div>
       )}
 
-      {/* 2. NỘI DUNG CHÍNH */}
+      {/* 2. NỘI DUNG CHÍNH THEO TỪNG KỸ NĂNG */}
       <div className="flex-1 overflow-hidden relative">
         {isReading ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 h-full divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
-            {/* CỘT TRÁI: BÀI ĐỌC */}
+            {/* CỘT TRÁI: BÀI ĐỌC READING PASSAGE */}
             <div className="h-full overflow-y-auto bg-white p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 pb-3 sticky top-0 bg-white/95 backdrop-blur-xs z-10">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700">
+                  <h3 className="font-extrabold text-xs uppercase tracking-wider text-[#EA580C]">
                     {currentSection ? currentSection.title : "READING PASSAGE"}
                   </h3>
                   {sections.length > 1 && (
@@ -255,9 +394,9 @@ export function IeltsExamPlayer({
                           key={sec.id || idx}
                           type="button"
                           onClick={() => setActiveSectionIndex(idx)}
-                          className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                          className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition ${
                             activeSectionIndex === idx
-                              ? "bg-slate-900 text-white"
+                              ? "bg-[#EA580C] text-white"
                               : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                           }`}
                         >
@@ -267,35 +406,9 @@ export function IeltsExamPlayer({
                     </div>
                   )}
                 </div>
-
-                <div className="flex items-center gap-1 text-xs">
-                  <span className="text-[11px] text-slate-400 font-medium mr-1">Cỡ chữ:</span>
-                  <button
-                    type="button"
-                    onClick={() => setTextSize("normal")}
-                    className={`px-2 py-0.5 rounded border text-[11px] font-bold ${
-                      textSize === "normal"
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white text-slate-600 border-slate-200"
-                    }`}
-                  >
-                    A
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTextSize("large")}
-                    className={`px-2 py-0.5 rounded border text-[13px] font-bold ${
-                      textSize === "large"
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white text-slate-600 border-slate-200"
-                    }`}
-                  >
-                    A+
-                  </button>
-                </div>
               </div>
 
-              <div className={textSize === "large" ? "text-sm leading-loose" : "text-xs leading-relaxed"}>
+              <div className="text-xs leading-relaxed">
                 <FormattedPassageView
                   text={
                     currentSection
@@ -311,14 +424,14 @@ export function IeltsExamPlayer({
               </div>
             </div>
 
-            {/* CỘT PHẢI: KHỐI CÂU HỎI */}
-            <div className="h-full overflow-y-auto bg-slate-50 p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3 sticky top-0 bg-slate-50/95 backdrop-blur-xs z-10">
-                <span className="font-bold text-xs uppercase tracking-wider text-slate-700">
+            {/* CỘT PHẢI: KHỐI CÂU HỎI READING CHUẨN SIMPACE */}
+            <div className="h-full overflow-y-auto bg-[#F8FAFC] p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3 sticky top-0 bg-[#F8FAFC]/95 backdrop-blur-xs z-10">
+                <span className="font-extrabold text-xs uppercase tracking-wider text-slate-700">
                   QUESTIONS & ANSWER SHEET
                 </span>
                 <span className="text-xs text-slate-500 font-medium">
-                  Đã làm <b className="text-[#EA580C]">{answeredCount}</b>/{questions.length} câu
+                  Đã trả lời <b className="text-[#EA580C]">{answeredCount}</b>/{questions.length} câu
                 </span>
               </div>
 
@@ -335,46 +448,55 @@ export function IeltsExamPlayer({
                   setActiveQuestionNumber={setActiveQuestionNumber}
                 />
 
-                {standaloneQuestions.map((q: any, idx: number) => {
-                  const qNum = Number(q.questionNumber) || idx + 1;
-                  return (
-                    <StandaloneQuestionCard
-                      key={q.id || idx}
-                      question={q}
-                      questionNumber={qNum}
-                      isFlagged={flaggedQuestions.has(qNum)}
-                      isCurrent={activeQuestionNumber === qNum}
-                      studentAnswers={studentAnswers}
-                      setStudentAnswers={setStudentAnswers}
-                      onToggleFlag={handleToggleFlag}
-                      onFocusQuestion={setActiveQuestionNumber}
-                    />
-                  );
-                })}
+                <SimpaceQuestionClusterRenderer
+                  clusters={standaloneClusters}
+                  skill={skill}
+                  flaggedQuestions={flaggedQuestions}
+                  activeQuestionNumber={activeQuestionNumber}
+                  studentAnswers={studentAnswers}
+                  setStudentAnswers={setStudentAnswers}
+                  onToggleFlag={handleToggleFlag}
+                  onFocusQuestion={setActiveQuestionNumber}
+                />
               </div>
             </div>
           </div>
         ) : (
-          /* BỐ CỤC LISTENING: 1 CỘT TOÀN MÀN HÌNH + AUDIO STICKY TRÊN */
-          <div className="h-full overflow-y-auto bg-slate-50">
-            <ListeningStickyAudioHeader
-              audioUrl={assignment.audioUrl}
-              audioRef={audioRef}
-              isPlayingAudio={isPlayingAudio}
-              setIsPlayingAudio={setIsPlayingAudio}
-              audioCurrentTime={audioCurrentTime}
-              setAudioCurrentTime={setAudioCurrentTime}
-              audioDuration={audioDuration}
-              setAudioDuration={setAudioDuration}
-              formatTime={formatTime}
-            />
+          /* BỐ CỤC CHO LISTENING, WRITING & SPEAKING */
+          <div className="h-full overflow-y-auto bg-[#F8FAFC]">
+            {/* Chỉ hiển thị thanh Audio Header khi là đề LISTENING hoặc đề có đính kèm audioUrl */}
+            {(isListening || Boolean(assignment.audioUrl)) && (
+              <ListeningStickyAudioHeader
+                audioUrl={assignment.audioUrl}
+                audioRef={audioRef}
+                isPlayingAudio={isPlayingAudio}
+                setIsPlayingAudio={setIsPlayingAudio}
+                audioCurrentTime={audioCurrentTime}
+                setAudioCurrentTime={setAudioCurrentTime}
+                audioDuration={audioDuration}
+                setAudioDuration={setAudioDuration}
+                formatTime={formatTime}
+              />
+            )}
 
-            <div className="max-w-4xl mx-auto p-6 space-y-5 pb-24">
+            <div className="max-w-5xl mx-auto p-6 space-y-5 pb-12">
+              <SpecializedQuestionGroups
+                flowcharts={flowcharts}
+                tables={tables}
+                matchingHeadings={matchingHeadings}
+                summaries={summaries}
+                questions={questions}
+                studentAnswers={studentAnswers}
+                setStudentAnswers={setStudentAnswers}
+                activeQuestionNumber={activeQuestionNumber}
+                setActiveQuestionNumber={setActiveQuestionNumber}
+              />
+
               {sections.length > 0 ? (
                 sections.map((sec, sIdx) => (
                   <div key={sec.id || sIdx} className="space-y-4">
-                    <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                      <h3 className="font-bold text-xs uppercase tracking-wide text-[#EA580C]">
+                    <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                      <h3 className="font-extrabold text-xs uppercase tracking-wide text-[#EA580C]">
                         {sec.title || `SECTION ${sIdx + 1}`}
                       </h3>
                       {sec.passageText && (
@@ -384,62 +506,48 @@ export function IeltsExamPlayer({
                       )}
                     </div>
 
-                    <div className="space-y-3.5">
-                      {sec.questions.map((q: any) => {
-                        const qNum = q.questionNumber;
-                        return (
-                          <StandaloneQuestionCard
-                            key={q.id || qNum}
-                            question={q}
-                            questionNumber={qNum}
-                            isFlagged={flaggedQuestions.has(qNum)}
-                            isCurrent={activeQuestionNumber === qNum}
-                            showPoints={false}
-                            studentAnswers={studentAnswers}
-                            setStudentAnswers={setStudentAnswers}
-                            onToggleFlag={handleToggleFlag}
-                            onFocusQuestion={setActiveQuestionNumber}
-                          />
-                        );
-                      })}
-                    </div>
+                    <SimpaceQuestionClusterRenderer
+                      clusters={groupQuestionsIntoSimpaceClusters(sec.questions || [])}
+                      skill={skill}
+                      flaggedQuestions={flaggedQuestions}
+                      activeQuestionNumber={activeQuestionNumber}
+                      showPoints={false}
+                      studentAnswers={studentAnswers}
+                      setStudentAnswers={setStudentAnswers}
+                      onToggleFlag={handleToggleFlag}
+                      onFocusQuestion={setActiveQuestionNumber}
+                    />
                   </div>
                 ))
               ) : (
-                <div className="space-y-3.5">
-                  {standaloneQuestions.map((q: any, idx: number) => {
-                    const qNum = q.questionNumber || idx + 1;
-                    return (
-                      <StandaloneQuestionCard
-                        key={q.id || idx}
-                        question={q}
-                        questionNumber={qNum}
-                        isFlagged={flaggedQuestions.has(qNum)}
-                        isCurrent={activeQuestionNumber === qNum}
-                        showPoints={false}
-                        studentAnswers={studentAnswers}
-                        setStudentAnswers={setStudentAnswers}
-                        onToggleFlag={handleToggleFlag}
-                        onFocusQuestion={setActiveQuestionNumber}
-                      />
-                    );
-                  })}
-                </div>
+                <SimpaceQuestionClusterRenderer
+                  clusters={standaloneClusters}
+                  skill={skill}
+                  flaggedQuestions={flaggedQuestions}
+                  activeQuestionNumber={activeQuestionNumber}
+                  showPoints={false}
+                  studentAnswers={studentAnswers}
+                  setStudentAnswers={setStudentAnswers}
+                  onToggleFlag={handleToggleFlag}
+                  onFocusQuestion={setActiveQuestionNumber}
+                />
               )}
             </div>
           </div>
         )}
       </div>
 
-      {/* 3. THANH ĐIỀU HƯỚNG CÂU HỎI Ở CHÂN TRANG */}
-      <footer className="h-14 bg-slate-900 text-white px-4 sm:px-6 flex items-center justify-between shrink-0 z-30 border-t border-slate-800">
-        <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-[65%] sm:max-w-[75%] scrollbar-none">
-          <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1 hidden sm:inline">
-            Bảng câu hỏi:
+      {/* 3. THANH ĐIỀU HƯỚNG CÂU HỎI Ở CHÂN TRANG CHUẨN SIMPACE */}
+      <footer className="h-14 bg-white text-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0 z-30 border-t border-slate-200 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1 max-w-[55%] sm:max-w-[65%] scrollbar-none">
+          <span className="text-[11px] font-bold text-slate-500 shrink-0 mr-1 hidden sm:inline">
+            Câu hỏi:
           </span>
           {questions.map((q: any, idx: number) => {
             const qNum = Number(q.questionNumber) || idx + 1;
-            const hasAnswer = Boolean(studentAnswers[q.id || `q_${qNum}`]);
+            const hasAnswer = Boolean(
+              studentAnswers[q.id || `q_${qNum}`] || studentAnswers[qNum]
+            );
             const isFlagged = flaggedQuestions.has(qNum);
             const isCurrent = activeQuestionNumber === qNum;
 
@@ -450,45 +558,60 @@ export function IeltsExamPlayer({
                 onClick={() => scrollToQuestion(qNum)}
                 className={`size-7 rounded-lg text-xs font-mono font-bold shrink-0 transition relative flex items-center justify-center ${
                   isCurrent
-                    ? "bg-[#EA580C] text-white ring-2 ring-white"
+                    ? "bg-[#EA580C] text-white shadow-xs"
                     : hasAnswer
-                    ? "bg-slate-700 text-white hover:bg-slate-600"
-                    : "bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700"
+                    ? "bg-orange-100 text-[#EA580C] border border-orange-200"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
                 }`}
-                title={`Câu ${qNum}${hasAnswer ? " (Đã làm)" : ""}${isFlagged ? " (Đã gắn cờ)" : ""}`}
+                title={`Câu ${qNum}${hasAnswer ? " (Đã trả lời)" : ""}${isFlagged ? " (Flagged)" : ""}`}
               >
                 {qNum}
                 {isFlagged && (
-                  <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber-400" />
+                  <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 ring-1 ring-white" />
                 )}
               </button>
             );
           })}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             type="button"
             variant="outline"
             size="sm"
             disabled={activeQuestionNumber <= 1}
             onClick={() => scrollToQuestion(Math.max(1, activeQuestionNumber - 1))}
-            className="h-8 px-2.5 text-xs bg-slate-800 border-slate-700 text-white hover:bg-slate-700 disabled:opacity-40"
+            className="h-9 px-3 text-xs rounded-xl border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold disabled:opacity-40"
           >
-            <ChevronLeft className="size-3.5 mr-0.5" /> Trước
+            <ChevronLeft className="size-3.5 mr-1" /> Câu trước
           </Button>
+          {activeQuestionNumber < questions.length && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => scrollToQuestion(Math.min(questions.length, activeQuestionNumber + 1))}
+              className="h-9 px-3 text-xs rounded-xl border-orange-200 text-[#EA580C] hover:bg-orange-50 font-bold"
+            >
+              Câu tiếp <ChevronRight className="size-3.5 ml-1" />
+            </Button>
+          )}
           <Button
             type="button"
-            variant="outline"
             size="sm"
-            disabled={activeQuestionNumber >= questions.length}
-            onClick={() => scrollToQuestion(Math.min(questions.length, activeQuestionNumber + 1))}
-            className="h-8 px-2.5 text-xs bg-slate-800 border-slate-700 text-white hover:bg-slate-700 disabled:opacity-40"
+            onClick={() => handleFinalSubmit(studentAnswers, { tabSwitchCount: tabSwitches })}
+            className="h-9 px-4 text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold gap-1.5 shadow-xs"
           >
-            Tiếp <ChevronRight className="size-3.5 ml-0.5" />
+            <Send className="size-3.5" /> {isPreview ? "Nộp bài (Thử)" : "Nộp bài (Submit)"}
           </Button>
         </div>
       </footer>
     </div>
   );
+
+  if (!mounted || typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(playerContent, document.body);
 }

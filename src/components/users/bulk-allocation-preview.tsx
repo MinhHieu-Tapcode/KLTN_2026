@@ -31,6 +31,7 @@ import {
   removeClassAndRebalanceAction,
   updateClassCapacitiesAndRebalanceAction,
 } from "@/actions/bulk-allocation";
+import { EditClassModal } from "@/components/classes/edit-class-modal";
 import {
   AdjustClassCountModal,
   ClassDetailModal,
@@ -64,6 +65,7 @@ export interface BulkAllocationPreviewProps {
   onResetUpload: () => void;
   onBackToStep1: () => void;
   onCommittedSuccess: (summaryPayload: any) => void;
+  users?: any[];
 }
 
 export function BulkAllocationPreview({
@@ -80,6 +82,7 @@ export function BulkAllocationPreview({
   onResetUpload,
   onBackToStep1,
   onCommittedSuccess,
+  users = [],
 }: BulkAllocationPreviewProps) {
   const [activeTab, setActiveTab] = useState<"classes" | "out_of_level" | "invalid">("classes");
   const [belowCutoffList, setBelowCutoffList] = useState<ValidatedStudentRow[]>(
@@ -94,6 +97,7 @@ export function BulkAllocationPreview({
   >("score_desc");
 
   const [selectedClassDetail, setSelectedClassDetail] = useState<ProposedClass | null>(null);
+  const [editingProposedClass, setEditingProposedClass] = useState<ProposedClass | null>(null);
   const [transferStudent, setTransferStudent] = useState<ValidatedStudentRow | null>(null);
   const [transferCurrentClassName, setTransferCurrentClassName] = useState<string>("");
   const [adjustClassLevel, setAdjustClassLevel] = useState<LevelAllocationPlan | null>(null);
@@ -481,35 +485,113 @@ export function BulkAllocationPreview({
   const handleSaveClassCapacities = async (
     classSettings: Record<string, { capacity: number; isRemoved?: boolean }>
   ) => {
-    setIsRebalancing(true);
-    try {
-      const res = await updateClassCapacitiesAndRebalanceAction(
-        allocationSuggestion.levelPlans,
-        classSettings,
-        schoolCode
-      );
-      if (!res.success || !res.updatedPlans) {
-        onError(res.error || "Không thể cập nhật cấu hình sĩ số lớp!");
-      } else {
-        const newTotalClasses = res.updatedPlans.reduce((acc, p) => acc + p.classes.length, 0);
-        const newTotalAllocated = res.updatedPlans.reduce(
-          (acc, p) => acc + p.classes.reduce((sub, c) => sub + c.students.length, 0),
-          0
+    const hasRemoval = Object.values(classSettings).some((s) => s.isRemoved);
+
+    if (hasRemoval) {
+      setIsRebalancing(true);
+      try {
+        const res = await updateClassCapacitiesAndRebalanceAction(
+          allocationSuggestion.levelPlans,
+          classSettings,
+          schoolCode
         );
-        onUpdateSuggestion({
-          ...allocationSuggestion,
-          summary: {
-            ...allocationSuggestion.summary,
-            totalClasses: newTotalClasses,
-            totalAllocatedStudents: newTotalAllocated,
-          },
-          levelPlans: res.updatedPlans,
-        });
-        onNotify(res.message || "Đã cập nhật cấu hình lớp thành công.");
+        if (!res.success || !res.updatedPlans) {
+          onError(res.error || "Không thể cập nhật cấu hình sĩ số lớp!");
+        } else {
+          const newTotalClasses = res.updatedPlans.reduce((acc, p) => acc + p.classes.length, 0);
+          const newTotalAllocated = res.updatedPlans.reduce(
+            (acc, p) => acc + p.classes.reduce((sub, c) => sub + c.students.length, 0),
+            0
+          );
+          onUpdateSuggestion({
+            ...allocationSuggestion,
+            summary: {
+              ...allocationSuggestion.summary,
+              totalClasses: newTotalClasses,
+              totalAllocatedStudents: newTotalAllocated,
+            },
+            levelPlans: res.updatedPlans,
+          });
+          onNotify(res.message || "Đã giải thể lớp và phân bổ lại học sinh.");
+        }
+      } finally {
+        setIsRebalancing(false);
       }
-    } finally {
-      setIsRebalancing(false);
+    } else {
+      // Cập nhật chỉ tiêu sĩ số, tuyệt đối KHÔNG tự động thay đổi/xáo trộn danh sách học sinh hiện có
+      const nextPlans = allocationSuggestion.levelPlans.map((plan) => ({
+        ...plan,
+        classes: plan.classes.map((cls) => {
+          const setting = classSettings[cls.tempId];
+          if (setting && typeof setting.capacity === "number") {
+            return {
+              ...cls,
+              capacity: setting.capacity,
+            };
+          }
+          return cls;
+        }),
+      }));
+
+      onUpdateSuggestion({
+        ...allocationSuggestion,
+        levelPlans: nextPlans,
+      });
+      onNotify("Đã cập nhật chỉ tiêu sĩ số tối đa cho các lớp học thành công (giữ nguyên danh sách học sinh)!");
     }
+  };
+
+  const handleAddNewClass = (levelId: string) => {
+    const targetPlan = allocationSuggestion.levelPlans.find((p) => p.levelId === levelId);
+    if (!targetPlan) return;
+
+    const newClassIndex = targetPlan.classes.length + 1;
+    const padIndex = newClassIndex.toString().padStart(2, "0");
+    const code = `IELTS_${targetPlan.levelCode}_${schoolCode}_${padIndex}`;
+    const name = `IELTS ${targetPlan.levelName} - Lớp ${padIndex}`;
+    const tempId = `temp-class-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const newClass: ProposedClass = {
+      tempId,
+      levelId: targetPlan.levelId,
+      levelCode: targetPlan.levelCode,
+      levelName: targetPlan.levelName,
+      classIndex: newClassIndex,
+      code,
+      name,
+      capacity: maxCapacity || 30,
+      students: [],
+      status: "UPCOMING",
+      teacherIds: [],
+      description: "",
+      schedule: "",
+    };
+
+    const nextPlans = allocationSuggestion.levelPlans.map((p) => {
+      if (p.levelId === levelId) {
+        const nextClasses = [...p.classes, newClass];
+        return {
+          ...p,
+          classes: nextClasses,
+          classCount: nextClasses.length,
+        };
+      }
+      return p;
+    });
+
+    const newTotalClasses = nextPlans.reduce((sum, p) => sum + p.classes.length, 0);
+
+    onUpdateSuggestion({
+      ...allocationSuggestion,
+      levelPlans: nextPlans,
+      summary: {
+        ...allocationSuggestion.summary,
+        totalClasses: newTotalClasses,
+      },
+    });
+
+    onNotify(`Đã tạo lớp mới "${name}" (${code})! Bạn có thể chỉnh sửa thông tin chi tiết.`);
+    setEditingProposedClass(newClass);
   };
 
   const handleExportInvalidRows = () => {
@@ -762,6 +844,8 @@ export function BulkAllocationPreview({
             onUpdateCapacity={handleUpdateCapacity}
             onOpenConfigureModal={() => setConfigureCapacitiesOpen(true)}
             onSelectClassDetail={(cls) => setSelectedClassDetail(cls)}
+            onSelectEditClass={(cls) => setEditingProposedClass(cls)}
+            onAddNewClass={handleAddNewClass}
             onSelectDeleteClass={(cls) => setDeleteTargetClass(cls)}
           />
         </div>
@@ -814,7 +898,70 @@ export function BulkAllocationPreview({
           setTransferStudent(student);
           setTransferCurrentClassName(selectedClassDetail?.name || "");
         }}
+        onEditClass={(cls) => {
+          setSelectedClassDetail(null);
+          setEditingProposedClass(cls);
+        }}
       />
+
+      {/* Form chỉnh sửa lớp học chuẩn theo CR-05 */}
+      {editingProposedClass && (
+        <EditClassModal
+          classItem={{
+            id: editingProposedClass.tempId,
+            code: editingProposedClass.code,
+            name: editingProposedClass.name,
+            capacity: editingProposedClass.capacity,
+            description:
+              (editingProposedClass as any).schedule ||
+              (editingProposedClass as any).description ||
+              "",
+            status: editingProposedClass.status || "UPCOMING",
+            school: selectedSchool || { name: selectedSchoolName },
+            assignments: (editingProposedClass.teacherIds || []).map((tId: string) => ({
+              userId: tId,
+              roleInClass: "TEACHER",
+            })),
+            startDate: (editingProposedClass as any).startDate || "",
+            endDate: (editingProposedClass as any).endDate || "",
+          }}
+          teachers={
+            users.filter((u: any) => u.role?.code === "TEACHER").length > 0
+              ? users.filter((u: any) => u.role?.code === "TEACHER")
+              : [{ id: "teacher-assigned", profile: { fullName: "Giáo viên phụ trách" }, username: "teacher" }]
+          }
+          tas={users.filter((u: any) => u.role?.code === "TEACHING_ASSISTANT")}
+          onClose={() => setEditingProposedClass(null)}
+          onDone={() => setEditingProposedClass(null)}
+          onCustomSave={async (updatedData: any) => {
+            const nextPlans = allocationSuggestion.levelPlans.map((plan) => ({
+              ...plan,
+              classes: plan.classes.map((c) => {
+                if (c.tempId === editingProposedClass.tempId) {
+                  return {
+                    ...c,
+                    name: updatedData.name || c.name,
+                    capacity: updatedData.capacity || c.capacity,
+                    schedule: updatedData.schedule,
+                    description: updatedData.schedule,
+                    startDate: updatedData.startDate,
+                    endDate: updatedData.endDate,
+                    teacherIds: updatedData.teacherIds,
+                    status: updatedData.status,
+                  };
+                }
+                return c;
+              }),
+            }));
+            onUpdateSuggestion({
+              ...allocationSuggestion,
+              levelPlans: nextPlans,
+            });
+            onNotify(`Đã cập nhật thông tin lớp đề xuất "${updatedData.name || editingProposedClass.name}" thành công!`);
+            return { success: true };
+          }}
+        />
+      )}
 
       <StudentTransferModal
         open={Boolean(transferStudent)}
@@ -878,6 +1025,14 @@ export function BulkAllocationPreview({
         onClose={() => setConfigureCapacitiesOpen(false)}
         levelPlans={allocationSuggestion.levelPlans}
         onConfirmSave={handleSaveClassCapacities}
+        onEditClass={(cls) => {
+          setConfigureCapacitiesOpen(false);
+          setEditingProposedClass(cls);
+        }}
+        onAddNewClass={(levelId) => {
+          setConfigureCapacitiesOpen(false);
+          handleAddNewClass(levelId);
+        }}
       />
 
       <Dialog open={Boolean(deleteTargetStudent)} onOpenChange={(v) => !v && setDeleteTargetStudent(null)}>

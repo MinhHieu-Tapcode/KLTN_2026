@@ -19,7 +19,6 @@ import {
   Upload,
   Download,
   Eye,
-  AlertCircle,
   Loader2,
   Layers,
   History,
@@ -31,16 +30,24 @@ import {
   createMultipleAssignmentsAction,
 } from "@/actions/assignments";
 import { extractTextFromScannedPdfClient } from "@/lib/exam-parser/client-ocr";
+import { uploadMaterialFileClient } from "@/lib/upload-material-client";
+import { validateAssignmentMediaRequirements } from "@/lib/exam-parser/question-media-detector";
 import { ExcelAnswerImporter } from "@/components/assignments/excel-answer-importer";
 import { InvariantsBanner } from "@/components/assignments/invariants-banner";
 import { IeltsExamPlayer } from "@/components/assignments/ielts-exam-player";
 import { EbookTwoColumnViewer } from "./ebook-two-column-viewer";
 import { useExamParserDraft } from "./hooks/use-exam-parser-draft";
+import {
+  AssignmentConfigFields,
+  AssignmentConfigState,
+} from "@/components/assignments/assignment-config-fields";
+import { validateAssignmentConfig } from "@/lib/assignment-config";
 
 export interface SmartParserModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  classId: string;
+  classId?: string;
+  targetClassIds?: string[];
   onSuccess: (message: string) => void;
   showAlert: (title: string, desc: string, type?: "success" | "error" | "warning" | "info") => void;
 }
@@ -49,15 +56,16 @@ export function SmartParserModal({
   open,
   onOpenChange,
   classId,
+  targetClassIds,
   onSuccess,
   showAlert,
 }: SmartParserModalProps) {
   const [isPending, startTransition] = useTransition();
 
-  // State cấu hình khởi tạo
+  // State cấu hình khởi tạo (Chỉ cho phép bóc tách lẻ từng kỹ năng 1 để đảm bảo độ chính xác)
   const [parserTitle, setParserTitle] = useState<string>("");
   const [parserSkill, setParserSkill] = useState<
-    "ALL_SKILLS" | "READING" | "LISTENING" | "WRITING" | "SPEAKING"
+    "READING" | "LISTENING" | "WRITING" | "SPEAKING"
   >("READING");
   const [parserDuration, setParserDuration] = useState<number>(60);
   const [parserPdfFile, setParserPdfFile] = useState<File | null>(null);
@@ -74,7 +82,23 @@ export function SmartParserModal({
   const [isPreviewExamOpen, setIsPreviewExamOpen] = useState<boolean>(false);
 
   // Custom hook quản lý bản nháp localStorage
-  const { hasDraft, savedTime, saveDraft, getDraft, clearDraft } = useExamParserDraft(classId);
+  const targetClassList = Array.from(
+    new Set([...(targetClassIds || []), ...(classId ? [classId] : [])].filter(Boolean))
+  );
+  const primaryClassId = targetClassList[0] || classId || "";
+
+  // State cấu hình bài tập giao (CR-02)
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [examConfig, setExamConfig] = useState<AssignmentConfigState>({
+    durationMinutes: 60,
+    startDate: "",
+    dueDate: "",
+    maxAttempts: 1,
+    answerVisibility: "AFTER_SUBMIT",
+    answerVisibleAt: "",
+  });
+
+  const { hasDraft, savedTime, saveDraft, getDraft, clearDraft } = useExamParserDraft(primaryClassId);
 
   // Tự động lưu nháp mỗi khi dữ liệu Ebook thay đổi
   useEffect(() => {
@@ -105,7 +129,11 @@ export function SmartParserModal({
     const draft = getDraft();
     if (!draft || !draft.parsedEbookData) return;
     setParserTitle(draft.parserTitle || "");
-    setParserSkill((draft.parserSkill as any) || "READING");
+    const restoredSkill =
+      draft.parserSkill && draft.parserSkill !== "ALL_SKILLS"
+        ? (draft.parserSkill as any)
+        : "READING";
+    setParserSkill(restoredSkill);
     setParserDuration(draft.parserDuration || 60);
     setParsedEbookData(draft.parsedEbookData);
     setSelectedQuestionNumbers(draft.selectedQuestionNumbers || []);
@@ -169,7 +197,7 @@ export function SmartParserModal({
         setIsQuestionsFinalized(false);
         showAlert(
           "Nhận diện đề thi thành công!",
-          `Đã trích xuất cấu trúc đề thi từ "${file.name}" thành Ebook 2 cột (${allNums.length} câu hỏi). Hãy kiểm tra và chốt danh sách câu hỏi sử dụng!`,
+          `Đã trích xuất cấu trúc đề thi từ "${file.name}" thành Ebook 2 cột (${allNums.length} câu hỏi). Hãy kiểm tra, đính kèm ảnh Bản đồ/Biểu đồ (nếu có) và chốt danh sách câu hỏi!`,
           "success"
         );
       } else {
@@ -178,16 +206,21 @@ export function SmartParserModal({
     });
   };
 
-  // Tải Audio bổ sung cho Listening
-  const handleUploadAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Tải Audio bổ sung cho Listening (Lưu file thật lên server thay vì blob URL tạm thời)
+  const handleUploadAudio = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const audioFile = e.target.files?.[0];
     if (!audioFile) return;
-    const blobUrl = URL.createObjectURL(audioFile);
-    setParserAudioFileName(audioFile.name);
-    if (parsedEbookData) {
-      setParsedEbookData({ ...parsedEbookData, audioUrl: blobUrl });
+    e.target.value = "";
+    try {
+      const uploaded = await uploadMaterialFileClient(audioFile);
+      setParserAudioFileName(audioFile.name);
+      if (parsedEbookData) {
+        setParsedEbookData({ ...parsedEbookData, audioUrl: uploaded.url });
+      }
+      showAlert("Tải tệp âm thanh thành công", `Đã lưu tệp audio "${audioFile.name}" lên hệ thống.`, "success");
+    } catch (err: any) {
+      showAlert("Lỗi tải tệp âm thanh", err?.message || "Không thể tải tệp âm thanh lên máy chủ.", "error");
     }
-    showAlert("Tải tệp âm thanh thành công", `Đã gắn tệp audio "${audioFile.name}".`, "success");
   };
 
   // Xuất file Excel mẫu theo đúng số câu đã chốt
@@ -250,6 +283,26 @@ export function SmartParserModal({
     setParsedEbookData({ ...parsedEbookData, questions: updatedQuestions, sections: updatedSections });
   };
 
+  // Áp dụng chung 1 ảnh minh họa (Map / Diagram) cho cụm câu hỏi từ startNum -> endNum
+  const handleApplyImageToRange = (startNum: number, endNum: number, imageUrl: string) => {
+    if (!parsedEbookData) return;
+    const applyRange = (q: any) =>
+      q.questionNumber >= startNum && q.questionNumber <= endNum
+        ? { ...q, imageUrl }
+        : q;
+    const updatedQuestions = (parsedEbookData.questions || []).map(applyRange);
+    const updatedSections = parsedEbookData.sections?.map((sec: any) => ({
+      ...sec,
+      questions: (sec.questions || []).map(applyRange),
+    }));
+    setParsedEbookData({ ...parsedEbookData, questions: updatedQuestions, sections: updatedSections });
+    showAlert(
+      "Đã áp dụng ảnh cho nhóm câu hỏi",
+      `Đã gán ảnh minh họa cho toàn bộ cụm Câu ${startNum} đến Câu ${endNum}!`,
+      "success"
+    );
+  };
+
   // Xóa câu hỏi
   const handleDeleteQuestion = (qNum: number) => {
     if (!parsedEbookData) return;
@@ -301,19 +354,88 @@ export function SmartParserModal({
       return;
     }
 
+    const activeQuestions = (parsedEbookData.questions || []).filter((q: any) =>
+      selectedQuestionNumbers.includes(q.questionNumber)
+    );
+    const hasStructuredTablesOrFlowcharts =
+      (parsedEbookData.tables && parsedEbookData.tables.length > 0) ||
+      (parsedEbookData.flowcharts && parsedEbookData.flowcharts.length > 0);
+
+    const mediaCheck = validateAssignmentMediaRequirements(
+      activeQuestions,
+      parsedEbookData.skill || parserSkill || "READING",
+      hasStructuredTablesOrFlowcharts
+    );
+
+    if (!mediaCheck.valid) {
+      const missingNums = mediaCheck.missingRequired.map((m) => `Câu ${m.questionNumber}`).join(", ");
+      showAlert(
+        "Thiếu hình ảnh bắt buộc (Map / Diagram / Biểu đồ)",
+        `Các câu hỏi (${missingNums}) thuộc dạng Bản đồ, Sơ đồ hoặc Biểu đồ bắt buộc phải có hình ảnh minh họa để học viên làm bài. Vui lòng tải ảnh hoặc nhấn Ctrl+V dán ảnh vào câu hỏi đó trước khi phát hành!`,
+        "error"
+      );
+      const firstMissing = mediaCheck.missingRequired[0]?.questionNumber;
+      if (firstMissing) {
+        document.getElementById(`ebook-q-card-${firstMissing}`)?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+      return;
+    }
+
+    // Mở dialog cấu hình bài tập trước khi phát hành (CR-01, CR-02)
+    setExamConfig((prev) => ({
+      ...prev,
+      durationMinutes: parsedEbookData.durationMinutes || parserDuration || 60,
+    }));
+    setShowConfigDialog(true);
+  };
+
+  const handleConfirmPublishParsedAssignment = () => {
+    if (!parsedEbookData) return;
+    const activeQuestions = (parsedEbookData.questions || []).filter((q: any) =>
+      selectedQuestionNumbers.includes(q.questionNumber)
+    );
+    const valResult = validateAssignmentConfig(examConfig);
+    if (valResult.error) {
+      showAlert("Lỗi cấu hình", valResult.error, "error");
+      return;
+    }
+
     startTransition(async () => {
       if (parsedEbookData.skill === "ALL_SKILLS" && parsedEbookData.sections) {
         const multiple = parsedEbookData.sections.map((sec: any) => ({
-          classId,
+          classId: primaryClassId,
+          targetClassIds: targetClassList,
           title: sec.title || `${parsedEbookData.title} - ${sec.skill}`,
           description: `Đề thi kỹ năng ${sec.skill} từ bộ đề: ${parsedEbookData.title}`,
           skill: sec.skill,
           type: "MOCK_EXAM",
-          durationMinutes: sec.durationMinutes || 60,
+          durationMinutes: examConfig.durationMinutes || sec.durationMinutes || 60,
+          startDate: examConfig.startDate || null,
+          dueDate: examConfig.dueDate ? new Date(examConfig.dueDate).toISOString() : null,
+          maxAttempts: valResult.maxAttempts,
+          answerVisibility: valResult.answerVisibility,
+          answerVisibleAt: valResult.answerVisibleAt ? valResult.answerVisibleAt.toISOString() : null,
           audioUrl: sec.audioUrl || (sec.skill === "LISTENING" ? parsedEbookData.audioUrl : null),
           enableProctoring: true,
-          maxTabSwitches: 999,
-          questions: (sec.questions || []).filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber)),
+          maxTabSwitches: 3,
+          questions: (sec.questions || [])
+            .filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber))
+            .map((q: any, idx: number) => ({
+              questionNumber: q.questionNumber || idx + 1,
+              passageText: sec.passageText || parsedEbookData.passageText,
+              prompt: q.prompt,
+              type: q.type,
+              ieltsQuestionType: q.ieltsQuestionType || null,
+              groupTitle: q.groupTitle || null,
+              imageUrl: q.imageUrl || null,
+              points: q.points,
+              correctAnswer: q.correctAnswer,
+              explanation: q.explanation,
+              options: q.options,
+            })),
           flowcharts: parsedEbookData.flowcharts || [],
           tables: parsedEbookData.tables || [],
           matchingHeadings: parsedEbookData.matchingHeadings || [],
@@ -324,37 +446,45 @@ export function SmartParserModal({
         if (res.success) {
           clearDraft();
           setParsedEbookData(null);
+          setShowConfigDialog(false);
           onOpenChange(false);
-          onSuccess(`Đã phân tách và phát hành thành công ${multiple.length} bài tập!`);
+          onSuccess(`Đã phân tách và phát hành thành công ${multiple.length} bài tập cho ${targetClassList.length} lớp!`);
         } else {
           showAlert("Lỗi phát hành", res.error || "Không thể lưu danh sách bài tập!", "error");
         }
         return;
       }
 
-      const filteredQ = (parsedEbookData.questions || [])
-        .filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber))
-        .map((q: any, idx: number) => ({
-          questionNumber: q.questionNumber || idx + 1,
-          passageText: parsedEbookData.passageText,
-          prompt: q.prompt,
-          type: q.type,
-          points: q.points,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
-          options: q.options,
-        }));
+      const filteredQ = activeQuestions.map((q: any, idx: number) => ({
+        questionNumber: q.questionNumber || idx + 1,
+        passageText: q.passageText || parsedEbookData.passageText,
+        prompt: q.prompt,
+        type: q.type,
+        ieltsQuestionType: q.ieltsQuestionType || null,
+        groupTitle: q.groupTitle || null,
+        imageUrl: q.imageUrl || null,
+        points: q.points,
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+        options: q.options,
+      }));
 
       const res = await createAssignmentAction({
-        classId,
+        classId: primaryClassId,
+        targetClassIds: targetClassList,
         title: parsedEbookData.title,
         description: `Bài tập bóc tách Ebook: ${parsedEbookData.title}`,
         skill: parsedEbookData.skill,
         type: "HOMEWORK",
-        durationMinutes: parsedEbookData.durationMinutes || 60,
+        durationMinutes: examConfig.durationMinutes || parsedEbookData.durationMinutes || 60,
+        startDate: examConfig.startDate || null,
+        dueDate: examConfig.dueDate ? new Date(examConfig.dueDate).toISOString() : null,
+        maxAttempts: valResult.maxAttempts,
+        answerVisibility: valResult.answerVisibility,
+        answerVisibleAt: valResult.answerVisibleAt ? valResult.answerVisibleAt.toISOString() : null,
         audioUrl: parsedEbookData.audioUrl,
         enableProctoring: true,
-        maxTabSwitches: 999,
+        maxTabSwitches: 3,
         questions: filteredQ,
         flowcharts: parsedEbookData.flowcharts || [],
         tables: parsedEbookData.tables || [],
@@ -365,8 +495,9 @@ export function SmartParserModal({
       if (res.success) {
         clearDraft();
         setParsedEbookData(null);
+        setShowConfigDialog(false);
         onOpenChange(false);
-        onSuccess(`Đã tạo bài tập "${parsedEbookData.title}" thành công!`);
+        onSuccess(`Đã tạo bài tập "${parsedEbookData.title}" thành công cho ${targetClassList.length} lớp!`);
       } else {
         showAlert("Lỗi lưu bài tập", res.error || "Không thể lưu bài tập!", "error");
       }
@@ -376,13 +507,13 @@ export function SmartParserModal({
   return (
     <>
       <Dialog open={open && !isPreviewExamOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl p-6">
+        <DialogContent className="!w-[96vw] !max-w-[1420px] max-h-[92vh] overflow-y-auto rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Sparkles className="size-5 text-[#EA580C]" /> Bóc tách Đề thi IELTS Thông minh (Ebook 2 cột)
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Tải PDF đề thi → Xem Ebook 2 cột → Nạp Excel điền đáp án → Phát hành bài tập.
+              Tải PDF đề thi → Kiểm tra & đính kèm ảnh Bản đồ/Biểu đồ → Nạp Excel điền đáp án → Phát hành bài tập.
             </DialogDescription>
           </DialogHeader>
 
@@ -412,7 +543,9 @@ export function SmartParserModal({
                 <FileText className="size-5 text-[#EA580C] shrink-0 mt-0.5" />
                 <div className="text-xs text-slate-700 space-y-1">
                   <b className="text-slate-900">Bước 1: Tải lên tệp Đề thi PDF / Word</b>
-                  <p>Hệ thống tự động quét nhận diện chữ, chia Phần và mở giao diện Ebook 2 cột tương tác.</p>
+                  <p>
+                    Hệ thống tự động quét nhận diện chữ, chia Phần và phát hiện các câu hỏi cần đính kèm ảnh gốc (Map, Diagram, Biểu đồ).
+                  </p>
                 </div>
               </div>
 
@@ -428,20 +561,21 @@ export function SmartParserModal({
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-700">Phạm vi bóc tách</Label>
-                  <div className="grid grid-cols-5 gap-2">
+                  <Label className="text-xs font-bold text-slate-700">
+                    Chọn 1 Kỹ năng của tệp đề thi tải lên
+                  </Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
-                      { val: "ALL_SKILLS", label: "🌟 Full 4 Kỹ năng" },
-                      { val: "READING", label: "Reading (Đọc)" },
-                      { val: "LISTENING", label: "Listening (Nghe)" },
-                      { val: "WRITING", label: "Writing (Viết)" },
-                      { val: "SPEAKING", label: "Speaking (Nói)" },
+                      { val: "READING", label: "📖 Reading (Đọc)" },
+                      { val: "LISTENING", label: "🎧 Listening (Nghe)" },
+                      { val: "WRITING", label: "✍️ Writing (Viết)" },
+                      { val: "SPEAKING", label: "🎙️ Speaking (Nói)" },
                     ].map((sk) => (
                       <button
                         key={sk.val}
                         type="button"
                         onClick={() => setParserSkill(sk.val as any)}
-                        className={`p-2.5 rounded-xl border text-xs font-semibold transition text-left ${
+                        className={`p-2.5 rounded-xl border text-xs font-bold transition text-left ${
                           parserSkill === sk.val
                             ? "border-[#EA580C] bg-orange-50 text-[#EA580C] ring-2 ring-orange-200"
                             : "border-slate-200 hover:bg-slate-50 text-slate-700"
@@ -591,6 +725,7 @@ export function SmartParserModal({
                 onUpdateQuestionField={handleUpdateQuestionField}
                 onDeleteQuestion={handleDeleteQuestion}
                 onAddQuestion={handleAddQuestion}
+                onApplyImageToRange={handleApplyImageToRange}
               />
 
               {/* Dialog Footer */}
@@ -613,15 +748,62 @@ export function SmartParserModal({
                   className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-semibold gap-1.5 shadow-sm px-5"
                 >
                   {isPending ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <Sparkles className="size-3.5" />}
-                  {parsedEbookData.skill === "ALL_SKILLS"
-                    ? "Tự động phân tách & Phát hành trọn bộ 4 Kỹ năng"
-                    : "Xác nhận & Lưu bài tập Ebook"}
+                  Xác nhận & Lưu bài tập Ebook
                 </Button>
               </DialogFooter>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Dialog Cấu hình phát hành bài tập bóc tách Ebook (CR-01, CR-02) */}
+      {showConfigDialog && (
+        <Dialog open={showConfigDialog} onOpenChange={setShowConfigDialog}>
+          <DialogContent className="max-w-lg rounded-2xl p-6">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="size-4 text-[#EA580C]" /> Cấu hình phát hành bài tập Ebook
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                Thiết lập thời gian làm bài, số lần làm bài và chế độ đáp án cho {targetClassList.length} lớp nhận bài.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="p-2.5 rounded-xl bg-orange-50/60 border border-orange-200 text-xs">
+                <span className="text-slate-500 block">Tên bài tập:</span>
+                <b className="text-slate-900 font-bold text-sm">{parsedEbookData?.title}</b>
+              </div>
+
+              <AssignmentConfigFields
+                config={examConfig}
+                onChange={(patch) => setExamConfig((prev) => ({ ...prev, ...patch }))}
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => setShowConfigDialog(false)}
+                className="text-xs rounded-xl"
+              >
+                Quay lại
+              </Button>
+              <Button
+                type="button"
+                disabled={isPending}
+                onClick={handleConfirmPublishParsedAssignment}
+                className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold"
+              >
+                {isPending ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : null}
+                Xác nhận & Phát hành bài tập
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Full Preview Modal */}
       {isPreviewExamOpen && parsedEbookData && (

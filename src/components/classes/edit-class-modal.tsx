@@ -13,6 +13,7 @@ import {
 import { updateClassAction } from "@/actions/classes";
 import { Field } from "@/components/shared/common-widgets";
 import { SchedulePickerSection } from "@/components/classes/schedule-picker-section";
+import { isClassScheduledOnDay } from "@/lib/schedule";
 
 export function EditClassModal({
   classItem,
@@ -20,12 +21,14 @@ export function EditClassModal({
   tas,
   onClose,
   onDone,
+  onCustomSave,
 }: {
   classItem: any;
   teachers: any[];
   tas?: any[];
   onClose: () => void;
   onDone: () => void;
+  onCustomSave?: (data: any) => Promise<{ success: boolean; error?: string } | void>;
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
@@ -47,7 +50,7 @@ export function EditClassModal({
   const [scheduleStr, setScheduleStr] = useState(classItem.description || "");
 
   const allDays = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
-  const initialDays = allDays.filter((d: string) => classItem.description?.includes(d));
+  const initialDays = allDays.filter((d: string) => isClassScheduledOnDay(classItem.description, d));
   const [selectedDays, setSelectedDays] = useState<string[]>(initialDays);
   const [startTime, setStartTime] = useState("18:00");
   const [endTime, setEndTime] = useState("20:00");
@@ -75,17 +78,29 @@ export function EditClassModal({
     }
 
     startTransition(async () => {
-      const res = await updateClassAction(classItem.id, {
-        name: formData.get("name")?.toString(),
-        program: formData.get("program")?.toString() as any,
+      const payload = {
+        name: formData.get("name")?.toString() || classItem.name,
+        program: (formData.get("program")?.toString() as any) || classItem.program || "IELTS",
         capacity: Number(formData.get("capacity")) || 30,
-        status: formData.get("status")?.toString() as any,
+        status: (formData.get("status")?.toString() as any) || "UPCOMING",
         teacherIds: validTeachers,
         taIds: [],
         schedule: scheduleStr.trim(),
         startDate: startDate || undefined,
         endDate: endDate || undefined,
-      });
+      };
+
+      if (onCustomSave) {
+        const customRes = await onCustomSave(payload);
+        if (customRes && typeof customRes === "object" && !customRes.success) {
+          setErrorMsg(customRes.error || "Không thể cập nhật thông tin lớp!");
+          return;
+        }
+        onDone();
+        return;
+      }
+
+      const res = await updateClassAction(classItem.id, payload);
       if (res && !res.success) {
         setErrorMsg(res.error || "Không thể cập nhật lớp học!");
         return;

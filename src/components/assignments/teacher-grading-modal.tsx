@@ -13,6 +13,9 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Users,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -68,11 +71,14 @@ export function TeacherGradingModal({
 }: TeacherGradingModalProps) {
   const [activeAnswerId, setActiveAnswerId] = useState<string>("");
   const [currentAudioSec, setCurrentAudioSec] = useState<number>(0);
+  const [isStudentListOpen, setIsStudentListOpen] = useState<boolean>(true);
+  const [activeCriterionFilter, setActiveCriterionFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const firstId = selectedSubmission?.answers?.[0]?.id || "";
     setActiveAnswerId(firstId);
     setCurrentAudioSec(0);
+    setActiveCriterionFilter(null);
   }, [selectedSubmission?.id]);
 
   if (!gradingAssignment) return null;
@@ -199,97 +205,120 @@ export function TeacherGradingModal({
   const objectiveMaxPoints = answers.reduce((acc, a) => acc + (Number(a.points) || 1), 0);
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#F4F5F7] text-slate-900 flex flex-col h-screen overflow-hidden">
-      {/* 1. THANH HEADER TRÊN CÙNG (.top) */}
-      <header className="h-15 bg-white border-b border-slate-200 flex items-center justify-between gap-4 px-5 shrink-0">
-        <div className="min-w-0">
-          <h1 className="text-[15px] font-bold text-slate-900 truncate flex items-center gap-2">
-            {isSpeakingSkill ? (
-              <Mic className="size-4 text-[#EA580C] shrink-0" />
-            ) : isWritingSkill ? (
-              <PenTool className="size-4 text-[#EA580C] shrink-0" />
-            ) : assignmentSkill === "LISTENING" ? (
-              <Headphones className="size-4 text-[#EA580C] shrink-0" />
+    <div className="fixed inset-0 z-50 bg-[#F8FAFC] text-slate-900 flex flex-col h-[100dvh] max-h-[100dvh] overflow-hidden">
+      {/* 1. THANH HEADER TRÊN CÙNG CHUẨN SIMPACE */}
+      <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between gap-4 px-5 shrink-0 shadow-2xs">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={() => setIsStudentListOpen((v) => !v)}
+            className="h-9 px-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1.5 shrink-0 transition"
+            title={isStudentListOpen ? "Thu gọn danh sách học viên" : "Mở danh sách học viên"}
+          >
+            {isStudentListOpen ? (
+              <PanelLeftClose className="size-4 text-[#EA580C]" />
             ) : (
-              <BookOpen className="size-4 text-[#EA580C] shrink-0" />
+              <PanelLeftOpen className="size-4 text-[#EA580C]" />
             )}
-            <span>{gradingAssignment.title}</span>
-          </h1>
-          <small className="text-xs text-slate-500 block truncate">
-            {selectedSubmission
-              ? `${selectedSubmission.studentName} (${selectedSubmission.studentEmail}) · Lần làm ${
-                  selectedSubmission.attemptNumber || 1
-                }`
-              : "Chọn học viên ở danh sách bên trái để xem và chấm bài"}
-          </small>
+            <span className="hidden sm:inline">Học viên ({submissionsList.length})</span>
+          </button>
+
+          <Badge className="bg-[#EA580C] hover:bg-[#EA580C] text-white text-xs font-bold gap-1.5 px-3 py-1 rounded-full shrink-0">
+            {isSpeakingSkill ? (
+              <Mic className="size-3.5" />
+            ) : isWritingSkill ? (
+              <PenTool className="size-3.5" />
+            ) : assignmentSkill === "LISTENING" ? (
+              <Headphones className="size-3.5" />
+            ) : (
+              <BookOpen className="size-3.5" />
+            )}
+            <span>SIMPACE • {assignmentSkill}</span>
+          </Badge>
+
+          <div className="min-w-0">
+            <h1 className="text-sm font-extrabold text-slate-900 truncate">
+              {gradingAssignment.title}
+            </h1>
+            <small className="text-[11px] text-slate-500 block truncate">
+              {selectedSubmission
+                ? `Đang chấm: ${selectedSubmission.studentName} (${selectedSubmission.studentEmail}) · Lần nộp ${
+                    selectedSubmission.attemptNumber || 1
+                  }`
+                : "Chọn học viên ở danh sách bên trái để xem và chấm bài"}
+            </small>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           {selectedSubmission?.isCheatingFlagged && (
             <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-xs gap-1">
-              <ShieldAlert className="size-3.5" /> Rời màn hình {selectedSubmission.tabSwitchCount} lần
+              <ShieldAlert className="size-3.5" /> Out Tab {selectedSubmission.tabSwitchCount} lần
             </Badge>
           )}
-          <Badge
-            variant="outline"
-            className="bg-slate-100 text-slate-700 border-slate-200 text-xs font-bold px-3 py-1 gap-1.5"
-          >
-            {renderWorkspaceSkillBadge()}
-          </Badge>
           <button
             type="button"
             onClick={onClose}
             className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition"
           >
-            <ArrowLeft className="size-3.5" /> Về danh sách
+            <ArrowLeft className="size-3.5" /> Về danh sách bài tập
           </button>
         </div>
       </header>
 
-      {/* 2. BỐ CỤC 3 CỘT TOÀN MÀN HÌNH (.main: 220px | 1fr | 395px) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_395px] min-h-0">
+      {/* 2. BỐ CỤC CHẤM BÀI LINH HOẠT (CÓ THỂ THU GỌN CỘT HỌC VIÊN ĐỂ RỘNG KHÔNG GIAN CHẤM) */}
+      <div
+        className={`flex-1 grid grid-cols-1 ${
+          isStudentListOpen
+            ? "lg:grid-cols-[215px_minmax(0,1fr)_375px]"
+            : "lg:grid-cols-[minmax(0,1fr)_375px]"
+        } min-h-0`}
+      >
         {/* CỘT TRÁI: DANH SÁCH HỌC VIÊN NỘP BÀI (.students) */}
-        <aside className="bg-white border-r border-slate-200 p-3.5 overflow-y-auto">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2.5">
-            Bài nộp ({submissionsList.length})
-          </h3>
-          <div className="space-y-2">
-            {submissionsList.map((sub) => {
-              const isSelected = selectedSubmission?.id === sub.id;
-              const isGraded = sub.status === "GRADED";
-              return (
-                <div
-                  key={sub.id}
-                  onClick={() => onSelectSubmission(sub)}
-                  className={`border rounded-xl p-2.5 cursor-pointer transition ${
-                    isSelected
-                      ? "border-[#EA580C] bg-[#FFF1EB]"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
-                  }`}
-                >
-                  <b className="text-[13px] text-slate-900 block truncate">{sub.studentName}</b>
-                  <div className="flex items-center justify-between gap-1 mt-1">
-                    <span
-                      className={`inline-block text-[11px] font-bold rounded-full px-2 py-0.5 ${
-                        isGraded
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      {isGraded ? `Đã chấm · ${sub.score ?? 0}` : "Chờ chấm"}
-                    </span>
-                    {sub.isCheatingFlagged && (
-                      <ShieldAlert className="size-3.5 text-rose-600 shrink-0" />
-                    )}
+        {isStudentListOpen && (
+          <aside className="bg-white border-r border-slate-200 p-3 overflow-y-auto">
+            <h3 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+              <Users className="size-3.5 text-[#EA580C]" />
+              <span>Danh sách nộp ({submissionsList.length})</span>
+            </h3>
+            <div className="space-y-1.5">
+              {submissionsList.map((sub) => {
+                const isSelected = selectedSubmission?.id === sub.id;
+                const isGraded = sub.status === "GRADED";
+                return (
+                  <div
+                    key={sub.id}
+                    onClick={() => onSelectSubmission(sub)}
+                    className={`border rounded-xl p-2.5 cursor-pointer transition ${
+                      isSelected
+                        ? "border-[#EA580C] bg-[#FFF7ED] shadow-2xs"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <b className="text-xs text-slate-900 block truncate">{sub.studentName}</b>
+                    <div className="flex items-center justify-between gap-1 mt-1">
+                      <span
+                        className={`inline-block text-[10.5px] font-bold rounded-full px-2 py-0.5 ${
+                          isGraded
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-orange-100 text-[#EA580C]"
+                        }`}
+                      >
+                        {isGraded ? `Đã chấm · ${sub.score ?? 0}` : "Chờ chấm"}
+                      </span>
+                      {sub.isCheatingFlagged && (
+                        <ShieldAlert className="size-3.5 text-rose-600 shrink-0" />
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </aside>
+                );
+              })}
+            </div>
+          </aside>
+        )}
 
         {/* CỘT GIỮA: KHÔNG GIAN BÀI LÀM (.center) */}
-        <section className="overflow-y-auto p-5 sm:p-6 space-y-5">
+        <section className="overflow-y-auto p-4 sm:p-5 space-y-4">
           {!selectedSubmission ? (
             <div className="p-12 text-center text-sm text-slate-500 bg-white rounded-2xl border border-slate-200">
               Chưa có bài nộp nào được chọn.
@@ -471,6 +500,8 @@ export function TeacherGradingModal({
                       speakingWords={isSpeakingAns ? transcriptObj?.words : undefined}
                       currentAudioTimeSec={isSpeakingAns ? currentAudioSec : -1}
                       onSeekAudio={isSpeakingAns ? setCurrentAudioSec : undefined}
+                      activeCriterionFilter={activeCriterionFilter}
+                      onChangeCriterionFilter={setActiveCriterionFilter}
                     />
                   )}
                 </div>
@@ -515,6 +546,8 @@ export function TeacherGradingModal({
             isPending={isPending}
             onSaveDraft={() => onSaveGrading(true)}
             onFinalizeGrading={() => onSaveGrading(false)}
+            activeCriterionFilter={activeCriterionFilter}
+            onChangeCriterionFilter={setActiveCriterionFilter}
           />
         ) : (
           <aside className="bg-white border-l border-slate-200 h-full overflow-y-auto p-5 flex flex-col justify-between">

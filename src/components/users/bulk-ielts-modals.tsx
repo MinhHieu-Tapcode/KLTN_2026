@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertCircle, AlertTriangle, ArrowRightLeft, Info, Minus, Plus, User, Users, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRightLeft, Edit, Info, Minus, Plus, User, Users, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { InvalidStudentRow, LevelAllocationPlan, ProposedClass, ValidatedStudentRow } from "@/actions/bulk-allocation";
@@ -14,11 +14,13 @@ export function ClassDetailModal({
   onClose,
   classData,
   onTransferStudent,
+  onEditClass,
 }: {
   open: boolean;
   onClose: () => void;
   classData: ProposedClass | null;
   onTransferStudent: (student: ValidatedStudentRow) => void;
+  onEditClass?: (classData: ProposedClass) => void;
 }) {
   if (!classData) return null;
 
@@ -79,10 +81,19 @@ export function ClassDetailModal({
           </table>
         </div>
 
-        <DialogFooter className="pt-3 border-t border-slate-100">
+        <DialogFooter className="pt-3 border-t border-slate-100 flex items-center justify-between">
           <Button type="button" variant="outline" onClick={onClose} className="h-8 text-xs">
             Đóng
           </Button>
+          {onEditClass && (
+            <Button
+              type="button"
+              onClick={() => onEditClass(classData)}
+              className="h-8 px-3 text-xs bg-[#EA580C] hover:bg-[#D94E07] text-white font-bold gap-1.5 rounded-xl shadow-sm"
+            >
+              <Edit className="size-3.5" /> Chỉnh sửa lớp học
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -514,11 +525,15 @@ export function ConfigureClassCapacitiesModal({
   onClose,
   levelPlans,
   onConfirmSave,
+  onEditClass,
+  onAddNewClass,
 }: {
   open: boolean;
   onClose: () => void;
   levelPlans: LevelAllocationPlan[];
   onConfirmSave: (classSettings: Record<string, { capacity: number; isRemoved?: boolean }>) => void;
+  onEditClass?: (cls: ProposedClass) => void;
+  onAddNewClass?: (levelId: string) => void;
 }) {
   const [capacities, setCapacities] = useState<Record<string, number>>({});
 
@@ -572,7 +587,7 @@ export function ConfigureClassCapacitiesModal({
             Cấu hình sĩ số từng lớp học
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
-            Tăng giảm sĩ số tối đa cho từng lớp. Nếu đặt <b>sĩ số = 0</b>, lớp sẽ bị giải thể và toàn bộ học sinh được tự động chuyển sang các lớp khác cùng trình độ.
+            Tăng giảm sĩ số tối đa cho từng lớp học. Thay đổi sĩ số sẽ cập nhật chỉ tiêu lớp, không tự động làm xáo trộn danh sách học sinh hiện có. Nếu đặt <b>sĩ số = 0</b>, lớp sẽ bị giải thể và học sinh được dồn sang các lớp khác cùng trình độ.
           </DialogDescription>
         </DialogHeader>
 
@@ -588,9 +603,20 @@ export function ConfigureClassCapacitiesModal({
                       {plan.levelCode}
                     </span>
                   </div>
-                  <span className="text-slate-500 font-medium text-[11px]">
-                    {plan.studentCount} học sinh • {plan.classes.length} lớp
-                  </span>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-slate-500 font-medium text-[11px]">
+                      {plan.studentCount} học sinh • {plan.classes.length} lớp
+                    </span>
+                    {onAddNewClass && (
+                      <button
+                        type="button"
+                        onClick={() => onAddNewClass(plan.levelId)}
+                        className="text-[11px] font-bold text-[#EA580C] hover:text-[#C2410C] hover:bg-orange-50 px-2 py-0.5 rounded-lg border border-orange-200 flex items-center gap-1 transition"
+                      >
+                        <Plus className="size-3" /> Thêm lớp
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -623,8 +649,22 @@ export function ConfigureClassCapacitiesModal({
                           </p>
                         </div>
 
-                        {/* Stepper điều chỉnh sĩ số */}
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
+                          {onEditClass && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => onEditClass(cls)}
+                              className="h-8 px-2.5 text-xs font-semibold border-slate-200 text-slate-700 hover:text-[#EA580C] hover:border-orange-300 hover:bg-orange-50/50 rounded-lg gap-1 shrink-0"
+                            >
+                              <Edit className="size-3.5 text-[#EA580C]" />
+                              <span>Chỉnh sửa</span>
+                            </Button>
+                          )}
+
+                          {/* Stepper điều chỉnh sĩ số */}
+                          <div className="flex items-center gap-1.5 shrink-0">
                           <Button
                             type="button"
                             variant="outline"
@@ -664,12 +704,13 @@ export function ConfigureClassCapacitiesModal({
                           </Button>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          );
+        })}
 
           {hasAnyZero && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-800">

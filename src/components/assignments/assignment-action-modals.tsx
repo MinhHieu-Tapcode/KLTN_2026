@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   HelpCircle,
   Loader2,
   RefreshCw,
+  Search,
   ShieldAlert,
   Sparkles,
   Trash2,
@@ -27,14 +28,57 @@ export function CreateModeChoiceModal({
   open,
   onClose,
   onSelectMode,
+  classOptions,
 }: {
   open: boolean;
   onClose: () => void;
-  onSelectMode: (mode: "manual" | "smart_parser") => void;
+  onSelectMode: (mode: "manual" | "smart_parser", classIds?: string[]) => void;
+  /** Có truyền → chế độ giao hàng loạt: hiển thị danh sách lớp để tick chọn. Không truyền → giao cho 1 lớp đang mở. */
+  classOptions?: any[];
 }) {
+  const isBulk = Array.isArray(classOptions);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setSelectedIds([]);
+      setSearch("");
+    }
+  }, [open]);
+
+  const visibleClasses = useMemo(() => {
+    const kw = search.trim().toLowerCase();
+    return (classOptions || []).filter(
+      (c) =>
+        !kw ||
+        c.name?.toLowerCase().includes(kw) ||
+        c.code?.toLowerCase().includes(kw) ||
+        c.school?.name?.toLowerCase().includes(kw)
+    );
+  }, [classOptions, search]);
+
+  const toggleClass = (id: string) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const selectAllVisible = () =>
+    setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleClasses.map((c) => c.id)])));
+
+  const clearVisible = () => {
+    const ids = new Set(visibleClasses.map((c) => c.id));
+    setSelectedIds((prev) => prev.filter((id) => !ids.has(id)));
+  };
+
+  const needPickClass = isBulk && selectedIds.length === 0;
+
+  const pick = (mode: "manual" | "smart_parser") => {
+    if (needPickClass) return;
+    onSelectMode(mode, isBulk ? selectedIds : undefined);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md rounded-2xl p-6">
+      <DialogContent className="max-w-md rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-bold text-slate-900">
             Chọn phương thức giao bài tập IELTS
@@ -44,10 +88,12 @@ export function CreateModeChoiceModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 gap-3 py-3">
+        <div className={`grid grid-cols-1 gap-3 py-3 ${needPickClass ? "opacity-60" : ""}`}>
           <button
-            onClick={() => onSelectMode("manual")}
-            className="p-4 rounded-2xl border border-slate-200 hover:border-orange-300 hover:bg-orange-50/50 text-left transition flex items-start gap-3.5 group"
+            type="button"
+            disabled={needPickClass}
+            onClick={() => pick("manual")}
+            className="p-4 rounded-2xl border border-slate-200 hover:border-orange-300 hover:bg-orange-50/50 text-left transition flex items-start gap-3.5 group disabled:cursor-not-allowed"
           >
             <div className="size-10 rounded-xl bg-slate-100 group-hover:bg-[#EA580C] group-hover:text-white grid place-items-center text-slate-700 transition">
               <Edit3 className="size-5" />
@@ -63,8 +109,10 @@ export function CreateModeChoiceModal({
           </button>
 
           <button
-            onClick={() => onSelectMode("smart_parser")}
-            className="p-4 rounded-2xl border-2 border-orange-200 bg-orange-50/30 hover:bg-orange-50/80 text-left transition flex items-start gap-3.5 group"
+            type="button"
+            disabled={needPickClass}
+            onClick={() => pick("smart_parser")}
+            className="p-4 rounded-2xl border-2 border-orange-200 bg-orange-50/30 hover:bg-orange-50/80 text-left transition flex items-start gap-3.5 group disabled:cursor-not-allowed"
           >
             <div className="size-10 rounded-xl bg-orange-100 group-hover:bg-[#EA580C] group-hover:text-white grid place-items-center text-[#EA580C] transition">
               <Sparkles className="size-5" />
@@ -82,6 +130,83 @@ export function CreateModeChoiceModal({
             </div>
           </button>
         </div>
+
+        {isBulk && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-slate-800">
+                Chọn lớp nhận bài <span className="text-rose-500">*</span>
+              </span>
+              <div className="flex items-center gap-2 text-[11px] font-semibold">
+                <button type="button" onClick={selectAllVisible} className="text-[#EA580C] hover:underline">
+                  Chọn tất cả
+                </button>
+                <span className="text-slate-300">•</span>
+                <button type="button" onClick={clearVisible} className="text-slate-500 hover:underline">
+                  Bỏ chọn
+                </button>
+                <Badge variant="outline" className="bg-white text-[#EA580C] border-orange-300 font-bold">
+                  Đã chọn {selectedIds.length}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tìm lớp theo tên hoặc mã lớp..."
+                className="w-full h-8 pl-8 pr-2.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-[#EA580C]"
+              />
+            </div>
+
+            <div className="max-h-44 overflow-y-auto space-y-1 bg-white p-2 border border-slate-200 rounded-lg">
+              {visibleClasses.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-3">
+                  {(classOptions || []).length === 0
+                    ? "Bạn chưa được phân công lớp nào để giao bài."
+                    : "Không tìm thấy lớp phù hợp."}
+                </p>
+              ) : (
+                visibleClasses.map((cls) => {
+                  const checked = selectedIds.includes(cls.id);
+                  return (
+                    <label
+                      key={cls.id}
+                      className={`flex items-center justify-between gap-2 p-1.5 rounded-md cursor-pointer text-xs transition ${
+                        checked ? "bg-orange-50 text-slate-900 font-medium" : "hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleClass(cls.id)}
+                          className="size-3.5 rounded accent-[#EA580C] cursor-pointer"
+                        />
+                        <span className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-600 shrink-0">
+                          {cls.code}
+                        </span>
+                        <span className="truncate">{cls.name}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 shrink-0 truncate max-w-[110px]">
+                        {cls.school?.name || ""}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            {needPickClass && (
+              <p className="text-[11px] text-amber-700 font-medium">
+                Vui lòng tick chọn ít nhất 1 lớp trước khi chọn phương thức giao bài.
+              </p>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -155,14 +280,14 @@ export function TabSwitchWarningModal({
           <div className="size-14 rounded-full bg-amber-100 text-amber-600 grid place-items-center mx-auto">
             <AlertTriangle className="size-7" />
           </div>
-          <h3 className="text-base font-bold text-amber-700">NHẮC NHỞ: RỜI KHỎI MÀN HÌNH BÀI TẬP</h3>
+          <h3 className="text-base font-bold text-amber-700">NHẮC NHỞ: RỜI KHỎI MÀN HÌNH BÀI TẬP (OUT TAB)</h3>
           <p className="text-xs text-slate-600">
-            Hệ thống phát hiện bạn vừa chuyển tab hoặc rời cửa sổ trình duyệt.
+            Hệ thống phát hiện bạn vừa rời khỏi màn hình làm bài (Out Tab).
             <br />
             Đã ghi nhận lần thứ: <b className="text-amber-600 font-bold">{tabSwitchCount}</b>.
           </p>
           <p className="text-[11px] text-slate-500 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-            Lưu ý: Số lần rời tab sẽ được lưu lại trong kết quả nộp bài để giáo viên theo dõi. Bạn vẫn có thể tiếp tục làm bài bình thường!
+            Lưu ý: Lịch sử Out Tab được lưu lại trong kết quả nộp bài để giáo viên theo dõi. Bạn vẫn có thể tiếp tục làm bài bình thường!
           </p>
           <Button
             size="sm"

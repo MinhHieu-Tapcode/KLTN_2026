@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,13 +14,16 @@ import {
   FileText,
   Music,
   FileSpreadsheet,
+  Image as ImageIcon,
   File,
   CheckCircle2,
   X,
   Loader2,
+  FolderPlus,
 } from "lucide-react";
+import { detectFileCategory, isImageFile } from "@/lib/upload-material-client";
 
-interface UploadFileItem {
+export interface UploadFileItem {
   id: string;
   file: File;
   name: string;
@@ -31,14 +34,19 @@ interface UploadFileItem {
 interface BulkUploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  folderName?: string;
-  onUpload: (files: UploadFileItem[]) => Promise<void>;
+  currentFolder?: { id: string; name: string } | null;
+  availableFolders?: Array<{ id: string; name: string; isInherited?: boolean }>;
+  onUpload: (
+    files: UploadFileItem[],
+    targetFolderOption: { folderId?: string; newFolderName?: string }
+  ) => Promise<void>;
 }
 
 export function BulkUploadModal({
   open,
   onOpenChange,
-  folderName,
+  currentFolder,
+  availableFolders = [],
   onUpload,
 }: BulkUploadModalProps) {
   const [fileList, setFileList] = useState<UploadFileItem[]>([]);
@@ -46,16 +54,23 @@ export function BulkUploadModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const detectFileType = (
-    fileName: string
-  ): "PDF" | "AUDIO" | "DOCUMENT" | "VIDEO" | "OTHER" => {
-    const ext = fileName.split(".").pop()?.toLowerCase();
-    if (ext === "pdf") return "PDF";
-    if (["mp3", "wav", "m4a", "aac"].includes(ext || "")) return "AUDIO";
-    if (["doc", "docx", "txt", "rtf", "odt"].includes(ext || "")) return "DOCUMENT";
-    if (["mp4", "mkv", "mov", "avi"].includes(ext || "")) return "VIDEO";
-    return "OTHER";
-  };
+  // Các thư mục của lớp (không phải thư mục kế thừa bị khóa)
+  const writableFolders = availableFolders.filter((f) => !f.isInherited);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("__NEW__");
+  const [newFolderName, setNewFolderName] = useState<string>("Tài liệu học tập chung");
+
+  useEffect(() => {
+    if (open) {
+      if (currentFolder && !(currentFolder as any).isInherited) {
+        setSelectedFolderId(currentFolder.id);
+      } else if (writableFolders.length > 0) {
+        setSelectedFolderId(writableFolders[0].id);
+      } else {
+        setSelectedFolderId("__NEW__");
+        setNewFolderName("Tài liệu học tập chung");
+      }
+    }
+  }, [open, currentFolder, availableFolders.length]);
 
   const handleFiles = (selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
@@ -64,7 +79,7 @@ export function BulkUploadModal({
       file,
       name: file.name,
       size: file.size,
-      type: detectFileType(file.name),
+      type: detectFileCategory(file.name, file.type),
     }));
     setFileList((prev) => [...prev, ...newItems]);
   };
@@ -83,7 +98,13 @@ export function BulkUploadModal({
     if (fileList.length === 0) return;
     setIsSubmitting(true);
     try {
-      await onUpload(fileList);
+      await onUpload(fileList, {
+        folderId: selectedFolderId === "__NEW__" ? undefined : selectedFolderId,
+        newFolderName:
+          selectedFolderId === "__NEW__"
+            ? newFolderName.trim() || "Tài liệu học tập chung"
+            : undefined,
+      });
       setFileList([]);
       onOpenChange(false);
     } finally {
@@ -91,10 +112,13 @@ export function BulkUploadModal({
     }
   };
 
-  const renderFileIcon = (type: string) => {
-    switch (type) {
+  const renderFileIcon = (item: UploadFileItem) => {
+    if (isImageFile(item.name, item.file.type)) {
+      return <ImageIcon className="size-4 text-emerald-600 shrink-0" />;
+    }
+    switch (item.type) {
       case "PDF":
-        return <FileText className="size-4 text-rose-600 shrink-0" />;
+        return <FileText className="size-4 text-[#EA580C] shrink-0" />;
       case "AUDIO":
         return <Music className="size-4 text-purple-600 shrink-0" />;
       case "DOCUMENT":
@@ -108,18 +132,51 @@ export function BulkUploadModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl rounded-2xl p-6 bg-white shadow-xl">
         <DialogHeader className="border-b border-slate-100 pb-3">
-          <DialogTitle className="text-base font-bold text-slate-900 flex items-center justify-between">
-            <span>Tải lên tài liệu</span>
-            {folderName && (
-              <span className="text-xs font-normal text-slate-500">
-                Thư mục đích: <b className="text-slate-800">{folderName}</b>
-              </span>
-            )}
+          <DialogTitle className="text-base font-bold text-slate-900">
+            Tải lên tài liệu lớp học
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-3">
-          {/* Khu vực kéo thả */}
+          {/* Chọn thư mục lưu trữ (nếu đang ở ngoài thư mục gốc hoặc có thể tạo thư mục mới) */}
+          {!currentFolder || (currentFolder as any).isInherited ? (
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+              <label className="text-xs font-bold text-slate-800 block">
+                Lưu vào thư mục:
+              </label>
+              <select
+                value={selectedFolderId}
+                onChange={(e) => setSelectedFolderId(e.target.value)}
+                className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#EA580C]"
+              >
+                {writableFolders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    📁 {f.name}
+                  </option>
+                ))}
+                <option value="__NEW__">+ Tạo thư mục mới để lưu các tệp này</option>
+              </select>
+
+              {selectedFolderId === "__NEW__" && (
+                <div className="flex items-center gap-2 pt-1">
+                  <FolderPlus className="size-4 text-[#EA580C] shrink-0" />
+                  <input
+                    type="text"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="Nhập tên thư mục mới..."
+                    className="flex-1 h-8.5 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-[#EA580C]"
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-600 bg-orange-50/60 border border-orange-200/70 px-3 py-2 rounded-xl">
+              Thư mục đích: <b className="text-[#EA580C]">📁 {currentFolder.name}</b>
+            </div>
+          )}
+
+          {/* Khu vực kéo thả hoặc chọn tệp */}
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -128,35 +185,36 @@ export function BulkUploadModal({
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-7 text-center cursor-pointer transition flex flex-col items-center justify-center ${
+            className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center ${
               isDragging
                 ? "border-[#EA580C] bg-orange-50/50"
                 : "border-slate-200 hover:border-[#EA580C]/50 hover:bg-slate-50/50"
             }`}
           >
-            <div className="size-12 rounded-2xl bg-orange-100/70 text-[#EA580C] grid place-items-center mb-3">
-              <UploadCloud className="size-6" />
+            <div className="size-11 rounded-2xl bg-orange-100/70 text-[#EA580C] grid place-items-center mb-2.5">
+              <UploadCloud className="size-5" />
             </div>
             <p className="text-xs font-bold text-slate-800">
-              Kéo thả file vào đây hoặc <span className="text-[#EA580C] hover:underline">Chọn file</span>
+              Kéo thả tệp vào đây hoặc <span className="text-[#EA580C] hover:underline">Bấm để chọn tệp</span>
             </p>
             <p className="text-[11px] text-slate-400 mt-1">
-              Hỗ trợ: PDF, MP3, DOCX, XLSX, ZIP... (Tối đa 500MB/file)
+              Hỗ trợ: PDF, Word (.doc, .docx), Excel (.xlsx), Slide (.pptx), Audio (.mp3, .wav), Ảnh (.png, .jpg)...
             </p>
             <input
               ref={fileInputRef}
               type="file"
               multiple
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp3,.wav,.m4a,.ogg,.png,.jpg,.jpeg,.webp,.gif,.txt,.zip"
               className="hidden"
               onChange={(e) => handleFiles(e.target.files)}
             />
           </div>
 
-          {/* Danh sách file đã chọn */}
+          {/* Danh sách tệp đã chọn */}
           {fileList.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                <span>Danh sách file ({fileList.length})</span>
+                <span>Danh sách tệp đã chọn ({fileList.length})</span>
                 <button
                   type="button"
                   onClick={() => setFileList([])}
@@ -166,26 +224,24 @@ export function BulkUploadModal({
                 </button>
               </div>
 
-              <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                 {fileList.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
                   >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {renderFileIcon(item.type)}
+                      {renderFileIcon(item)}
                       <span className="font-semibold text-slate-800 truncate">
                         {item.name}
                       </span>
                       <span className="text-[11px] text-slate-400 font-mono shrink-0">
-                        {(item.size / (1024 * 1024)).toFixed(1)} MB
+                        {(item.size / (1024 * 1024)).toFixed(2)} MB
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0 ml-3">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                        <CheckCircle2 className="size-3.5" /> Hợp lệ
-                      </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                      <CheckCircle2 className="size-3.5 text-emerald-600" />
                       <button
                         type="button"
                         onClick={() => handleRemove(item.id)}
@@ -216,7 +272,7 @@ export function BulkUploadModal({
             size="sm"
             onClick={handleSubmit}
             disabled={isSubmitting || fileList.length === 0}
-            className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold"
+            className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold px-5"
           >
             {isSubmitting ? (
               <>
@@ -224,7 +280,7 @@ export function BulkUploadModal({
                 Đang tải lên ({fileList.length})...
               </>
             ) : (
-              `Tải lên (${fileList.length})`
+              `Tải lên (${fileList.length} tệp)`
             )}
           </Button>
         </DialogFooter>

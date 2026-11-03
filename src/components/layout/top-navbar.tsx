@@ -22,6 +22,7 @@ import {
   Layers,
 } from "lucide-react";
 import { SimpaceLogo } from "@/components/logo";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { Button } from "@/components/ui/button";
 import type { View } from "@/components/simpace-app";
 import { RoleCode } from "@prisma/client";
@@ -279,30 +280,17 @@ export function TopNavbar({
 
           {/* Right Action Icons: Chuông thông báo & Avatar lớn rõ nét */}
           <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
-            <div className="relative" ref={bellRef}>
-              <button
-                onClick={() => setBellOpen(!bellOpen)}
-                aria-label="Thông báo"
-                className="group relative grid size-10 place-items-center rounded-full text-[#475569] hover:bg-[#EA580C] hover:text-white transition-all"
-              >
-                <Bell className="size-5 transition-colors group-hover:text-white" />
-                <span className="absolute top-2 right-2 size-2 rounded-full bg-[#EA580C] ring-2 ring-white group-hover:bg-white" />
-              </button>
+            {/* Nút Đổi vai trò / Đăng xuất nhanh để test */}
+            <button
+              onClick={onLogout}
+              title="Đăng xuất / Quay lại trang đăng nhập để chọn vai trò khác"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-200 bg-orange-50 text-xs font-bold text-[#EA580C] hover:bg-[#EA580C] hover:text-white transition shadow-xs cursor-pointer"
+            >
+              <LogOut className="size-3.5" />
+              <span>Đổi vai trò</span>
+            </button>
 
-              {bellOpen && (
-                <div className="absolute right-0 mt-3 w-80 rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-xl z-50 animate-in fade-in-50 zoom-in-95">
-                  <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-2.5 mb-2.5">
-                    <b className="text-sm text-[#0F172A]">Thông báo hệ thống</b>
-                    <span className="text-xs text-[#EA580C] font-semibold cursor-pointer hover:underline">
-                      Đã đọc tất cả
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#64748B] py-4 text-center italic">
-                    Chưa có thông báo mới nào.
-                  </p>
-                </div>
-              )}
-            </div>
+            <NotificationBell isOpen={bellOpen} onOpenChange={setBellOpen} />
 
             {/* User Avatar Dropdown */}
             <div className="relative" ref={userMenuRef}>

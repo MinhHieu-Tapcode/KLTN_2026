@@ -141,8 +141,7 @@ export function ClassDialog({
         <DialogHeader>
           <DialogTitle>Tạo lớp học mới</DialogTitle>
           <DialogDescription>
-            Lớp học sẽ trực thuộc trường học đối tác, tự động sinh mã lớp, bộ chọn lịch học thông minh và gán giáo viên giảng dạy.
-            {code ? ` (Mã dự kiến: ${code})` : ""}
+            {code ? `Mã dự kiến: ${code}` : ""}
           </DialogDescription>
         </DialogHeader>
 
@@ -199,23 +198,7 @@ export function ClassDialog({
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-[#0F172A] mb-1.5">
-                Chương trình đào tạo
-              </label>
-              <select
-                value={selectedProgram}
-                onChange={(e) => setSelectedProgram(e.target.value)}
-                className="field"
-              >
-                <option value="IELTS">IELTS</option>
-                <option value="SAT">SAT</option>
-                <option value="CAMBRIDGE">Cambridge</option>
-                <option value="OTHER">Chương trình khác</option>
-              </select>
-            </div>
-
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-sm font-semibold text-[#0F172A] mb-1.5">
                 Sĩ số tối đa
               </label>

@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useTransition, useRef } from "react";
-import {
-  BarChart3,
+import { ChevronLeft, BarChart3,
   Bell,
   Building2,
   CalendarDays,
@@ -20,8 +19,7 @@ import {
   Upload,
   UserRound,
   Users,
-  X,
-} from "lucide-react";
+  X, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/actions/auth";
 import { getSchoolsAction, getSchoolManagersAction } from "@/actions/schools";
@@ -39,8 +37,10 @@ import { ClassMaterialsTab } from "@/components/materials/class-materials-tab";
 import { ClassAssignmentsTab } from "@/components/assignments/class-assignments-tab";
 import { ClassMaterialsPanel } from "@/components/materials/class-materials-panel";
 import { ClassAssignmentsPanel } from "@/components/assignments/class-assignments-panel";
-import { MultiClassAssignmentModal } from "@/components/assignments/multi-class-assignment-modal";
-import { subtitle, roleLabel, roleBreadcrumbPrefix } from "@/components/shared/common-widgets";
+import { CreateModeChoiceModal } from "@/components/assignments/assignment-action-modals";
+import { filterAccessibleClasses } from "@/lib/accessible-classes";
+import { MultiClassManualBuilderModal } from "@/components/assignments/multi-class-manual-builder-modal";
+import { SmartParserModal } from "@/components/assignments/exam-parser";
 import { SimpaceLogo } from "@/components/logo";
 import { CustomModuleView } from "@/components/settings/permission-widgets";
 import {
@@ -130,6 +130,9 @@ export function SimpaceApp({
   const [activeGlobalMaterialClass, setActiveGlobalMaterialClass] = useState<any | null>(null);
   const [activeGlobalAssignmentClass, setActiveGlobalAssignmentClass] = useState<any | null>(null);
   const [isMultiClassAssignmentModalOpen, setIsMultiClassAssignmentModalOpen] = useState(false);
+  const [multiClassTargetIds, setMultiClassTargetIds] = useState<string[]>([]);
+  const [isMultiManualBuilderOpen, setIsMultiManualBuilderOpen] = useState(false);
+  const [isMultiSmartParserOpen, setIsMultiSmartParserOpen] = useState(false);
 
   // Modals & Drawers tạo mới
   const [addUserOpen, setAddUserOpen] = useState(false);
@@ -276,33 +279,6 @@ export function SimpaceApp({
         p.allowedRoles?.includes(currentUser?.role as RoleCode)
     );
 
-  const title: Record<View, string> = {
-    dashboard: "Tổng quan",
-    users: "Quản lý người dùng",
-    schools: "Quản lý trường học",
-    classes: "Quản lý lớp học",
-    "class-detail": "Chi tiết lớp học",
-    schedule: "Lịch học & Giảng dạy",
-    import: "Import / Export Excel",
-    settings: "Cài đặt & Phân quyền",
-    profile: "Hồ sơ cá nhân & Bảo mật",
-    "custom-module": activeCustomPerm?.name || "Tính năng mở rộng",
-    "materials-global":
-      currentUser?.role === "ADMIN"
-        ? "Kho học liệu chung toàn hệ thống"
-        : currentUser?.role === "STUDENT"
-        ? "Kho học liệu của tôi"
-        : "Kho học liệu giảng dạy",
-    "assignments-global":
-      currentUser?.role === "STUDENT"
-        ? "Bài tập & Đề thi cần hoàn thành"
-        : "Trung tâm Quản lý Bài tập & Chấm điểm",
-    reports:
-      currentUser?.role === "STUDENT"
-        ? "Báo cáo Kết quả Học tập IELTS Cá nhân"
-        : "Báo cáo & Phân tích Học tập IELTS Academic",
-  };
-
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1E293B] flex flex-col">
       <TopNavbar
@@ -327,63 +303,57 @@ export function SimpaceApp({
       <div className="pointer-events-none fixed top-0 right-0 w-[600px] h-[340px] bg-gradient-to-bl from-orange-200/35 via-orange-100/15 to-transparent rounded-bl-full blur-2xl z-0" />
 
       <main className="relative z-10 flex-1 w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 2xl:px-12 py-6 sm:py-8">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="mb-1 text-xs font-medium text-[#64748B]">
-              {view === "materials-global" && activeGlobalMaterialClass
-                ? `Trang chủ > Kho học liệu chung > ${activeGlobalMaterialClass.name}`
-                : view === "assignments-global" && activeGlobalAssignmentClass
-                ? `Trang chủ > Quản lý bài tập > ${activeGlobalAssignmentClass.name}`
-                : `Trang chủ > ${title[view]}`}
-            </p>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] flex items-center gap-3">
-                  {view === "dashboard" && <span className="text-3xl sm:text-4xl select-none">👋</span>}
-                  {view === "materials-global" && activeGlobalMaterialClass
-                    ? activeGlobalMaterialClass.name
-                    : view === "assignments-global" && activeGlobalAssignmentClass
-                    ? activeGlobalAssignmentClass.name
-                    : view === "dashboard"
-                    ? `Xin chào, ${currentUser.fullName}!`
-                    : title[view]}
-                </h1>
-                <p className="mt-1 text-sm text-[#64748B]">
-                  {view === "materials-global" && activeGlobalMaterialClass
-                    ? `Mã lớp: ${activeGlobalMaterialClass.code} • Xem và quản lý tài liệu, bài giảng`
-                    : view === "assignments-global" && activeGlobalAssignmentClass
-                    ? `Mã lớp: ${activeGlobalAssignmentClass.code} • Soạn đề 4 kỹ năng & Chấm điểm bài làm`
-                    : subtitle(view)}
-                </p>
-              </div>
-
-              <div className="flex gap-2.5">
-                {view === "users" && (currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && (
-                  <Button
-                    onClick={() => setAddUserOpen(true)}
-                    className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
-                  >
-                    <Plus className="size-4 mr-1.5" /> Thêm người dùng
-                  </Button>
-                )}
-                {view === "schools" && currentUser?.role === "ADMIN" && (
-                  <Button
-                    onClick={() => setAddSchoolOpen(true)}
-                    className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
-                  >
-                    <Plus className="size-4 mr-1.5" /> Thêm trường học
-                  </Button>
-                )}
-                {view === "classes" && (currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && (
-                  <Button
-                    onClick={() => setAddClassOpen(true)}
-                    className="bg-primary hover:bg-primary/90 text-white rounded-xl shadow-sm"
-                  >
-                    <Plus className="size-4 mr-1.5" /> Tạo lớp học
-                  </Button>
-                )}
-              </div>
+        {/* Header tinh gọn cho màn hình con cấp 2 hoặc lời chào Dashboard */}
+        {view === "dashboard" && (
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] flex items-center gap-2.5">
+                <span className="select-none">👋</span> Xin chào, {currentUser.fullName}!
+              </h1>
+              <p className="mt-1 text-xs sm:text-sm text-[#64748B]">
+                Chào mừng bạn quay trở lại với hệ thống quản trị đào tạo SIMPACE LMS.
+              </p>
             </div>
+          </div>
+        )}
 
-            {/* View router */}
+        {view === "materials-global" && activeGlobalMaterialClass && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white border border-[#E2E8F0] px-4 py-3 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setActiveGlobalMaterialClass(null)}
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-primary hover:underline transition"
+            >
+              <ChevronLeft className="size-4" /> Quay lại danh sách lớp học liệu
+            </button>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <span className="text-[#64748B]">Đang xem lớp:</span>
+              <span className="px-2.5 py-1 bg-orange-50 text-orange-700 rounded-lg border border-orange-200">
+                {activeGlobalMaterialClass.name} ({activeGlobalMaterialClass.code})
+              </span>
+            </div>
+          </div>
+        )}
+
+        {view === "assignments-global" && activeGlobalAssignmentClass && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white border border-[#E2E8F0] px-4 py-3 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setActiveGlobalAssignmentClass(null)}
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-primary hover:underline transition"
+            >
+              <ChevronLeft className="size-4" /> Quay lại danh sách lớp bài tập
+            </button>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <span className="text-[#64748B]">Đang xem lớp:</span>
+              <span className="px-2.5 py-1 bg-orange-50 text-orange-700 rounded-lg border border-orange-200">
+                {activeGlobalAssignmentClass.name} ({activeGlobalAssignmentClass.code})
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* View router */}
             {view === "dashboard" && (
               <DashboardView
                 navigate={navigate}
@@ -518,42 +488,7 @@ export function SimpaceApp({
                 );
               }
 
-              const currentUid = currentUser?.id || currentUser?.userId;
-              const accessibleClassesForAssignments = classes.filter((c) => {
-                if (!c.isActive) return false;
-                if (!currentUser || currentUser.role === "ADMIN") return true;
-
-                if (currentUser.role === "SCHOOL_MANAGER") {
-                  return (
-                    c.school?.managerId === currentUid ||
-                    c.school?.manager?.id === currentUid ||
-                    c.school?.manager?.username === currentUser.username ||
-                    currentUser.managedSchools?.some((ms: any) => ms.id === c.schoolId)
-                  );
-                }
-
-                if (currentUser.role === "TEACHER") {
-                  return c.assignments?.some(
-                    (a: any) =>
-                      a.userId === currentUid ||
-                      a.staff?.id === currentUid ||
-                      (currentUser.username && a.staff?.username === currentUser.username) ||
-                      (currentUser.email && a.staff?.email === currentUser.email)
-                  );
-                }
-
-                if (currentUser.role === "STUDENT") {
-                  return c.enrollments?.some(
-                    (e: any) =>
-                      e.studentId === currentUid ||
-                      e.student?.id === currentUid ||
-                      (currentUser.username && e.student?.username === currentUser.username) ||
-                      (currentUser.email && e.student?.email === currentUser.email)
-                  );
-                }
-
-                return false;
-              });
+              const accessibleClassesForAssignments = filterAccessibleClasses(classes, currentUser);
 
               return (
                 <div className="space-y-6">
@@ -578,7 +513,7 @@ export function SimpaceApp({
                         onClick={() => setIsMultiClassAssignmentModalOpen(true)}
                         className="h-9 px-3.5 text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold gap-1.5 shadow-sm shrink-0"
                       >
-                        <Plus className="size-4" /> Giao bài tập cho nhiều lớp
+                        <Plus className="size-4" /> Giao bài tập
                       </Button>
                     )}
                   </div>
@@ -783,17 +718,49 @@ export function SimpaceApp({
         />
       )}
 
-      {/* MODAL GIAO BÀI TẬP ĐA LỚP (CỬA 2) */}
-      <MultiClassAssignmentModal
+      {/* POPUP GIAO BÀI TẬP HÀNG LOẠT: giống popup trong lớp + danh sách lớp để tick chọn */}
+      <CreateModeChoiceModal
         open={isMultiClassAssignmentModalOpen}
-        onOpenChange={setIsMultiClassAssignmentModalOpen}
-        accessibleClasses={classes}
-        currentUser={currentUser}
-        onSuccess={() => {
-          refreshAll();
-          setNotice("Đã giao bài tập thành công cho các lớp học được chọn!");
+        onClose={() => setIsMultiClassAssignmentModalOpen(false)}
+        classOptions={filterAccessibleClasses(classes, currentUser)}
+        onSelectMode={(mode, targetIds) => {
+          setMultiClassTargetIds(targetIds || []);
+          setIsMultiClassAssignmentModalOpen(false);
+          if (mode === "manual") setIsMultiManualBuilderOpen(true);
+          else setIsMultiSmartParserOpen(true);
         }}
       />
+
+      {isMultiManualBuilderOpen && (
+        <MultiClassManualBuilderModal
+          open={isMultiManualBuilderOpen}
+          onClose={() => setIsMultiManualBuilderOpen(false)}
+          targetClassIds={multiClassTargetIds}
+          classes={classes}
+          onSuccess={(count) => {
+            refreshAll();
+            setNotice(`Đã soạn và giao bài tập thủ công thành công cho ${count} lớp!`);
+          }}
+          showAlert={(title, msg) => {
+            setNotice(`${title}: ${msg}`);
+          }}
+        />
+      )}
+
+      {isMultiSmartParserOpen && (
+        <SmartParserModal
+          open={isMultiSmartParserOpen}
+          onOpenChange={setIsMultiSmartParserOpen}
+          targetClassIds={multiClassTargetIds}
+          onSuccess={(msg) => {
+            refreshAll();
+            setNotice(msg);
+          }}
+          showAlert={(title, msg) => {
+            setNotice(`${title}: ${msg}`);
+          }}
+        />
+      )}
 
       {/* Help & System Info Dialog */}
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />

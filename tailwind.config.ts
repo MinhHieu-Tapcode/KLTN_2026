@@ -61,6 +61,15 @@ const config: Config = {
         md: "var(--radius)",
         sm: "calc(var(--radius) - 2px)",
       },
+      // Vá tương thích: code module Báo cáo dùng class của Tailwind v4 (shadow-xs, shadow-2xs, p-4.5)
+      // nhưng dự án chạy Tailwind v3 nên các class đó đang KHÔNG có tác dụng.
+      boxShadow: {
+        "2xs": "0 1px 0 0 rgb(15 23 42 / 0.05)",
+        xs: "0 1px 2px 0 rgb(15 23 42 / 0.05)",
+      },
+      spacing: {
+        "4.5": "1.125rem",
+      },
       fontFamily: {
         sans: ["var(--font-manrope)", "Manrope", "Arial", "sans-serif"],
       },

@@ -1,5 +1,5 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, clearSessionCookie } from "@/lib/auth";
 import { ensureDefaultAdminAction } from "@/actions/auth";
 import { getSchoolsAction, getSchoolManagersAction } from "@/actions/schools";
 import { getClassesAction } from "@/actions/classes";
@@ -10,7 +10,23 @@ import { SimpaceApp } from "@/components/simpace-app";
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: { logout?: string; login?: string; reset?: string };
+}) {
+  const shouldLogout =
+    searchParams?.logout === "true" ||
+    searchParams?.logout === "1" ||
+    searchParams?.login === "true" ||
+    searchParams?.login === "1";
+
+  if (shouldLogout) {
+    try {
+      await clearSessionCookie();
+    } catch {}
+  }
+
   const dbOnline = await isDbAlive();
 
   if (dbOnline) {
@@ -21,7 +37,7 @@ export default async function HomePage() {
     }
   }
 
-  let session = await getSession();
+  let session = shouldLogout ? null : await getSession();
   if (session?.userId && dbOnline) {
     try {
       const dbUser = await prisma.user.findUnique({
@@ -102,7 +118,7 @@ export default async function HomePage() {
         capacity: 30,
         status: "ACTIVE",
         description: "Thứ 2, 4, 6 (18:00 - 20:00)",
-        school: { name: "THPT Trương Định" },
+        school: { name: "THPT Trương Định", managerId: "demo-manager-1" },
         schoolId: "demo-school-1",
         isActive: true,
         assignments: [
@@ -110,10 +126,16 @@ export default async function HomePage() {
             id: "as-1",
             userId: "teacher-1",
             roleInClass: "TEACHER",
-            staff: { username: "teacher1", email: "gv.nguyenvan@simpace.vn", profile: { fullName: "ThS. Nguyễn Văn A" } },
+            staff: { username: "teacher_huong", email: "teacher@simpace.vn", profile: { fullName: "Cô Nguyễn Thu Hường" } },
           },
         ],
         enrollments: [
+          {
+            id: "en-0",
+            studentId: "demo-student-1",
+            status: "STUDYING",
+            student: { username: "student_an", email: "student@simpace.vn", profile: { fullName: "Nguyễn Văn An", entryIeltsScore: 6.0 } },
+          },
           {
             id: "en-1",
             studentId: "st-1",
@@ -137,7 +159,7 @@ export default async function HomePage() {
         capacity: 25,
         status: "UPCOMING",
         description: "Thứ 3, 5, 7 (19:30 - 21:30)",
-        school: { name: "THPT Kim Liên" },
+        school: { name: "THPT Kim Liên", managerId: "demo-manager-1" },
         schoolId: "demo-school-2",
         isActive: true,
         assignments: [],
@@ -148,8 +170,8 @@ export default async function HomePage() {
 
   if (!schools || schools.length === 0) {
     schools = [
-      { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định", type: "THPT", address: "Hoàng Mai, Hà Nội", isActive: true },
-      { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên", type: "THPT", address: "Đống Đa, Hà Nội", isActive: true },
+      { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định", type: "THPT", address: "Hoàng Mai, Hà Nội", managerId: "demo-manager-1", isActive: true },
+      { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên", type: "THPT", address: "Đống Đa, Hà Nội", managerId: "demo-manager-1", isActive: true },
     ];
   }
 

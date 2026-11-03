@@ -42,10 +42,6 @@ export function SchoolSheet({
       setErrorMsg("Vui lòng nhập tên trường học!");
       return;
     }
-    if (!managerId) {
-      setErrorMsg("Trường học bắt buộc phải có Quản nhiệm phụ trách!");
-      return;
-    }
     if (!contactName) {
       setErrorMsg("Vui lòng nhập tên Đại diện BGH / Giáo vụ liên hệ!");
       return;
@@ -63,7 +59,7 @@ export function SchoolSheet({
       const res = await createSchoolAction({
         name: schoolName.trim(),
         type: (formData.get("type")?.toString() as any) || "THPT",
-        managerId,
+        managerId: managerId || undefined,
         contactName,
         contactPhone,
         address,
@@ -122,9 +118,9 @@ export function SchoolSheet({
           </label>
 
           <label className="block text-sm font-semibold">
-            Quản nhiệm phụ trách *
-            <select name="managerId" required className="field mt-2" defaultValue="">
-              <option value="">-- Chọn Quản nhiệm phụ trách --</option>
+            Quản nhiệm phụ trách (không bắt buộc)
+            <select name="managerId" className="field mt-2" defaultValue="">
+              <option value="">-- Chưa gán Quản nhiệm --</option>
               {managers.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.profile?.fullName || m.username} ({m.username})

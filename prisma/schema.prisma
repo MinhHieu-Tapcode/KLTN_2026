@@ -99,6 +99,7 @@ model User {
   submissions        AssignmentSubmission[]
   studentReportComments ReportComment[] @relation("StudentReportComments")
   authoredReportComments ReportComment[] @relation("AuthorReportComments")
+  notifications          Notification[]
 
   @@index([roleId])
   @@index([email])
@@ -361,6 +362,13 @@ enum AssignmentSkill {
   SPEAKING      // Kỹ năng Nói
 }
 
+enum AnswerVisibility {
+  AFTER_SUBMIT // Hiện sau khi học sinh nộp bài
+  AFTER_GRADED // Chỉ hiện sau khi bài được chấm
+  NEVER        // Không hiện đáp án
+  FROM_DATE    // Hiện từ thời điểm answerVisibleAt
+}
+
 enum AssignmentType {
   HOMEWORK      // Bài tập về nhà
   QUIZ          // Bài kiểm tra ngắn trên lớp
@@ -423,6 +431,8 @@ model AssignmentClass {
   startDate          DateTime?            // Thời điểm bắt đầu mở bài cho lớp
   enableProctoring   Boolean              @default(true)
   maxTabSwitches     Int                  @default(3)
+  answerVisibility   AnswerVisibility     @default(AFTER_SUBMIT) // Chế độ cho học sinh xem đáp án
+  answerVisibleAt    DateTime?            // Chỉ dùng khi answerVisibility = FROM_DATE
   isActive           Boolean              @default(true) // Xóa mềm theo lớp
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
@@ -574,6 +584,48 @@ model ReportComment {
   @@map("report_comments")
 }
 
+// ==========================================
+// 12. THÔNG BÁO HOẠT ĐỘNG HỌC TẬP (NOTIFICATIONS)
+// ==========================================
 
+enum NotificationType {
+  ASSIGNMENT_ASSIGNED   // HS: Có bài tập mới được giao
+  SUBMISSION_GRADED     // HS: Bài làm đã được chấm / có kết quả mới; GV: Đã chấm
+  MATERIAL_ADDED        // HS: Có học liệu mới liên quan đến lớp
+  SUBMISSION_RECEIVED   // GV: Học sinh thuộc lớp phụ trách đã nộp bài
+  OUT_TAB_ALERT         // GV: Học sinh phát sinh cảnh báo Out Tab trong khi làm bài
+}
 
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String           // Tài khoản người nhận thông báo
+  type       NotificationType
+  title      String           // Tiêu đề ngắn gọn
+  message    String?          // Chi tiết nội dung thông báo
+  refType    String?          // "ASSIGNMENT" | "SUBMISSION" | "MATERIAL"
+  refId      String?          // ID thực thể liên quan
+  classId    String?          // Lớp học phát sinh sự kiện
+  dedupeKey  String           @unique // Mã chống trùng lặp sự kiện
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
 
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+// ==========================================
+// 13. NHẬT KÝ SỰ KIỆN OUT TAB (OUT TAB EVENTS)
+// ==========================================
+
+model OutTabEvent {
+  id           String   @id @default(uuid())
+  submissionId String?  // ID bài nộp nếu đang trong phiên nộp
+  assignmentId String   // Bài tập đang làm
+  studentId    String   // Học sinh thực hiện rời màn hình
+  occurredAt   DateTime @default(now())
+
+  @@index([assignmentId, studentId])
+  @@map("out_tab_events")
+}
