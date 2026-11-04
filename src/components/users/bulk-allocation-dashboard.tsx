@@ -61,6 +61,15 @@ export function BulkAllocationDashboard({
     allClasses.push(...plan.classes);
   }
 
+  // Tổng số học sinh thực tế đang được phân bổ trong các lớp
+  const totalAllocatedStudents = allClasses.reduce(
+    (acc, cls) => acc + cls.students.length,
+    0
+  );
+
+  // Mẫu số chuẩn xác để tính tỷ lệ %: dùng tổng học sinh trong các lớp để tổng các cung đạt đúng 100%
+  const denominator = totalAllocatedStudents > 0 ? totalAllocatedStudents : (totalValid || 1);
+
   // Calculate SVG Donut segments
   const radius = 38;
   const circumference = 2 * Math.PI * radius;
@@ -68,7 +77,7 @@ export function BulkAllocationDashboard({
 
   const donutSegments = allClasses.map((cls, idx) => {
     const count = cls.students.length;
-    const fraction = totalValid > 0 ? count / totalValid : 0;
+    const fraction = denominator > 0 ? count / denominator : 0;
     const strokeDasharray = `${fraction * circumference} ${circumference}`;
     const strokeDashoffset = -accumulatedPercent * circumference;
     accumulatedPercent += fraction;
@@ -187,9 +196,9 @@ export function BulkAllocationDashboard({
             {/* Nội dung trung tâm của Donut Chart */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none pointer-events-none">
               <span className="text-2xl font-black text-slate-900 tracking-tight leading-none">
-                {totalValid}
+                {totalAllocatedStudents}
               </span>
-              <span className="text-[10px] text-slate-500 font-medium mt-0.5">học sinh hợp lệ</span>
+              <span className="text-[10px] text-slate-500 font-medium mt-0.5">học sinh trong lớp</span>
               <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-[#EA580C] border border-orange-200">
                 {totalClasses} lớp
               </span>

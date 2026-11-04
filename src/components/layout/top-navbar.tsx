@@ -280,16 +280,6 @@ export function TopNavbar({
 
           {/* Right Action Icons: Chuông thông báo & Avatar lớn rõ nét */}
           <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
-            {/* Nút Đổi vai trò / Đăng xuất nhanh để test */}
-            <button
-              onClick={onLogout}
-              title="Đăng xuất / Quay lại trang đăng nhập để chọn vai trò khác"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-200 bg-orange-50 text-xs font-bold text-[#EA580C] hover:bg-[#EA580C] hover:text-white transition shadow-xs cursor-pointer"
-            >
-              <LogOut className="size-3.5" />
-              <span>Đổi vai trò</span>
-            </button>
-
             <NotificationBell isOpen={bellOpen} onOpenChange={setBellOpen} />
 
             {/* User Avatar Dropdown */}

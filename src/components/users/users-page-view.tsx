@@ -188,16 +188,7 @@ export function UsersPageView({
             </Button>
           )}
 
-          {(currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && onOpenBulkExcel && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onOpenBulkExcel}
-              className="border-orange-500 text-[#EA580C] hover:bg-[#FFF1EB] hover:text-[#EA580C] rounded-xl shadow-sm font-semibold gap-1.5"
-            >
-              <FileSpreadsheet className="size-4 text-[#EA580C]" /> Nhập Excel học viên
-            </Button>
-          )}
+
           {(currentUser?.role === "ADMIN" || currentUser?.role === "SCHOOL_MANAGER") && onOpenAddUser && (
             <Button
               onClick={onOpenAddUser}

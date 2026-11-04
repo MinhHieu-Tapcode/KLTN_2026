@@ -837,7 +837,7 @@ export function BulkAllocationPreview({
         <div className="lg:col-span-4">
           <BulkAllocationDashboard
             levelPlans={allocationSuggestion.levelPlans}
-            totalValid={totalValid}
+            totalValid={studentRows.length}
             totalClasses={totalClasses}
             maxCapacity={maxCapacity}
             isRebalancing={isRebalancing}
