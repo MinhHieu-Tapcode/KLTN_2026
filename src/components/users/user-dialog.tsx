@@ -23,6 +23,7 @@ export function UserDialog({
   users = [],
   ieltsLevels = [],
   onAddClassShortcut,
+  defaultMode = "manual",
   onAddSchoolShortcut,
   onCreatedSuccess,
 }: {
@@ -33,10 +34,17 @@ export function UserDialog({
   users?: any[];
   ieltsLevels?: any[];
   onAddClassShortcut: () => void;
+  defaultMode?: "manual" | "excel";
   onAddSchoolShortcut?: () => void;
   onCreatedSuccess: (acc: any) => void;
 }) {
-  const [modalMode, setModalMode] = useState<"manual" | "excel">("manual");
+  const [modalMode, setModalMode] = useState<"manual" | "excel">(defaultMode || "manual");
+
+  useEffect(() => {
+    if (open && defaultMode) {
+      setModalMode(defaultMode);
+    }
+  }, [open, defaultMode]);
   const [selectedRole, setSelectedRole] = useState<RoleCode>("STUDENT");
   const [previewCode, setPreviewCode] = useState<string>("HV1001");
   const [excelStep, setExcelStep] = useState<"upload" | "suggestion">("upload");

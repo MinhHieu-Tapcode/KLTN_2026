@@ -10,19 +10,25 @@ import { UserTableRow } from "./user-edit-modal";
 export function UsersPageView({
   users,
   currentUser,
+  schools,
+  classes,
   onRefresh,
   onOpenAddUser,
+  onOpenBulkExcel,
   onEditUser,
   onViewUser,
+  onNotify,
 }: {
   users: any[];
   currentUser?: any;
   schools?: any[];
   classes?: any[];
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   onOpenAddUser?: () => void;
+  onOpenBulkExcel?: () => void;
   onEditUser: (u: any) => void;
   onViewUser?: (u: any) => void;
+  onNotify?: (msg: string) => void;
 }) {
   const [tab, setTab] = useState("Tất cả");
   const [search, setSearch] = useState("");

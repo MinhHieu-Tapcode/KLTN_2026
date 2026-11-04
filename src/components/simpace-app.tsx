@@ -136,6 +136,7 @@ export function SimpaceApp({
 
   // Modals & Drawers tạo mới
   const [addUserOpen, setAddUserOpen] = useState(false);
+  const [userDialogMode, setUserDialogMode] = useState<"manual" | "excel">("manual");
   const [addClassOpen, setAddClassOpen] = useState(false);
   const [addSchoolOpen, setAddSchoolOpen] = useState(false);
   const [selectedSchoolForAdd, setSelectedSchoolForAdd] = useState<string | undefined>(undefined);
@@ -372,7 +373,15 @@ export function SimpaceApp({
                 schools={schools}
                 classes={classes}
                 onRefresh={refreshUsers}
-                onOpenAddUser={() => setAddUserOpen(true)}
+                onOpenAddUser={() => {
+                  setUserDialogMode("manual");
+                  setAddUserOpen(true);
+                }}
+                onOpenBulkExcel={() => {
+                  setUserDialogMode("excel");
+                  setAddUserOpen(true);
+                }}
+                onNotify={(msg: string) => setNotice(msg)}
                 onEditUser={(u) => setEditingUser(u)}
                 onViewUser={(u) => setViewingUser(u)}
               />
