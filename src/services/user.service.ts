@@ -1145,6 +1145,45 @@ export async function updateProfileService(
   }
 }
 
+function safeParseDate(val?: any): Date | null {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === 'number' || (!isNaN(Number(val)) && !String(val).includes('-') && !String(val).includes('/'))) {
+    const num = Number(val);
+    if (num > 0) {
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const parsed = new Date(excelEpoch.getTime() + num * 86400000);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+  }
+  const str = String(val).trim();
+  if (!str) return null;
+  if (str.includes('/')) {
+    const parts = str.split('/').map((p) => p.trim());
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      let year = parseInt(parts[2], 10);
+      if (year < 100) year += 2000;
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) return d;
+      }
+    }
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function safeParseGender(val?: any): 'MALE' | 'FEMALE' | 'OTHER' | null {
+  if (!val) return null;
+  const s = String(val).trim().toLowerCase();
+  if (s === 'male' || s === 'nam' || s === 'm') return 'MALE';
+  if (s === 'female' || s === 'nữ' || s === 'nu' || s === 'f') return 'FEMALE';
+  if (s === 'other' || s === 'khác' || s === 'khac' || s === 'o') return 'OTHER';
+  return null;
+}
+
 export async function parseAndValidateExcelService(fileBase64: string): Promise<{
   success: boolean;
   error?: string;
@@ -1164,7 +1203,55 @@ export async function parseAndValidateExcelService(fileBase64: string): Promise<
     if (rawRows.length < 2) {
       return {
         success: false,
-        error: "File Excel rỗng hoặc không đúng định dạng!",
+        error: "File Excel rỗng hoặc không có dữ liệu hợp lệ!",
+      };
+    }
+
+    const header = rawRows[0].map((h: any) => (h ? String(h).trim().toLowerCase() : ""));
+    const colFullName = header.findIndex(
+      (h: string) =>
+        h.includes("họ và tên") ||
+        h.includes("họ tên") ||
+        h.includes("tên") ||
+        h === "name" ||
+        h === "fullname"
+    );
+    const colEmail = header.findIndex(
+      (h: string) => h.includes("email") || h.includes("thư điện tử") || h.includes("mail")
+    );
+    const colClass = header.findIndex(
+      (h: string) =>
+        h.includes("mã lớp") ||
+        h.includes("lớp") ||
+        h.includes("class") ||
+        h.includes("code")
+    );
+    const colPhone = header.findIndex(
+      (h: string) =>
+        h.includes("số điện thoại") ||
+        h.includes("sđt") ||
+        h.includes("phone") ||
+        h.includes("điện thoại")
+    );
+    const colDob = header.findIndex(
+      (h: string) =>
+        h.includes("ngày sinh") ||
+        h.includes("dob") ||
+        h.includes("birth") ||
+        h.includes("ngaysinh")
+    );
+    const colGender = header.findIndex(
+      (h: string) =>
+        h.includes("giới tính") ||
+        h.includes("gender") ||
+        h.includes("phái") ||
+        h.includes("gioitinh")
+    );
+
+    if (colFullName === -1 || colEmail === -1) {
+      return {
+        success: false,
+        error: "File Excel thiếu các cột bắt buộc: 'Họ và tên' và 'Email'!",
       };
     }
 
@@ -1193,9 +1280,7 @@ export async function parseAndValidateExcelService(fileBase64: string): Promise<
       const existingUsers = await prisma.user.findMany({
         select: { email: true },
       });
-      existingEmails = new Set(
-        existingUsers.map((u) => u.email.toLowerCase())
-      );
+      existingEmails = new Set(existingUsers.map((u) => u.email.toLowerCase()));
     }
 
     const validRows: any[] = [];
@@ -1204,22 +1289,35 @@ export async function parseAndValidateExcelService(fileBase64: string): Promise<
 
     for (let i = 1; i < rawRows.length; i++) {
       const row = rawRows[i];
-      if (!row || row.length === 0 || !row[1]) continue;
+      if (!row || row.length === 0 || row.every((c: any) => c === null || c === undefined || String(c).trim() === "")) {
+        continue;
+      }
 
       const stt = row[0] || i;
-      const fullName = (row[1] || "").toString().trim();
-      const email = (row[2] || "").toString().trim().toLowerCase();
-      const classCode = (row[3] || "").toString().trim().toUpperCase();
-      const phoneNumber = (row[4] || "").toString().trim();
-      const dateOfBirth = (row[5] || "").toString().trim();
-      const gender = (row[6] || "").toString().trim();
+      const fullName = (row[colFullName] || "").toString().trim();
+      const email = (row[colEmail] || "").toString().trim().toLowerCase();
+      const rawClassCode = colClass !== -1 && row[colClass] ? (row[colClass] || "").toString().trim().toUpperCase() : "";
+      const phoneNumber = colPhone !== -1 && row[colPhone] ? (row[colPhone] || "").toString().trim() : "";
+      const dateOfBirth = colDob !== -1 && row[colDob] ? (row[colDob] || "").toString().trim() : "";
+      const gender = colGender !== -1 && row[colGender] ? (row[colGender] || "").toString().trim() : "";
+
+      if (!fullName) {
+        errorRows.push({
+          stt,
+          fullName: "—",
+          email: email || "—",
+          classCode: rawClassCode || "—",
+          reason: "Họ và tên không được để trống",
+        });
+        continue;
+      }
 
       if (!email) {
         errorRows.push({
           stt,
           fullName,
           email: "—",
-          classCode,
+          classCode: rawClassCode || "—",
           reason: "Thiếu địa chỉ email",
         });
         continue;
@@ -1230,7 +1328,7 @@ export async function parseAndValidateExcelService(fileBase64: string): Promise<
           stt,
           fullName,
           email,
-          classCode,
+          classCode: rawClassCode || "—",
           reason: "Email sai định dạng (thiếu tên miền hợp lệ)",
         });
         continue;
@@ -1241,51 +1339,21 @@ export async function parseAndValidateExcelService(fileBase64: string): Promise<
           stt,
           fullName,
           email,
-          classCode,
+          classCode: rawClassCode || "—",
           reason: "Email bị trùng lặp trong file",
         });
         continue;
       }
       seenEmailsInFile.add(email);
 
-      if (existingEmails.has(email)) {
-        errorRows.push({
-          stt,
-          fullName,
-          email,
-          classCode,
-          reason: "Email đã tồn tại trên hệ thống",
-        });
-        continue;
-      }
-
-      if (!classCode) {
-        errorRows.push({
-          stt,
-          fullName,
-          email,
-          classCode: "—",
-          reason: "Thiếu mã lớp học",
-        });
-        continue;
-      }
-
-      if (!classMap.has(classCode)) {
-        errorRows.push({
-          stt,
-          fullName,
-          email,
-          classCode,
-          reason: `Mã lớp '${classCode}' không tồn tại trên hệ thống`,
-        });
-        continue;
-      }
+      const classId = rawClassCode && classMap.has(rawClassCode) ? classMap.get(rawClassCode) : undefined;
 
       validRows.push({
+        stt,
         fullName,
         email,
-        classCode,
-        classId: classMap.get(classCode),
+        classCode: rawClassCode,
+        classId,
         phoneNumber,
         dateOfBirth,
         gender,
@@ -1336,30 +1404,34 @@ export async function commitImportUsersService(
           },
           isActive: true,
           classAssignments: [],
-          classEnrollments: [
-            {
-              id: `en-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              classId: row.classId,
-              class: { id: row.classId, code: row.classCode, name: row.classCode },
-            },
-          ],
+          classEnrollments: row.classId
+            ? [
+                {
+                  id: `en-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  classId: row.classId,
+                  class: { id: row.classId, code: row.classCode, name: row.classCode },
+                },
+              ]
+            : [],
           managedSchools: [],
         };
 
         globalStore.demoUsers.push(newStudent);
 
-        const targetClass = globalStore.demoClasses.find((c: any) => c.id === row.classId);
-        if (targetClass) {
-          if (!Array.isArray(targetClass.enrollments)) targetClass.enrollments = [];
-          targetClass.enrollments.push({
-            id: `en-${Date.now()}`,
-            studentId: newId,
-            student: newStudent,
-          });
-          targetClass._count = {
-            ...(targetClass._count || {}),
-            enrollments: targetClass.enrollments.length,
-          };
+        if (row.classId) {
+          const targetClass = globalStore.demoClasses.find((c: any) => c.id === row.classId);
+          if (targetClass) {
+            if (!Array.isArray(targetClass.enrollments)) targetClass.enrollments = [];
+            targetClass.enrollments.push({
+              id: `en-${Date.now()}`,
+              studentId: newId,
+              student: newStudent,
+            });
+            targetClass._count = {
+              ...(targetClass._count || {}),
+              enrollments: targetClass.enrollments.length,
+            };
+          }
         }
       }
       return { success: true };
@@ -1386,47 +1458,74 @@ export async function commitImportUsersService(
 
     await prisma.$transaction(async (tx) => {
       for (const row of validRows) {
-        currentStudentCount++;
-        let username = `HV${(1000 + currentStudentCount).toString()}`;
-        while (await tx.user.findUnique({ where: { username } })) {
-          currentStudentCount++;
-          username = `HV${(1000 + currentStudentCount).toString()}`;
-        }
+        const cleanEmail = row.email.trim().toLowerCase();
+        let existingUser = await tx.user.findUnique({ where: { email: cleanEmail } });
+        let studentUserId = "";
 
-        const user = await tx.user.create({
-          data: {
-            username,
-            email: row.email,
-            passwordHash,
-            roleId: studentRole.id,
-            mustChangePassword: true,
-            profile: {
-              create: {
-                fullName: row.fullName,
-                phoneNumber: row.phoneNumber || null,
+        if (existingUser) {
+          studentUserId = existingUser.id;
+        } else {
+          currentStudentCount++;
+          let username = `HV${(1000 + currentStudentCount).toString()}`;
+          while (await tx.user.findUnique({ where: { username } })) {
+            currentStudentCount++;
+            username = `HV${(1000 + currentStudentCount).toString()}`;
+          }
+
+          const user = await tx.user.create({
+            data: {
+              username,
+              email: cleanEmail,
+              passwordHash,
+              roleId: studentRole.id,
+              mustChangePassword: true,
+              profile: {
+                create: {
+                  fullName: row.fullName,
+                  phoneNumber: row.phoneNumber || null,
+                  dateOfBirth: safeParseDate(row.dateOfBirth),
+                  gender: safeParseGender(row.gender),
+                },
               },
             },
-          },
-        });
+          });
+          studentUserId = user.id;
+        }
 
-        await tx.classEnrollment.create({
-          data: {
-            classId: row.classId,
-            studentId: user.id,
-            status: "STUDYING",
-          },
-        });
+        if (row.classId) {
+          const existingEn = await tx.classEnrollment.findUnique({
+            where: {
+              classId_studentId: {
+                classId: row.classId,
+                studentId: studentUserId,
+              },
+            },
+          });
+          if (!existingEn) {
+            await tx.classEnrollment.create({
+              data: {
+                classId: row.classId,
+                studentId: studentUserId,
+                status: "STUDYING",
+              },
+            });
+          }
+        }
       }
 
-      await tx.importLog.create({
-        data: {
-          importedById,
-          fileName,
-          totalRows: validRows.length,
-          successCount: validRows.length,
-          errorCount: 0,
-        },
-      });
+      if (importedById) {
+        await tx.importLog.create({
+          data: {
+            importedById,
+            fileName,
+            totalRows: validRows.length,
+            successCount: validRows.length,
+            errorCount: 0,
+          },
+        }).catch((logErr) => {
+          console.warn("[commitImportUsersService] Failed to write import log:", logErr);
+        });
+      }
     });
 
     return { success: true };

@@ -162,13 +162,17 @@ export function BulkIeltsWizard({
             (h: string) =>
               h.includes("điểm ielts") ||
               h.includes("điểm đầu vào") ||
+              h.includes("điểm") ||
+              h.includes("diem") ||
+              h.includes("overall") ||
               h.includes("ielts") ||
               h.includes("score") ||
-              h.includes("band")
+              h.includes("band") ||
+              h.includes("target")
           );
 
-          if (colFullName === -1 || colEmail === -1 || colScore === -1) {
-            setExcelError("Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên', 'Email', 'Điểm đầu vào'!");
+          if (colFullName === -1 || colEmail === -1) {
+            setExcelError("Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên' và 'Email'!");
             return;
           }
 
@@ -198,7 +202,7 @@ export function BulkIeltsWizard({
             const rawPhone = colPhone !== -1 && row[colPhone] ? String(row[colPhone]).trim() : "";
             const rawDob = colDob !== -1 && row[colDob] ? String(row[colDob]).trim() : "";
             const rawGender = colGender !== -1 && row[colGender] ? String(row[colGender]).trim().toLowerCase() : "";
-            const rawScoreVal = row[colScore];
+            const rawScoreVal = colScore !== -1 ? row[colScore] : 5.0;
 
             if (!fullName) {
               invalidRows.push({ rowNumber, email: rawEmail, rawScore: rawScoreVal, errorReason: "Họ và tên không được để trống" });
@@ -224,10 +228,9 @@ export function BulkIeltsWizard({
               continue;
             }
 
-            const score = Number(String(rawScoreVal).replace(",", "."));
-            if (rawScoreVal === null || rawScoreVal === undefined || isNaN(score) || score < 0 || score > 9.0) {
-              invalidRows.push({ rowNumber, fullName, email: rawEmail, rawScore: rawScoreVal, errorReason: "Điểm đầu vào phải là số từ 0.0 đến 9.0" });
-              continue;
+            let score = Number(String(rawScoreVal ?? 5.0).replace(",", "."));
+            if (rawScoreVal === null || rawScoreVal === undefined || String(rawScoreVal).trim() === "" || isNaN(score) || score < 0 || score > 9.0) {
+              score = 5.0;
             }
 
             let gender: "MALE" | "FEMALE" | "OTHER" = "MALE";

@@ -4,6 +4,7 @@ import * as path from "path";
 import mammoth from "mammoth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {

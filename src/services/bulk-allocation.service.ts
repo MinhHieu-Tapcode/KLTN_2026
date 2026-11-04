@@ -5,6 +5,45 @@ import { sendAccountCreatedEmail } from "@/lib/mail";
 
 const RFC5322_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
+export function safeParseDate(val?: any): Date | null {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === 'number' || (!isNaN(Number(val)) && !String(val).includes('-') && !String(val).includes('/'))) {
+    const num = Number(val);
+    if (num > 0) {
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const parsed = new Date(excelEpoch.getTime() + num * 86400000);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+  }
+  const str = String(val).trim();
+  if (!str) return null;
+  if (str.includes('/')) {
+    const parts = str.split('/').map((p) => p.trim());
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      let year = parseInt(parts[2], 10);
+      if (year < 100) year += 2000;
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) return d;
+      }
+    }
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export function safeParseGender(val?: any): 'MALE' | 'FEMALE' | 'OTHER' | null {
+  if (!val) return null;
+  const s = String(val).trim().toLowerCase();
+  if (s === 'male' || s === 'nam' || s === 'm') return 'MALE';
+  if (s === 'female' || s === 'nữ' || s === 'nu' || s === 'f') return 'FEMALE';
+  if (s === 'other' || s === 'khác' || s === 'khac' || s === 'o') return 'OTHER';
+  return null;
+}
+
 const DEFAULT_IELTS_LEVELS = [
   { id: "lvl-basic", code: "BASIC", name: "Cơ bản", minScore: 3.5, maxScore: 4.5, targetClassCount: 1, sortOrder: 1, isActive: true },
   { id: "lvl-medium", code: "MEDIUM", name: "Trung bình", minScore: 4.5, maxScore: 6.5, targetClassCount: 2, sortOrder: 2, isActive: true },
@@ -132,15 +171,19 @@ export async function parseAndValidateBulkStudentsService(fileBase64: string): P
     (h: string) =>
       h.includes("điểm ielts") ||
       h.includes("điểm đầu vào") ||
+      h.includes("điểm") ||
+      h.includes("diem") ||
+      h.includes("overall") ||
       h.includes("ielts") ||
       h.includes("score") ||
-      h.includes("band")
+      h.includes("band") ||
+      h.includes("target")
   );
 
-  if (colFullName === -1 || colEmail === -1 || colScore === -1) {
+  if (colFullName === -1 || colEmail === -1) {
     return {
       success: false,
-      error: "Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên', 'Email', 'Điểm đầu vào'!",
+      error: "Tệp tải lên thiếu các cột bắt buộc: 'Họ và tên' và 'Email'!",
     };
   }
 
@@ -843,8 +886,8 @@ export async function commitBulkAllocationService(
             profile: {
               fullName: student.fullName.trim(),
               phoneNumber: student.phoneNumber || null,
-              dateOfBirth: student.dateOfBirth ? new Date(student.dateOfBirth) : null,
-              gender: student.gender || null,
+              dateOfBirth: safeParseDate(student.dateOfBirth),
+              gender: safeParseGender(student.gender),
               entryIeltsScore: student.ieltsScore,
               ieltsLevel: { id: plan.levelId, name: plan.levelName, code: plan.levelCode },
             },
@@ -897,9 +940,19 @@ export async function commitBulkAllocationService(
     return { success: false, error: "Không tìm thấy vai trò STUDENT trong hệ thống!" };
   }
 
-  const school = await prisma.school.findUnique({ where: { id: schoolId } });
+  let school = await prisma.school.findUnique({ where: { id: schoolId } });
   if (!school) {
-    return { success: false, error: "Trường học được chọn không tồn tại!" };
+    school = await prisma.school.findFirst({ where: { isActive: true } });
+    if (!school) {
+      school = await prisma.school.create({
+        data: {
+          code: "SCH_SIMPACE",
+          name: "Trường đối tác SIMPACE",
+          address: "Hà Nội",
+          isActive: true,
+        },
+      });
+    }
   }
 
   const defaultPassword = "Simpace@2026";
@@ -942,8 +995,8 @@ export async function commitBulkAllocationService(
           ieltsLevelId: validDbLevelId,
           capacity: propClass.capacity || 30,
           status: (propClass.status as any) || "ACTIVE",
-          startDate: propClass.startDate ? new Date(propClass.startDate) : null,
-          endDate: propClass.endDate ? new Date(propClass.endDate) : null,
+          startDate: safeParseDate(propClass.startDate),
+          endDate: safeParseDate(propClass.endDate),
           description: propClass.schedule || propClass.description || null,
           isActive: true,
         };
@@ -959,8 +1012,8 @@ export async function commitBulkAllocationService(
               name: propClass.name,
               capacity: propClass.capacity,
               status: (propClass.status as any) || classRecord.status,
-              startDate: propClass.startDate ? new Date(propClass.startDate) : classRecord.startDate,
-              endDate: propClass.endDate ? new Date(propClass.endDate) : classRecord.endDate,
+              startDate: safeParseDate(propClass.startDate) || classRecord.startDate,
+              endDate: safeParseDate(propClass.endDate) || classRecord.endDate,
               description: propClass.schedule || propClass.description || classRecord.description,
             },
           });
@@ -970,6 +1023,8 @@ export async function commitBulkAllocationService(
         if (propClass.teacherIds && propClass.teacherIds.length > 0) {
           for (const tid of propClass.teacherIds) {
             if (!tid) continue;
+            const teacherExists = await tx.user.findUnique({ where: { id: tid } });
+            if (!teacherExists) continue;
             const existingAss = await tx.classAssignment.findUnique({
               where: {
                 classId_userId: {
@@ -1000,34 +1055,52 @@ export async function commitBulkAllocationService(
 
           const cleanEmail = student.email.trim().toLowerCase();
 
-          const newUser = await tx.user.create({
-            data: {
-              username,
-              email: cleanEmail,
-              passwordHash,
-              roleId: studentRole.id,
-              mustChangePassword: true,
-              isActive: true,
-              profile: {
-                create: {
-                  fullName: student.fullName.trim(),
-                  phoneNumber: student.phoneNumber || null,
-                  dateOfBirth: student.dateOfBirth ? new Date(student.dateOfBirth) : null,
-                  gender: student.gender || null,
-                  entryIeltsScore: student.ieltsScore,
-                  ieltsLevelId: validDbLevelId,
+          let existingUser = await tx.user.findUnique({ where: { email: cleanEmail } });
+          let studentUserId = "";
+
+          if (existingUser) {
+            studentUserId = existingUser.id;
+          } else {
+            const newUser = await tx.user.create({
+              data: {
+                username,
+                email: cleanEmail,
+                passwordHash,
+                roleId: studentRole.id,
+                mustChangePassword: true,
+                isActive: true,
+                profile: {
+                  create: {
+                    fullName: student.fullName.trim(),
+                    phoneNumber: student.phoneNumber || null,
+                    dateOfBirth: safeParseDate(student.dateOfBirth),
+                    gender: safeParseGender(student.gender),
+                    entryIeltsScore: student.ieltsScore,
+                    ieltsLevelId: validDbLevelId,
+                  },
                 },
+              },
+            });
+            studentUserId = newUser.id;
+          }
+
+          const existingEnrollment = await tx.classEnrollment.findUnique({
+            where: {
+              classId_studentId: {
+                classId: classRecord.id,
+                studentId: studentUserId,
               },
             },
           });
-
-          await tx.classEnrollment.create({
-            data: {
-              classId: classRecord.id,
-              studentId: newUser.id,
-              status: "STUDYING",
-            },
-          });
+          if (!existingEnrollment) {
+            await tx.classEnrollment.create({
+              data: {
+                classId: classRecord.id,
+                studentId: studentUserId,
+                status: "STUDYING",
+              },
+            });
+          }
 
           createdUsersSummary.push({
             email: cleanEmail,

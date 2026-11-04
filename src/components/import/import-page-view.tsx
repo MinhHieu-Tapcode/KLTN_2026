@@ -26,21 +26,147 @@ export function ImportPageView({ onImportSuccess }: { onImportSuccess: () => voi
     setAnalyzing(true);
 
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(selected);
-        reader.onload = () => {
-          const res = reader.result as string;
-          resolve(res.includes(",") ? res.split(",")[1] : res);
-        };
-        reader.onerror = (err) => reject(err);
-      });
-      const res = await parseAndValidateExcelAction(base64);
+      const arrayBuffer = await selected.arrayBuffer();
+      let res: any;
 
-      if (!res.success) {
-        setErrorMsg(res.error || "Lỗi xử lý file Excel!");
-      } else {
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(selected);
+          reader.onload = () => {
+            const resultStr = reader.result as string;
+            resolve(resultStr.includes(",") ? resultStr.split(",")[1] : resultStr);
+          };
+          reader.onerror = (err) => reject(err);
+        });
+        res = await parseAndValidateExcelAction(base64);
+      } catch (serverErr) {
+        console.warn("[handleFileChange] Server action parse failed, using client fallback:", serverErr);
+      }
+
+      if (!res || !res.success) {
+        try {
+          const workbook = XLSX.read(arrayBuffer, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          if (rawRows.length < 2) {
+            setErrorMsg("Tệp Excel rỗng hoặc không có dữ liệu hợp lệ!");
+            return;
+          }
+
+          const header = rawRows[0].map((h: any) => (h ? String(h).trim().toLowerCase() : ""));
+          const colFullName = header.findIndex(
+            (h: string) =>
+              h.includes("họ và tên") ||
+              h.includes("họ tên") ||
+              h.includes("tên") ||
+              h === "name" ||
+              h === "fullname"
+          );
+          const colEmail = header.findIndex(
+            (h: string) => h.includes("email") || h.includes("thư điện tử") || h.includes("mail")
+          );
+          const colClass = header.findIndex(
+            (h: string) =>
+              h.includes("mã lớp") ||
+              h.includes("lớp") ||
+              h.includes("class") ||
+              h.includes("code")
+          );
+          const colPhone = header.findIndex(
+            (h: string) =>
+              h.includes("số điện thoại") ||
+              h.includes("sđt") ||
+              h.includes("phone") ||
+              h.includes("điện thoại")
+          );
+          const colDob = header.findIndex(
+            (h: string) =>
+              h.includes("ngày sinh") ||
+              h.includes("dob") ||
+              h.includes("birth") ||
+              h.includes("ngaysinh")
+          );
+          const colGender = header.findIndex(
+            (h: string) =>
+              h.includes("giới tính") ||
+              h.includes("gender") ||
+              h.includes("phái")
+          );
+
+          if (colFullName === -1 || colEmail === -1) {
+            setErrorMsg("File Excel thiếu các cột bắt buộc: 'Họ và tên' và 'Email'!");
+            return;
+          }
+
+          const validRows: any[] = [];
+          const errorRows: any[] = [];
+          const seenEmails = new Set<string>();
+
+          for (let i = 1; i < rawRows.length; i++) {
+            const row = rawRows[i];
+            if (!row || row.length === 0 || row.every((c: any) => c === null || c === undefined || String(c).trim() === "")) {
+              continue;
+            }
+
+            const stt = row[0] || i;
+            const fullName = (row[colFullName] || "").toString().trim();
+            const email = (row[colEmail] || "").toString().trim().toLowerCase();
+            const classCode = colClass !== -1 && row[colClass] ? (row[colClass] || "").toString().trim().toUpperCase() : "";
+            const phoneNumber = colPhone !== -1 && row[colPhone] ? (row[colPhone] || "").toString().trim() : "";
+            const dateOfBirth = colDob !== -1 && row[colDob] ? (row[colDob] || "").toString().trim() : "";
+            const gender = colGender !== -1 && row[colGender] ? (row[colGender] || "").toString().trim() : "";
+
+            if (!fullName) {
+              errorRows.push({ stt, fullName: "—", email: email || "—", classCode: classCode || "—", reason: "Họ và tên không được để trống" });
+              continue;
+            }
+            if (!email) {
+              errorRows.push({ stt, fullName, email: "—", classCode: classCode || "—", reason: "Thiếu địa chỉ email" });
+              continue;
+            }
+            const RFC5322 = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+            if (!RFC5322.test(email)) {
+              errorRows.push({ stt, fullName, email, classCode: classCode || "—", reason: "Email sai định dạng (thiếu tên miền hợp lệ)" });
+              continue;
+            }
+            if (seenEmails.has(email)) {
+              errorRows.push({ stt, fullName, email, classCode: classCode || "—", reason: "Email bị trùng lặp trong file" });
+              continue;
+            }
+            seenEmails.add(email);
+
+            validRows.push({
+              stt,
+              fullName,
+              email,
+              classCode,
+              phoneNumber,
+              dateOfBirth,
+              gender,
+            });
+          }
+
+          res = {
+            success: true,
+            totalRows: rawRows.length - 1,
+            validCount: validRows.length,
+            errorCount: errorRows.length,
+            validRows,
+            errorRows,
+          };
+        } catch (clientParseErr: any) {
+          setErrorMsg("Không thể đọc file Excel: " + (clientParseErr.message || String(clientParseErr)));
+          return;
+        }
+      }
+
+      if (res && res.success) {
         setReport(res);
+      } else {
+        setErrorMsg(res?.error || "Lỗi xử lý file Excel!");
       }
     } catch (err: any) {
       setErrorMsg("Không thể đọc file: " + err.message);
