@@ -207,7 +207,7 @@ export function SimpaceApp({
     const [sc, cl, us, per, mgrs, tchs, taList, lvlRes] = await Promise.all([
       getSchoolsAction("", "ALL"),
       getClassesAction("ALL", "", "ALL"),
-      getUsersAction("Tất cả", "", "ALL"),
+      getUsersAction("Tất cả", "", "ACTIVE"),
       getSystemPermissionsAction(),
       getSchoolManagersAction(),
       getTeachersAction(),
@@ -227,7 +227,7 @@ export function SimpaceApp({
   };
 
   const refreshUsers = async () => {
-    const us = await getUsersAction("Tất cả", "", "ALL");
+    const us = await getUsersAction("Tất cả", "", "ACTIVE");
     setUsers(us);
   };
 

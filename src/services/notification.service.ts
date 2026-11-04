@@ -19,7 +19,7 @@ function getSampleNotificationsForUser(userId: string): any[] {
   const now = Date.now();
   const lower = (userId || "").toLowerCase();
 
-  if (lower.includes("manager") || lower.includes("quan")) {
+  if (lower.startsWith("mgr") || lower.includes("manager") || lower.includes("quan")) {
     return [
       {
         id: `notif-sample-mgr-1-${userId}`,
@@ -60,7 +60,7 @@ function getSampleNotificationsForUser(userId: string): any[] {
     ];
   }
 
-  if (lower.includes("teacher") || lower.includes("gv")) {
+  if (lower.startsWith("tc") || lower.includes("teacher") || lower.includes("gv") || lower.includes("dung")) {
     return [
       {
         id: `notif-sample-tc-1-${userId}`,
@@ -101,7 +101,7 @@ function getSampleNotificationsForUser(userId: string): any[] {
     ];
   }
 
-  if (lower.includes("student") || lower.includes("hv") || lower.includes("an")) {
+  if (lower.startsWith("st") || lower.includes("student") || lower.includes("hv") || lower.includes("lan") || lower.includes("long") || lower.includes("an")) {
     return [
       {
         id: `notif-sample-st-1-${userId}`,

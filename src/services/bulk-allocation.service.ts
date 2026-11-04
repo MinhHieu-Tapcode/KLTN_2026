@@ -182,7 +182,10 @@ export async function parseAndValidateBulkStudentsService(fileBase64: string): P
     const rawDob = colDob !== -1 && row[colDob] ? String(row[colDob]).trim() : "";
     const rawGender =
       colGender !== -1 && row[colGender] ? String(row[colGender]).trim().toLowerCase() : "";
-    const rawScoreVal = row[colScore];
+    let rawScoreVal = colScore !== -1 ? row[colScore] : 5.0;
+    if (rawScoreVal === null || rawScoreVal === undefined || String(rawScoreVal).trim() === "") {
+      rawScoreVal = 5.0;
+    }
 
     if (!fullName) {
       invalidRows.push({

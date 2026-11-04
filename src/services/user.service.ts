@@ -1168,19 +1168,35 @@ export async function parseAndValidateExcelService(fileBase64: string): Promise<
       };
     }
 
-    const activeClasses = await prisma.class.findMany({
-      where: { isActive: true },
-      select: { id: true, code: true, name: true },
-    });
     const classMap = new Map<string, string>();
-    activeClasses.forEach((c) => classMap.set(c.code.trim().toUpperCase(), c.id));
+    let existingEmails = new Set<string>();
 
-    const existingUsers = await prisma.user.findMany({
-      select: { email: true },
-    });
-    const existingEmails = new Set(
-      existingUsers.map((u) => u.email.toLowerCase())
-    );
+    if (!(await isDbAlive())) {
+      const globalStore = globalThis as any;
+      const demoClasses = (globalStore.demoClasses || [
+        { id: "demo-class-1", code: "IELTS_TD_01", name: "IELTS Bứt Phá - 10A1" },
+        { id: "demo-class-2", code: "IELTS_TD_02", name: "IELTS Khởi Động - 10A2" },
+      ]) as any[];
+      demoClasses.forEach((c) => {
+        if (c.code) classMap.set(c.code.trim().toUpperCase(), c.id);
+      });
+
+      const demoUsers = (globalStore.demoUsers || []) as any[];
+      existingEmails = new Set(demoUsers.map((u) => (u.email || "").toLowerCase()));
+    } else {
+      const activeClasses = await prisma.class.findMany({
+        where: { isActive: true },
+        select: { id: true, code: true, name: true },
+      });
+      activeClasses.forEach((c) => classMap.set(c.code.trim().toUpperCase(), c.id));
+
+      const existingUsers = await prisma.user.findMany({
+        select: { email: true },
+      });
+      existingEmails = new Set(
+        existingUsers.map((u) => u.email.toLowerCase())
+      );
+    }
 
     const validRows: any[] = [];
     const errorRows: any[] = [];
@@ -1294,6 +1310,61 @@ export async function commitImportUsersService(
   fileName: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!(await isDbAlive())) {
+      const globalStore = globalThis as any;
+      if (!Array.isArray(globalStore.demoUsers)) globalStore.demoUsers = [];
+      if (!Array.isArray(globalStore.demoClasses)) globalStore.demoClasses = [];
+
+      let currentStudentCount = globalStore.demoUsers.filter(
+        (u: any) => u.role?.code === "STUDENT"
+      ).length;
+
+      for (const row of validRows) {
+        currentStudentCount++;
+        const username = `HV${(1000 + currentStudentCount).toString()}`;
+        const newId = `st-import-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+        const newStudent = {
+          id: newId,
+          username,
+          email: row.email,
+          role: { code: "STUDENT", name: "Học viên" },
+          profile: {
+            fullName: row.fullName,
+            phoneNumber: row.phoneNumber || "",
+            entryIeltsScore: 5.5,
+          },
+          isActive: true,
+          classAssignments: [],
+          classEnrollments: [
+            {
+              id: `en-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              classId: row.classId,
+              class: { id: row.classId, code: row.classCode, name: row.classCode },
+            },
+          ],
+          managedSchools: [],
+        };
+
+        globalStore.demoUsers.push(newStudent);
+
+        const targetClass = globalStore.demoClasses.find((c: any) => c.id === row.classId);
+        if (targetClass) {
+          if (!Array.isArray(targetClass.enrollments)) targetClass.enrollments = [];
+          targetClass.enrollments.push({
+            id: `en-${Date.now()}`,
+            studentId: newId,
+            student: newStudent,
+          });
+          targetClass._count = {
+            ...(targetClass._count || {}),
+            enrollments: targetClass.enrollments.length,
+          };
+        }
+      }
+      return { success: true };
+    }
+
     const studentRole = await prisma.role.findUnique({
       where: { code: "STUDENT" },
     });

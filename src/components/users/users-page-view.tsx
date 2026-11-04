@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { FileSpreadsheet, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteUserAction, deleteMultipleUsersAction } from "@/actions/users";
 import { ConfirmDialog } from "@/components/shared/common-widgets";

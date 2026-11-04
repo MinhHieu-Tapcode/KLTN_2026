@@ -120,7 +120,15 @@ export function BulkIeltsWizard({
       let res: any;
 
       try {
-        const base64 = Buffer.from(arrayBuffer).toString("base64");
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(selected);
+          reader.onload = () => {
+            const resultStr = reader.result as string;
+            resolve(resultStr.includes(",") ? resultStr.split(",")[1] : resultStr);
+          };
+          reader.onerror = (err) => reject(err);
+        });
         res = await parseAndValidateBulkStudentsAction(base64);
       } catch (networkErr: any) {
         console.warn("[handleExcelChange] Server Action call failed, using client fallback:", networkErr);

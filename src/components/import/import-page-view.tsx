@@ -26,8 +26,15 @@ export function ImportPageView({ onImportSuccess }: { onImportSuccess: () => voi
     setAnalyzing(true);
 
     try {
-      const arrayBuffer = await selected.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString("base64");
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(selected);
+        reader.onload = () => {
+          const res = reader.result as string;
+          resolve(res.includes(",") ? res.split(",")[1] : res);
+        };
+        reader.onerror = (err) => reject(err);
+      });
       const res = await parseAndValidateExcelAction(base64);
 
       if (!res.success) {

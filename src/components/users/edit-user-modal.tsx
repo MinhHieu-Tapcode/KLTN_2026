@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { Loader2, Plus, ShieldCheck, X } from "lucide-react";
+import { Loader2, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { RoleCode } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,12 +18,16 @@ export function EditUserModal({
   user,
   schools = [],
   classes = [],
+  currentUser,
+  onDeleteUser,
   onClose,
   onDone,
 }: {
   user: any;
   schools?: any[];
   classes?: any[];
+  currentUser?: any;
+  onDeleteUser?: (id: string, name?: string) => void;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -44,6 +48,11 @@ export function EditUserModal({
   const [assignedClasses, setAssignedClasses] = useState<string[]>(
     initialClasses.length > 0 ? initialClasses : [""]
   );
+  const isSelf = currentUser && (user.id === currentUser.userId || user.id === currentUser.id);
+  const isTargetAdmin = user.role?.code === "ADMIN";
+  const isSchoolManager = currentUser?.role === "SCHOOL_MANAGER";
+  const canDelete = Boolean(onDeleteUser) && !isSelf && (!isSchoolManager || !isTargetAdmin);
+
 
   const handleUpdate = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -317,13 +326,29 @@ export function EditUserModal({
             </p>
           </div>
 
-          <div className="flex justify-end gap-2 pt-3">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Hủy
-            </Button>
-            <Button type="submit" disabled={isPending} className="bg-[#EA580C] text-white">
-              {isPending ? <Loader2 className="size-4 animate-spin mr-1" /> : null} Lưu thay đổi
-            </Button>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            {canDelete ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (confirm(`Bạn có chắc chắn muốn xóa tài khoản "${user.profile?.fullName || user.username}" khỏi hệ thống?`)) {
+                    onDeleteUser?.(user.id, user.profile?.fullName || user.username);
+                  }
+                }}
+                className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 hover:border-red-300 font-semibold text-xs"
+              >
+                <Trash2 className="size-3.5 mr-1 text-red-500" /> Xóa tài khoản
+              </Button>
+            ) : <div />}
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Hủy
+              </Button>
+              <Button type="submit" disabled={isPending} className="bg-[#EA580C] text-white">
+                {isPending ? <Loader2 className="size-4 animate-spin mr-1" /> : null} Lưu thay đổi
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>
