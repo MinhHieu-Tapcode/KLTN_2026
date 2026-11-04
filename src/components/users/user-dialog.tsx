@@ -43,6 +43,10 @@ export function UserDialog({
   useEffect(() => {
     if (open && defaultMode) {
       setModalMode(defaultMode);
+      if (defaultMode === "excel") {
+        setSelectedRole("STUDENT");
+        setExcelStep("upload");
+      }
     }
   }, [open, defaultMode]);
   const [selectedRole, setSelectedRole] = useState<RoleCode>("STUDENT");
