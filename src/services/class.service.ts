@@ -131,26 +131,32 @@ export async function generateClassCodeService(
   schoolId: string,
   program: string = "IELTS"
 ): Promise<string> {
-  if (!(await isDbAlive())) {
-    return "IELTS_SIM_01";
-  }
-  const school = await prisma.school.findUnique({ where: { id: schoolId } });
-  const schoolAcronym = school?.code.replace(/^SCH_/, "") || "SIM";
   const cleanProgram = (program || "IELTS").toUpperCase();
 
-  const count = await prisma.class.count({
-    where: { schoolId, program: cleanProgram as any },
-  });
+  if (await isDbAlive()) {
+    try {
+      const school = await prisma.school.findUnique({ where: { id: schoolId } });
+      const schoolAcronym = school?.code.replace(/^SCH_/, "") || "SIM";
 
-  let nextNum = count + 1;
-  let candidate = `${cleanProgram}_${schoolAcronym}_${nextNum.toString().padStart(2, "0")}`;
+      const count = await prisma.class.count({
+        where: { schoolId, program: cleanProgram as any },
+      });
 
-  while (await prisma.class.findUnique({ where: { code: candidate } })) {
-    nextNum++;
-    candidate = `${cleanProgram}_${schoolAcronym}_${nextNum.toString().padStart(2, "0")}`;
+      let nextNum = count + 1;
+      let candidate = `${cleanProgram}_${schoolAcronym}_${nextNum.toString().padStart(2, "0")}`;
+
+      while (await prisma.class.findUnique({ where: { code: candidate } })) {
+        nextNum++;
+        candidate = `${cleanProgram}_${schoolAcronym}_${nextNum.toString().padStart(2, "0")}`;
+      }
+
+      return candidate;
+    } catch (err: any) {
+      console.warn("[generateClassCodeService] DB error fallback:", err?.message);
+    }
   }
 
-  return candidate;
+  return `${cleanProgram}_SIM_01`;
 }
 
 export async function getClassesService(
@@ -159,106 +165,109 @@ export async function getClassesService(
   searchKeyword: string = "",
   activeState: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
 ) {
-  if (!(await isDbAlive())) {
-    return (globalClassesStore.demoClasses || []) as any;
-  }
-  const whereClause: any = {};
+  if (await isDbAlive()) {
+    try {
+      const whereClause: any = {};
 
-  if (activeState === "ACTIVE") {
-    whereClause.isActive = true;
-  } else if (activeState === "INACTIVE") {
-    whereClause.isActive = false;
-  }
+      if (activeState === "ACTIVE") {
+        whereClause.isActive = true;
+      } else if (activeState === "INACTIVE") {
+        whereClause.isActive = false;
+      }
 
-  if (isSchoolManager(session)) {
-    whereClause.school = { managerId: session.userId };
-  } else if (isTeacherOrTA(session)) {
-    whereClause.assignments = { some: { userId: session.userId } };
-  } else if (isStudent(session)) {
-    whereClause.enrollments = { some: { studentId: session.userId } };
-  }
+      if (isSchoolManager(session)) {
+        whereClause.school = { managerId: session.userId };
+      } else if (isTeacherOrTA(session)) {
+        whereClause.assignments = { some: { userId: session.userId } };
+      } else if (isStudent(session)) {
+        whereClause.enrollments = { some: { studentId: session.userId } };
+      }
 
-  if (statusFilter !== "ALL") {
-    whereClause.status = statusFilter as ClassStatus;
-  }
+      if (statusFilter !== "ALL") {
+        whereClause.status = statusFilter as ClassStatus;
+      }
 
-  if (searchKeyword && searchKeyword.trim()) {
-    const clean = searchKeyword.trim();
-    whereClause.OR = [
-      { name: { contains: clean, mode: "insensitive" } },
-      { code: { contains: clean, mode: "insensitive" } },
-      { school: { name: { contains: clean, mode: "insensitive" } } },
-    ];
-  }
+      if (searchKeyword && searchKeyword.trim()) {
+        const clean = searchKeyword.trim();
+        whereClause.OR = [
+          { name: { contains: clean, mode: "insensitive" } },
+          { code: { contains: clean, mode: "insensitive" } },
+          { school: { name: { contains: clean, mode: "insensitive" } } },
+        ];
+      }
 
-  try {
-    return await prisma.class.findMany({
-      where: whereClause,
-      include: {
-        school: true,
-        assignments: {
-          include: {
-            staff: { include: { profile: true } },
+      const list = await prisma.class.findMany({
+        where: whereClause,
+        include: {
+          school: true,
+          assignments: {
+            include: {
+              staff: { include: { profile: true } },
+            },
           },
-        },
-        enrollments: {
-          include: {
-            student: { include: { profile: true } },
+          enrollments: {
+            include: {
+              student: { include: { profile: true } },
+            },
           },
-        },
-        materialFolders: {
-          where: { isActive: true },
-          select: {
-            id: true,
-            _count: {
-              select: {
-                materials: { where: { isActive: true } },
+          materialFolders: {
+            where: { isActive: true },
+            select: {
+              id: true,
+              _count: {
+                select: {
+                  materials: { where: { isActive: true } },
+                },
               },
             },
           },
+          _count: {
+            select: { enrollments: true, materialFolders: true },
+          },
         },
-        _count: {
-          select: { enrollments: true, materialFolders: true },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-  } catch (err: any) {
-    console.warn("[getClassesService] DB offline fallback:", err?.message);
-    return (globalClassesStore.demoClasses || []) as any;
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (list && list.length > 0) {
+        return list as any;
+      }
+    } catch (err: any) {
+      console.warn("[getClassesService] DB error fallback:", err?.message);
+    }
   }
+
+  return (globalClassesStore.demoClasses || []) as any;
 }
 
 export async function getClassDetailService(id: string) {
-  if (!(await isDbAlive())) {
-    const found = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
-    if (found) return found as any;
-    return (globalClassesStore.demoClasses || [])[0] as any;
-  }
-  try {
-    return await prisma.class.findUnique({
-      where: { id },
-      include: {
-        school: true,
-        assignments: {
-          include: {
-            staff: { include: { profile: true } },
+  if (await isDbAlive()) {
+    try {
+      const res = await prisma.class.findUnique({
+        where: { id },
+        include: {
+          school: true,
+          assignments: {
+            include: {
+              staff: { include: { profile: true } },
+            },
+          },
+          enrollments: {
+            include: {
+              student: { include: { profile: true } },
+            },
+            orderBy: { enrolledAt: "asc" },
           },
         },
-        enrollments: {
-          include: {
-            student: { include: { profile: true } },
-          },
-          orderBy: { enrolledAt: "asc" },
-        },
-      },
-    });
-  } catch (err: any) {
-    console.warn("[getClassDetailService] DB offline fallback:", err?.message);
-    const found = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
-    if (found) return found as any;
-    return (globalClassesStore.demoClasses || [])[0] as any;
+      });
+      if (res) return res as any;
+    } catch (err: any) {
+      console.warn("[getClassDetailService] DB offline fallback:", err?.message);
+    }
   }
+
+  const found = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
+  if (found) return found as any;
+  return (globalClassesStore.demoClasses || [])[0] as any;
 }
 
 export async function createClassService(data: {

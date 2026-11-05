@@ -119,193 +119,199 @@ export interface ScopeOption {
 /**
  * Xác định phạm vi Trường -> Lớp -> Học sinh mà người dùng hiện tại được quyền xem (Mục 2.1 & 2.3)
  */
+function getMemoryScopeOptions(user: { userId: string; role: string }): ScopeOption {
+  const rawClasses = (globalReportMemoryRef.demoClasses || []).filter((c) => c.isActive !== false);
+  const mappedClasses = rawClasses
+    .filter((c) => {
+      if (user.role === "TEACHER") {
+        return (c.assignments || []).some(
+          (a: any) => a.userId === user.userId || a.userId === "teacher-1"
+        );
+      }
+      return true;
+    })
+    .map((c) => ({
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      schoolId: c.schoolId || "demo-school-1",
+      schoolName: c.school?.name || "THPT Trương Định",
+      students: (c.enrollments || []).map((en: any) => ({
+        id: en.studentId,
+        username: en.student?.username || en.studentId,
+        fullName: en.student?.profile?.fullName || en.student?.username || "Học viên",
+        email: en.student?.email || "",
+      })),
+    }));
+
+  if (user.role === "STUDENT" || user.role === "TEACHER") {
+    return { schools: [], classes: mappedClasses };
+  }
+  const schoolMap = new Map<string, ScopeOption["schools"][number]>();
+  for (const cls of mappedClasses) {
+    const ex: ScopeOption["schools"][number] = schoolMap.get(cls.schoolId) || {
+      id: cls.schoolId,
+      code: cls.schoolId === "demo-school-1" ? "SCH_TD" : "SCH_KL",
+      name: cls.schoolName,
+      classes: [],
+    };
+    ex.classes.push(cls);
+    schoolMap.set(cls.schoolId, ex);
+  }
+  return {
+    schools: Array.from(schoolMap.values()),
+    classes: mappedClasses,
+  };
+}
+
 export async function getReportScopeOptionsService(user: {
   userId: string;
   role: string;
 }): Promise<ScopeOption> {
-  if (!(await isDbAlive())) {
-    const rawClasses = (globalReportMemoryRef.demoClasses || []).filter((c) => c.isActive !== false);
-    const mappedClasses = rawClasses
-      .filter((c) => {
-        if (user.role === "TEACHER") {
-          return (c.assignments || []).some(
-            (a: any) => a.userId === user.userId || a.userId === "teacher-1"
-          );
-        }
-        return true;
-      })
-      .map((c) => ({
-        id: c.id,
-        code: c.code,
-        name: c.name,
-        schoolId: c.schoolId || "demo-school-1",
-        schoolName: c.school?.name || "THPT Trương Định",
-        students: (c.enrollments || []).map((en: any) => ({
-          id: en.studentId,
-          username: en.student?.username || en.studentId,
-          fullName: en.student?.profile?.fullName || en.student?.username || "Học viên",
-          email: en.student?.email || "",
-        })),
-      }));
+  if (await isDbAlive()) {
+    try {
+      const role = user.role;
 
-    if (user.role === "STUDENT") {
-      return { schools: [], classes: mappedClasses };
-    }
-    if (user.role === "TEACHER") {
-      return { schools: [], classes: mappedClasses };
-    }
-    const schoolMap = new Map<string, ScopeOption["schools"][number]>();
-    for (const cls of mappedClasses) {
-      const ex: ScopeOption["schools"][number] = schoolMap.get(cls.schoolId) || {
-        id: cls.schoolId,
-        code: cls.schoolId === "demo-school-1" ? "SCH_TD" : "SCH_KL",
-        name: cls.schoolName,
-        classes: [],
-      };
-      ex.classes.push(cls);
-      schoolMap.set(cls.schoolId, ex);
-    }
-    return {
-      schools: Array.from(schoolMap.values()),
-      classes: mappedClasses,
-    };
-  }
-
-  const role = user.role;
-
-  // Học sinh chỉ xem báo cáo của chính bản thân (Mục 2.1)
-  if (role === "STUDENT") {
-    const enrollments = await prisma.classEnrollment.findMany({
-      where: { studentId: user.userId },
-      include: {
-        class: {
+      if (role === "STUDENT") {
+        const enrollments = await prisma.classEnrollment.findMany({
+          where: { studentId: user.userId },
           include: {
-            school: { select: { id: true, code: true, name: true } },
-          },
-        },
-        student: {
-          include: { profile: { select: { fullName: true } } },
-        },
-      },
-    });
-
-    const classes = enrollments
-      .filter((e) => e.class.isActive)
-      .map((e) => ({
-        id: e.class.id,
-        code: e.class.code,
-        name: e.class.name,
-        schoolId: e.class.schoolId,
-        schoolName: e.class.school.name,
-        students: [
-          {
-            id: e.student.id,
-            username: e.student.username,
-            fullName: e.student.profile?.fullName || e.student.username,
-            email: e.student.email,
-          },
-        ],
-      }));
-
-    return { schools: [], classes };
-  }
-
-  // Giáo viên chỉ xem các lớp được phân công, KHÔNG xem báo cáo cấp Trường (Mục 2.1)
-  if (role === "TEACHER") {
-    const assigned = await prisma.classAssignment.findMany({
-      where: {
-        userId: user.userId,
-        class: { isActive: true },
-      },
-      include: {
-        class: {
-          include: {
-            school: { select: { id: true, code: true, name: true } },
-            enrollments: {
+            class: {
               include: {
-                student: {
-                  include: { profile: { select: { fullName: true } } },
+                school: { select: { id: true, code: true, name: true } },
+              },
+            },
+            student: {
+              include: { profile: { select: { fullName: true } } },
+            },
+          },
+        });
+
+        const classes = enrollments
+          .filter((e) => e.class.isActive)
+          .map((e) => ({
+            id: e.class.id,
+            code: e.class.code,
+            name: e.class.name,
+            schoolId: e.class.schoolId,
+            schoolName: e.class.school.name,
+            students: [
+              {
+                id: e.student.id,
+                username: e.student.username,
+                fullName: e.student.profile?.fullName || e.student.username,
+                email: e.student.email,
+              },
+            ],
+          }));
+
+        if (classes.length > 0) {
+          return { schools: [], classes };
+        }
+      } else if (role === "TEACHER") {
+        const assigned = await prisma.classAssignment.findMany({
+          where: {
+            userId: user.userId,
+            class: { isActive: true },
+          },
+          include: {
+            class: {
+              include: {
+                school: { select: { id: true, code: true, name: true } },
+                enrollments: {
+                  include: {
+                    student: {
+                      include: { profile: { select: { fullName: true } } },
+                    },
+                  },
                 },
               },
             },
           },
-        },
-      },
-    });
+        });
 
-    const classes = assigned.map((ca) => ({
-      id: ca.class.id,
-      code: ca.class.code,
-      name: ca.class.name,
-      schoolId: ca.class.schoolId,
-      schoolName: ca.class.school.name,
-      students: ca.class.enrollments
-        .filter((en) => en.student.isActive)
-        .map((en) => ({
-          id: en.student.id,
-          username: en.student.username,
-          fullName: en.student.profile?.fullName || en.student.username,
-          email: en.student.email,
-        })),
-    }));
+        const classes = assigned.map((ca) => ({
+          id: ca.class.id,
+          code: ca.class.code,
+          name: ca.class.name,
+          schoolId: ca.class.schoolId,
+          schoolName: ca.class.school.name,
+          students: ca.class.enrollments
+            .filter((en) => en.student.isActive)
+            .map((en) => ({
+              id: en.student.id,
+              username: en.student.username,
+              fullName: en.student.profile?.fullName || en.student.username,
+              email: en.student.email,
+            })),
+        }));
 
-    return { schools: [], classes };
-  }
+        if (classes.length > 0) {
+          return { schools: [], classes };
+        }
+      } else {
+        const whereSchool: any = { isActive: true };
+        if (role === "SCHOOL_MANAGER") {
+          const managedCount = await prisma.school.count({
+            where: { isActive: true, managerId: user.userId },
+          });
+          if (managedCount > 0) {
+            whereSchool.managerId = user.userId;
+          }
+        }
 
-  // Quản nhiệm (SCHOOL_MANAGER) hoặc ADMIN: Xem Trường -> Lớp -> Học sinh trong phạm vi quản lý
-  const whereSchool: any = { isActive: true };
-  if (role === "SCHOOL_MANAGER") {
-    const managedCount = await prisma.school.count({
-      where: { isActive: true, managerId: user.userId },
-    });
-    if (managedCount > 0) {
-      whereSchool.managerId = user.userId;
+        const schoolsDb = await prisma.school.findMany({
+          where: whereSchool,
+          include: {
+            classes: {
+              where: { isActive: true },
+              include: {
+                enrollments: {
+                  include: {
+                    student: {
+                      include: { profile: { select: { fullName: true } } },
+                    },
+                  },
+                },
+              },
+              orderBy: { code: "asc" },
+            },
+          },
+          orderBy: { name: "asc" },
+        });
+
+        const schools = schoolsDb.map((sc) => ({
+          id: sc.id,
+          code: sc.code,
+          name: sc.name,
+          classes: sc.classes.map((cls) => ({
+            id: cls.id,
+            code: cls.code,
+            name: cls.name,
+            schoolId: sc.id,
+            schoolName: sc.name,
+            students: cls.enrollments
+              .filter((en) => en.student.isActive)
+              .map((en) => ({
+                id: en.student.id,
+                username: en.student.username,
+                fullName: en.student.profile?.fullName || en.student.username,
+                email: en.student.email,
+              })),
+          })),
+        }));
+
+        const allClasses = schools.flatMap((s) => s.classes);
+        if (schools.length > 0) {
+          return { schools, classes: allClasses };
+        }
+      }
+    } catch (err: any) {
+      console.warn("[getReportScopeOptionsService] Prisma error, fallback to demo:", err?.message);
     }
   }
 
-  const schoolsDb = await prisma.school.findMany({
-    where: whereSchool,
-    include: {
-      classes: {
-        where: { isActive: true },
-        include: {
-          enrollments: {
-            include: {
-              student: {
-                include: { profile: { select: { fullName: true } } },
-              },
-            },
-          },
-        },
-        orderBy: { code: "asc" },
-      },
-    },
-    orderBy: { name: "asc" },
-  });
-
-  const schools = schoolsDb.map((sc) => ({
-    id: sc.id,
-    code: sc.code,
-    name: sc.name,
-    classes: sc.classes.map((cls) => ({
-      id: cls.id,
-      code: cls.code,
-      name: cls.name,
-      schoolId: sc.id,
-      schoolName: sc.name,
-      students: cls.enrollments
-        .filter((en) => en.student.isActive)
-        .map((en) => ({
-          id: en.student.id,
-          username: en.student.username,
-          fullName: en.student.profile?.fullName || en.student.username,
-          email: en.student.email,
-        })),
-    })),
-  }));
-
-  const allClasses = schools.flatMap((s) => s.classes);
-  return { schools, classes: allClasses };
+  return getMemoryScopeOptions(user);
 }
 
 /**
@@ -463,8 +469,10 @@ export async function getSchoolReportService(params: {
   const now = new Date();
   const dbAlive = await isDbAlive();
 
-  const school = dbAlive
-    ? await prisma.school.findUnique({
+  let school: any = null;
+  if (dbAlive) {
+    try {
+      school = await prisma.school.findUnique({
         where: { id: params.schoolId },
         include: {
           classes: {
@@ -507,35 +515,40 @@ export async function getSchoolReportService(params: {
             orderBy: { code: "asc" },
           },
         },
-      })
-    : (() => {
-        const memClasses = (globalReportMemoryRef.demoClasses || []).filter(
-          (c) => c.isActive !== false && (c.schoolId || "demo-school-1") === params.schoolId
-        );
-        return {
-          id: params.schoolId,
-          code: params.schoolId === "demo-school-1" ? "SCH_TD" : "SCH_KL",
-          name:
-            memClasses[0]?.school?.name ||
-            (params.schoolId === "demo-school-1" ? "THPT Trương Định" : "THPT Kim Liên"),
-          isActive: true,
-          classes: memClasses.map((mc: any) => ({
-            id: mc.id,
-            code: mc.code,
-            name: mc.name,
-            enrollments: (mc.enrollments || []).map((en: any) => ({
-              student: {
-                id: en.studentId,
-                username: en.student?.username || en.studentId,
-                profile: { fullName: en.student?.profile?.fullName || "Học viên" },
-              },
-            })),
-            classAssignmentsList: getMemoryAssignmentsForClass(mc.id),
-            assignmentLinks: [],
-          })),
-        };
-      })();
+      });
+    } catch (dbErr: any) {
+      console.warn("[getSchoolReportService] DB error fallback:", dbErr?.message);
+    }
+  }
 
+  if (!school) {
+    const memClasses = (globalReportMemoryRef.demoClasses || []).filter(
+      (c) => c.isActive !== false && (c.schoolId || "demo-school-1") === params.schoolId
+    );
+    const targetClasses = memClasses.length > 0 ? memClasses : (globalReportMemoryRef.demoClasses || []);
+    school = {
+      id: params.schoolId,
+      code: params.schoolId === "demo-school-1" ? "SCH_TD" : "SCH_KL",
+      name:
+        targetClasses[0]?.school?.name ||
+        (params.schoolId === "demo-school-1" ? "THPT Trương Định" : "THPT Kim Liên"),
+      isActive: true,
+      classes: targetClasses.map((mc: any) => ({
+        id: mc.id,
+        code: mc.code,
+        name: mc.name,
+        enrollments: (mc.enrollments || []).map((en: any) => ({
+          student: {
+            id: en.studentId,
+            username: en.student?.username || en.studentId,
+            profile: { fullName: en.student?.profile?.fullName || "Học viên" },
+          },
+        })),
+        classAssignmentsList: getMemoryAssignmentsForClass(mc.id),
+        assignmentLinks: [],
+      })),
+    };
+  }
   if (!school || !school.isActive) {
     return { success: false, error: "Trường học không tồn tại hoặc đã ngừng hoạt động!" };
   }
@@ -613,7 +626,7 @@ export async function getSchoolReportService(params: {
 
     for (const link of cls.assignmentLinks) {
       const a = link.assignment;
-      const totalPts = a.questions.reduce((s, q) => s + (q.points || 1), 0);
+      const totalPts = a.questions.reduce((s: number, q: any) => s + (q.points || 1), 0);
       assignMap.set(a.id, {
         id: a.id,
         title: a.title,
@@ -622,7 +635,7 @@ export async function getSchoolReportService(params: {
         startDate: link.startDate || link.createdAt,
         totalPoints: totalPts,
         questionCount: a.questions.length,
-        submissions: a.submissions.filter((sub) => !sub.classId || sub.classId === cls.id),
+        submissions: a.submissions.filter((sub: any) => !sub.classId || sub.classId === cls.id),
       });
     }
 
@@ -843,8 +856,10 @@ export async function getClassReportService(params: {
   const now = new Date();
   const dbAlive = await isDbAlive();
 
-  const cls = dbAlive
-    ? await prisma.class.findUnique({
+  let cls: any = null;
+  if (dbAlive) {
+    try {
+      cls = await prisma.class.findUnique({
         where: { id: params.classId },
         include: {
           school: true,
@@ -899,41 +914,48 @@ export async function getClassReportService(params: {
             },
           },
         },
-      })
-    : (() => {
-        const mc = (globalReportMemoryRef.demoClasses || []).find((c) => c.id === params.classId);
-        if (!mc) return null;
-        return {
-          id: mc.id,
-          code: mc.code,
-          name: mc.name,
-          isActive: mc.isActive !== false,
-          schoolId: mc.schoolId || "demo-school-1",
-          school: {
-            id: mc.schoolId || "demo-school-1",
-            name: mc.school?.name || "THPT Trương Định",
-          },
-          assignments: (mc.assignments || []).map((a: any) => ({
-            userId: a.userId,
-            roleInClass: a.roleInClass || "TEACHER",
-            staff: {
-              username: a.staff?.username || a.userId,
-              profile: { fullName: a.staff?.profile?.fullName || "Giáo viên" },
-            },
-          })),
-          enrollments: (mc.enrollments || []).map((en: any) => ({
-            student: {
-              id: en.studentId,
-              username: en.student?.username || en.studentId,
-              email: en.student?.email || "",
-              profile: { fullName: en.student?.profile?.fullName || "Học viên" },
-            },
-          })),
-          classAssignmentsList: getMemoryAssignmentsForClass(mc.id),
-          assignmentLinks: [],
-        };
-      })();
+      });
+    } catch (dbErr: any) {
+      console.warn("[getClassReportService] DB error fallback:", dbErr?.message);
+    }
+  }
 
+  if (!cls) {
+    const mc =
+      (globalReportMemoryRef.demoClasses || []).find((c) => c.id === params.classId) ||
+      (globalReportMemoryRef.demoClasses || [])[0];
+    if (mc) {
+      cls = {
+        id: mc.id,
+        code: mc.code,
+        name: mc.name,
+        isActive: mc.isActive !== false,
+        schoolId: mc.schoolId || "demo-school-1",
+        school: {
+          id: mc.schoolId || "demo-school-1",
+          name: mc.school?.name || "THPT Trương Định",
+        },
+        assignments: (mc.assignments || []).map((a: any) => ({
+          userId: a.userId,
+          roleInClass: a.roleInClass || "TEACHER",
+          staff: {
+            username: a.staff?.username || a.userId,
+            profile: { fullName: a.staff?.profile?.fullName || "Giáo viên" },
+          },
+        })),
+        enrollments: (mc.enrollments || []).map((en: any) => ({
+          student: {
+            id: en.studentId,
+            username: en.student?.username || en.studentId,
+            email: en.student?.email || "",
+            profile: { fullName: en.student?.profile?.fullName || "Học viên" },
+          },
+        })),
+        classAssignmentsList: getMemoryAssignmentsForClass(mc.id),
+        assignmentLinks: [],
+      };
+    }
+  }
   if (!cls || !cls.isActive) {
     return { success: false, error: "Lớp học không tồn tại hoặc đã bị xóa!" };
   }
@@ -1336,8 +1358,10 @@ export async function getStudentReportService(params: {
   const now = new Date();
   const dbAlive = await isDbAlive();
 
-  const student = dbAlive
-    ? await prisma.user.findUnique({
+  let student: any = null;
+  if (dbAlive) {
+    try {
+      student = await prisma.user.findUnique({
         where: { id: params.studentId },
         include: {
           profile: true,
@@ -1352,37 +1376,41 @@ export async function getStudentReportService(params: {
             },
           },
         },
-      })
-    : (() => {
-        const memClasses = (globalReportMemoryRef.demoClasses || []).filter((c) =>
-          (c.enrollments || []).some((e: any) => e.studentId === params.studentId)
-        );
-        const targetClasses =
-          memClasses.length > 0 ? memClasses : (globalReportMemoryRef.demoClasses || []).slice(0, 1);
-        const foundEnrollment = targetClasses
-          .flatMap((c: any) => c.enrollments || [])
-          .find((e: any) => e.studentId === params.studentId);
-        return {
-          id: params.studentId,
-          username: foundEnrollment?.student?.username || "student_an",
-          email: foundEnrollment?.student?.email || "student@simpace.vn",
-          isActive: true,
-          profile: {
-            fullName: foundEnrollment?.student?.profile?.fullName || "Nguyễn Văn An",
-          },
-          classEnrollments: targetClasses.map((mc: any) => ({
-            classId: mc.id,
-            class: {
-              id: mc.id,
-              code: mc.code,
-              name: mc.name,
-              school: mc.school || { id: "demo-school-1", name: "THPT Trương Định" },
-              assignments: mc.assignments || [],
-            },
-          })),
-        };
-      })();
+      });
+    } catch (dbErr: any) {
+      console.warn("[getStudentReportService] DB error fallback:", dbErr?.message);
+    }
+  }
 
+  if (!student) {
+    const memClasses = (globalReportMemoryRef.demoClasses || []).filter((c) =>
+      (c.enrollments || []).some((e: any) => e.studentId === params.studentId)
+    );
+    const targetClasses =
+      memClasses.length > 0 ? memClasses : (globalReportMemoryRef.demoClasses || []).slice(0, 1);
+    const foundEnrollment = targetClasses
+      .flatMap((c: any) => c.enrollments || [])
+      .find((e: any) => e.studentId === params.studentId);
+    student = {
+      id: params.studentId,
+      username: foundEnrollment?.student?.username || "student_lan",
+      email: foundEnrollment?.student?.email || "student@simpace.vn",
+      isActive: true,
+      profile: {
+        fullName: foundEnrollment?.student?.profile?.fullName || "Trần Thị Lan",
+      },
+      classEnrollments: targetClasses.map((mc: any) => ({
+        classId: mc.id,
+        class: {
+          id: mc.id,
+          code: mc.code,
+          name: mc.name,
+          school: mc.school || { id: "demo-school-1", name: "THPT Trương Định" },
+          assignments: mc.assignments || [],
+        },
+      })),
+    };
+  }
   if (!student || !student.isActive) {
     return { success: false, error: "Học sinh không tồn tại hoặc đã ngừng hoạt động!" };
   }
@@ -1415,8 +1443,10 @@ export async function getStudentReportService(params: {
     null;
 
   // Lấy toàn bộ bài tập được giao cho các lớp của học sinh
-  const assignmentsDb = dbAlive
-    ? await prisma.assignment.findMany({
+  let assignmentsDb: any[] = [];
+  if (dbAlive) {
+    try {
+      assignmentsDb = await prisma.assignment.findMany({
         where: {
           isActive: true,
           ...(range.fromDate ? { createdAt: { gte: range.fromDate } } : {}),
@@ -1446,20 +1476,27 @@ export async function getStudentReportService(params: {
           },
         },
         orderBy: { createdAt: "asc" },
-      })
-    : targetClassIds.flatMap((cid: string) => {
-        const clsObj = (globalReportMemoryRef.demoClasses || []).find((c) => c.id === cid);
-        return getMemoryAssignmentsForClass(cid).map((ma: any) => ({
-          ...ma,
-          class: {
-            id: cid,
-            name: clsObj?.name || "IELTS Bứt Phá - 10A1",
-            code: clsObj?.code || "IELTS_TD_01",
-          },
-          assignedClasses: [],
-          submissions: (ma.submissions || []).filter((s: any) => s.studentId === student.id),
-        }));
       });
+    } catch (dbErr: any) {
+      console.warn("[getStudentReportService assignments] DB error fallback:", dbErr?.message);
+    }
+  }
+
+  if (!assignmentsDb || assignmentsDb.length === 0) {
+    assignmentsDb = targetClassIds.flatMap((cid: string) => {
+      const clsObj = (globalReportMemoryRef.demoClasses || []).find((c) => c.id === cid);
+      return getMemoryAssignmentsForClass(cid).map((ma: any) => ({
+        ...ma,
+        class: {
+          id: cid,
+          name: clsObj?.name || "IELTS Bứt Phá - 10A1",
+          code: clsObj?.code || "IELTS_TD_01",
+        },
+        assignedClasses: [],
+        submissions: (ma.submissions || []).filter((s: any) => s.studentId === student.id),
+      }));
+    });
+  }
 
   const normalizedAssignments = assignmentsDb.map((a: any) => {
     const link = a.assignedClasses[0];

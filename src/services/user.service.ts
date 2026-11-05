@@ -154,26 +154,30 @@ const ROLE_PREFIX_MAP: Record<RoleCode, string> = {
 };
 
 export async function generateUserCodeService(roleCode: RoleCode): Promise<string> {
-  if (!(await isDbAlive())) {
-    const prefix = ROLE_PREFIX_MAP[roleCode] || "ND";
-    const store = globalUsersStore.demoUsers || [];
-    const count = store.filter((u: any) => u.role?.code === roleCode).length;
-    let nextNum = 1001 + count;
-    let candidate = `${prefix}${nextNum}`;
-    while (store.some((u: any) => u.username === candidate)) {
-      nextNum++;
-      candidate = `${prefix}${nextNum}`;
-    }
-    return candidate;
-  }
   const prefix = ROLE_PREFIX_MAP[roleCode] || "ND";
-  const count = await prisma.user.count({
-    where: { role: { code: roleCode } },
-  });
+  if (await isDbAlive()) {
+    try {
+      const count = await prisma.user.count({
+        where: { role: { code: roleCode } },
+      });
+      let nextNum = 1001 + count;
+      let candidate = `${prefix}${nextNum}`;
+
+      while (await prisma.user.findUnique({ where: { username: candidate } })) {
+        nextNum++;
+        candidate = `${prefix}${nextNum}`;
+      }
+      return candidate;
+    } catch (err: any) {
+      console.warn("[generateUserCodeService] DB error fallback:", err?.message);
+    }
+  }
+
+  const store = globalUsersStore.demoUsers || [];
+  const count = store.filter((u: any) => u.role?.code === roleCode).length;
   let nextNum = 1001 + count;
   let candidate = `${prefix}${nextNum}`;
-
-  while (await prisma.user.findUnique({ where: { username: candidate } })) {
+  while (store.some((u: any) => u.username === candidate)) {
     nextNum++;
     candidate = `${prefix}${nextNum}`;
   }
@@ -186,7 +190,7 @@ export async function getUsersService(
   searchKeyword: string = "",
   statusFilter: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
 ) {
-  if (!(await isDbAlive())) {
+  function getMemoryUsers() {
     let list = (globalUsersStore.demoUsers || []) as any[];
     if (statusFilter === "ACTIVE") list = list.filter((u) => u.isActive);
     else if (statusFilter === "INACTIVE") list = list.filter((u) => !u.isActive);
@@ -216,105 +220,112 @@ export async function getUsersService(
     return list;
   }
 
-  const whereClause: any = {};
+  if (await isDbAlive()) {
+    try {
+      const whereClause: any = {};
 
-  if (statusFilter === "ACTIVE") {
-    whereClause.isActive = true;
-  } else if (statusFilter === "INACTIVE") {
-    whereClause.isActive = false;
-  }
+      if (statusFilter === "ACTIVE") {
+        whereClause.isActive = true;
+      } else if (statusFilter === "INACTIVE") {
+        whereClause.isActive = false;
+      }
 
-  if (isSchoolManager(session)) {
-    const managedSchools = await prisma.school.findMany({
-      where: { managerId: session.userId, isActive: true },
-      select: { id: true },
-    });
-    const schoolIds = managedSchools.map((s) => s.id);
+      if (isSchoolManager(session)) {
+        const managedSchools = await prisma.school.findMany({
+          where: { managerId: session.userId, isActive: true },
+          select: { id: true },
+        });
+        const schoolIds = managedSchools.map((s) => s.id);
 
-    whereClause.role = {
-      code: { in: ["TEACHER", "TEACHING_ASSISTANT", "STUDENT"] },
-    };
+        whereClause.role = {
+          code: { in: ["TEACHER", "TEACHING_ASSISTANT", "STUDENT"] },
+        };
 
-    whereClause.OR = [
-      {
-        classAssignments: {
-          some: { class: { schoolId: { in: schoolIds } } },
+        whereClause.OR = [
+          {
+            classAssignments: {
+              some: { class: { schoolId: { in: schoolIds } } },
+            },
+          },
+          {
+            classEnrollments: {
+              some: { class: { schoolId: { in: schoolIds } } },
+            },
+          },
+        ];
+      }
+
+      const roleMap: Record<string, RoleCode> = {
+        "Quản trị viên": "ADMIN",
+        "Quản nhiệm": "SCHOOL_MANAGER",
+        "Giáo viên": "TEACHER",
+        "Trợ giảng": "TEACHING_ASSISTANT",
+        "Học sinh": "STUDENT",
+      };
+
+      if (roleFilter !== "Tất cả" && roleMap[roleFilter]) {
+        const targetRole = roleMap[roleFilter];
+        if (
+          session?.role === "SCHOOL_MANAGER" &&
+          (targetRole === "ADMIN" || targetRole === "SCHOOL_MANAGER")
+        ) {
+          return [];
+        }
+        whereClause.role = { code: targetRole };
+      }
+
+      if (searchKeyword && searchKeyword.trim()) {
+        const cleanSearch = searchKeyword.trim();
+        const searchConditions = [
+          { username: { contains: cleanSearch, mode: "insensitive" } },
+          { email: { contains: cleanSearch, mode: "insensitive" } },
+          {
+            profile: {
+              fullName: { contains: cleanSearch, mode: "insensitive" },
+            },
+          },
+          {
+            profile: {
+              phoneNumber: { contains: cleanSearch, mode: "insensitive" },
+            },
+          },
+        ];
+
+        if (whereClause.OR) {
+          whereClause.AND = [{ OR: whereClause.OR }, { OR: searchConditions }];
+          delete whereClause.OR;
+        } else {
+          whereClause.OR = searchConditions;
+        }
+      }
+
+      const usersDb = await prisma.user.findMany({
+        where: whereClause,
+        include: {
+          role: true,
+          profile: {
+            include: { ieltsLevel: true },
+          },
+          managedSchools: true,
+          classAssignments: {
+            include: { class: { include: { school: true } } },
+          },
+          classEnrollments: {
+            include: { class: { include: { school: true } } },
+          },
         },
-      },
-      {
-        classEnrollments: {
-          some: { class: { schoolId: { in: schoolIds } } },
-        },
-      },
-    ];
-  }
+        orderBy: { createdAt: "desc" },
+      });
 
-  const roleMap: Record<string, RoleCode> = {
-    "Quản trị viên": "ADMIN",
-    "Quản nhiệm": "SCHOOL_MANAGER",
-    "Giáo viên": "TEACHER",
-    "Trợ giảng": "TEACHING_ASSISTANT",
-    "Học sinh": "STUDENT",
-  };
-
-  if (roleFilter !== "Tất cả" && roleMap[roleFilter]) {
-    const targetRole = roleMap[roleFilter];
-    if (
-      session?.role === "SCHOOL_MANAGER" &&
-      (targetRole === "ADMIN" || targetRole === "SCHOOL_MANAGER")
-    ) {
-      return [];
+      if (usersDb && usersDb.length > 0) {
+        return usersDb;
+      }
+    } catch (err: any) {
+      console.warn("[getUsersService] DB error fallback:", err?.message);
     }
-    whereClause.role = { code: targetRole };
   }
 
-  if (searchKeyword && searchKeyword.trim()) {
-    const cleanSearch = searchKeyword.trim();
-    const searchConditions = [
-      { username: { contains: cleanSearch, mode: "insensitive" } },
-      { email: { contains: cleanSearch, mode: "insensitive" } },
-      {
-        profile: {
-          fullName: { contains: cleanSearch, mode: "insensitive" },
-        },
-      },
-      {
-        profile: {
-          phoneNumber: { contains: cleanSearch, mode: "insensitive" },
-        },
-      },
-    ];
-
-    if (whereClause.OR) {
-      whereClause.AND = [{ OR: whereClause.OR }, { OR: searchConditions }];
-      delete whereClause.OR;
-    } else {
-      whereClause.OR = searchConditions;
-    }
-  }
-
-  try {
-    return await prisma.user.findMany({
-      where: whereClause,
-      include: {
-        role: true,
-        profile: {
-          include: { ieltsLevel: true },
-        },
-        managedSchools: true,
-        classAssignments: {
-          include: { class: { include: { school: true } } },
-        },
-        classEnrollments: {
-          include: { class: { include: { school: true } } },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-  } catch (err: any) {
-    console.warn("[getUsersService] DB offline fallback:", err?.message);
-    return [];
-  }
+  return getMemoryUsers();
 }
 
 export async function getTeachersService() {

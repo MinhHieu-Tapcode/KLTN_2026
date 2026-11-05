@@ -19,9 +19,6 @@ const DEMO_SCHOOLS = [
 
 // Hàm sinh mã trường học tự động (BUG_06) - VD: THPT Trương Định -> SCH_TD
 export async function generateSchoolCode(schoolName: string): Promise<string> {
-  if (!(await isDbAlive())) {
-    return "SCH_DEMO_01";
-  }
   let cleanName = schoolName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -43,19 +40,27 @@ export async function generateSchoolCode(schoolName: string): Promise<string> {
   }
 
   let candidate = `SCH_${acronym}`;
-  let existing = await prisma.school.findUnique({ where: { code: candidate } });
-  let idx = 1;
 
-  while (existing) {
-    candidate = `SCH_${acronym}_${idx.toString().padStart(2, "0")}`;
-    existing = await prisma.school.findUnique({ where: { code: candidate } });
-    idx++;
+  if (await isDbAlive()) {
+    try {
+      let existing = await prisma.school.findUnique({ where: { code: candidate } });
+      let idx = 1;
+
+      while (existing) {
+        candidate = `SCH_${acronym}_${idx.toString().padStart(2, "0")}`;
+        existing = await prisma.school.findUnique({ where: { code: candidate } });
+        idx++;
+      }
+
+      return candidate;
+    } catch (err: any) {
+      console.warn("[generateSchoolCode] DB error fallback:", err?.message);
+    }
   }
 
   return candidate;
 }
 
-// Lấy mã trường học tiếp theo dự kiến cho Client Form
 export async function getNextSchoolCodeAction(name: string) {
   if (!name || !name.trim()) return { success: true, code: "SCH_SIM" };
   const code = await generateSchoolCode(name.trim());

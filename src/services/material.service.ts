@@ -229,118 +229,116 @@ async function buildUserAuthorMap(userIds: string[]): Promise<Record<string, str
   return map;
 }
 
+function filterMemoryFolders(params: {
+  classId?: string;
+  ieltsLevelId?: string;
+  parentId?: string | null;
+}) {
+  return (globalMaterialsStore.demoFolders || []).filter((f) => {
+    if (!f.isActive) return false;
+    if (params.parentId) {
+      return f.parentId === params.parentId;
+    }
+    if (params.parentId === null || params.parentId === undefined) {
+      if (f.parentId) return false;
+      if (params.classId) {
+        return f.classId === params.classId || (!f.classId && f.ieltsLevelId);
+      }
+      if (params.ieltsLevelId) {
+        return !f.classId && f.ieltsLevelId === params.ieltsLevelId;
+      }
+    }
+    return true;
+  });
+}
 export async function getMaterialFoldersService(params: {
   classId?: string;
   ieltsLevelId?: string;
   parentId?: string | null;
 }): Promise<{ success: boolean; error?: string; folders: any[] }> {
-  if (!(await isDbAlive())) {
-    const folders = (globalMaterialsStore.demoFolders || []).filter((f) => {
-      if (!f.isActive) return false;
+  if (await isDbAlive()) {
+    try {
+      const whereClause: any = { isActive: true };
 
-      if (params.parentId) {
-        return f.parentId === params.parentId;
+      if (params.parentId !== undefined) {
+        whereClause.parentId = params.parentId;
+      } else {
+        whereClause.parentId = null;
       }
 
-      if (params.parentId === null || params.parentId === undefined) {
-        if (f.parentId) return false;
+      if (params.classId) {
+        if (params.parentId === null || params.parentId === undefined) {
+          const cls = await prisma.class.findUnique({
+            where: { id: params.classId },
+            select: { id: true, level: true, ieltsLevelId: true },
+          });
 
-        if (params.classId) {
-          return f.classId === params.classId || (!f.classId && f.ieltsLevelId);
+          let targetLevelId = cls?.ieltsLevelId || null;
+          if (!targetLevelId && cls?.level) {
+            targetLevelId = await resolveValidIeltsLevelId(cls.level);
+          }
+
+          if (targetLevelId) {
+            whereClause.OR = [
+              { classId: params.classId },
+              { ieltsLevelId: targetLevelId, classId: null },
+            ];
+          } else {
+            whereClause.classId = params.classId;
+          }
         }
-        if (params.ieltsLevelId) {
-          return !f.classId && f.ieltsLevelId === params.ieltsLevelId;
-        }
+      } else if (params.ieltsLevelId) {
+        whereClause.ieltsLevelId = params.ieltsLevelId;
+        whereClause.classId = null;
       }
 
-      return true;
-    });
-    return { success: true, folders };
+      const folders = await prisma.materialFolder.findMany({
+        where: whereClause,
+        include: {
+          materials: {
+            where: { isActive: true },
+            select: { id: true },
+          },
+          subFolders: {
+            where: { isActive: true },
+            select: { id: true },
+          },
+          ieltsLevel: {
+            select: { id: true, name: true, code: true },
+          },
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      });
+
+      if (folders && folders.length > 0) {
+        const authorMap = await buildUserAuthorMap(folders.map((f) => f.createdById));
+
+        const formatted = folders.map((f) => ({
+          id: f.id,
+          name: f.name,
+          description: f.description,
+          classId: f.classId,
+          ieltsLevelId: f.ieltsLevelId,
+          parentId: f.parentId,
+          createdById: f.createdById,
+          authorName: authorMap[f.createdById] || (f.classId ? "Giáo viên" : "Quản trị viên"),
+          isInherited: !f.classId && !!f.ieltsLevelId,
+          levelName: f.ieltsLevel?.name || null,
+          fileCount: f.materials.length,
+          subFolderCount: f.subFolders.length,
+          createdAt: f.createdAt.toISOString(),
+          updatedAt: f.updatedAt.toISOString(),
+        }));
+
+        return { success: true, folders: formatted };
+      }
+    } catch (err: any) {
+      console.warn("[getMaterialFoldersService] DB error fallback:", err?.message);
+    }
   }
 
-  try {
-    const whereClause: any = {
-      isActive: true,
-    };
-
-    if (params.parentId !== undefined) {
-      whereClause.parentId = params.parentId;
-    } else {
-      whereClause.parentId = null;
-    }
-
-    if (params.classId) {
-      if (params.parentId === null || params.parentId === undefined) {
-        const cls = await prisma.class.findUnique({
-          where: { id: params.classId },
-          select: { id: true, level: true, ieltsLevelId: true },
-        });
-
-        let targetLevelId = cls?.ieltsLevelId || null;
-        if (!targetLevelId && cls?.level) {
-          targetLevelId = await resolveValidIeltsLevelId(cls.level);
-        }
-
-        if (targetLevelId) {
-          whereClause.OR = [
-            { classId: params.classId },
-            { ieltsLevelId: targetLevelId, classId: null },
-          ];
-        } else {
-          whereClause.classId = params.classId;
-        }
-      }
-    } else if (params.ieltsLevelId) {
-      whereClause.ieltsLevelId = params.ieltsLevelId;
-      whereClause.classId = null;
-    }
-
-    const folders = await prisma.materialFolder.findMany({
-      where: whereClause,
-      include: {
-        materials: {
-          where: { isActive: true },
-          select: { id: true },
-        },
-        subFolders: {
-          where: { isActive: true },
-          select: { id: true },
-        },
-        ieltsLevel: {
-          select: { id: true, name: true, code: true },
-        },
-      },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    });
-
-    const authorMap = await buildUserAuthorMap(folders.map((f) => f.createdById));
-
-    const formatted = folders.map((f) => ({
-      id: f.id,
-      name: f.name,
-      description: f.description,
-      classId: f.classId,
-      ieltsLevelId: f.ieltsLevelId,
-      parentId: f.parentId,
-      createdById: f.createdById,
-      authorName: authorMap[f.createdById] || (f.classId ? "Giáo viên" : "Quản trị viên"),
-      isInherited: !f.classId && !!f.ieltsLevelId,
-      levelName: f.ieltsLevel?.name || null,
-      fileCount: f.materials.length,
-      subFolderCount: f.subFolders.length,
-      createdAt: f.createdAt.toISOString(),
-      updatedAt: f.updatedAt.toISOString(),
-    }));
-
-    return { success: true, folders: formatted };
-  } catch (err: any) {
-    console.error("[getMaterialFoldersService] Lỗi:", err);
-    return {
-      success: false,
-      error: err.message || "Không thể tải danh sách thư mục!",
-      folders: [],
-    };
-  }
+  const memoryFolders = filterMemoryFolders(params);
+  return { success: true, folders: memoryFolders };
 }
 
 export async function createMaterialFolderService(
@@ -440,49 +438,46 @@ export async function deleteMaterialFolderService(
 export async function getLearningMaterialsService(
   folderId: string
 ): Promise<{ success: boolean; error?: string; materials: any[] }> {
-  if (!(await isDbAlive())) {
-    const materials = (globalMaterialsStore.demoMaterials || []).filter(
-      (m) => m.isActive && (!folderId || m.folderId === folderId)
-    );
-    return { success: true, materials };
+  if (await isDbAlive()) {
+    try {
+      const materials = await prisma.learningMaterial.findMany({
+        where: {
+          folderId,
+          isActive: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (materials && materials.length > 0) {
+        const authorMap = await buildUserAuthorMap(materials.map((m) => m.uploadedById));
+
+        return {
+          success: true,
+          materials: materials.map((m) => ({
+            id: m.id,
+            folderId: m.folderId,
+            title: m.title,
+            fileName: m.fileName,
+            fileUrl: m.fileUrl,
+            fileSize: m.fileSize,
+            fileType: m.fileType,
+            mimeType: m.mimeType,
+            downloadCount: m.downloadCount,
+            uploadedById: m.uploadedById,
+            authorName: authorMap[m.uploadedById] || "Giáo viên",
+            createdAt: m.createdAt.toISOString(),
+          })),
+        };
+      }
+    } catch (err: any) {
+      console.warn("[getLearningMaterialsService] DB error fallback:", err?.message);
+    }
   }
 
-  try {
-    const materials = await prisma.learningMaterial.findMany({
-      where: {
-        folderId,
-        isActive: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const authorMap = await buildUserAuthorMap(materials.map((m) => m.uploadedById));
-
-    return {
-      success: true,
-      materials: materials.map((m) => ({
-        id: m.id,
-        folderId: m.folderId,
-        title: m.title,
-        fileName: m.fileName,
-        fileUrl: m.fileUrl,
-        fileSize: m.fileSize,
-        fileType: m.fileType,
-        mimeType: m.mimeType,
-        downloadCount: m.downloadCount,
-        uploadedById: m.uploadedById,
-        authorName: authorMap[m.uploadedById] || "Giáo viên",
-        createdAt: m.createdAt.toISOString(),
-      })),
-    };
-  } catch (err: any) {
-    console.error("[getLearningMaterialsService] Lỗi:", err);
-    return {
-      success: false,
-      error: err.message || "Không thể tải tài liệu!",
-      materials: [],
-    };
-  }
+  const demoMaterials = (globalMaterialsStore.demoMaterials || []).filter(
+    (m) => m.isActive && (!folderId || m.folderId === folderId)
+  );
+  return { success: true, materials: demoMaterials };
 }
 
 export async function uploadLearningMaterialService(
