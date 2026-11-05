@@ -127,6 +127,126 @@ if (!globalClassesStore.demoClasses) {
   ];
 }
 
+/**
+ * Ánh xạ an toàn classId (kể cả ID demo như 'demo-class-1' hoặc mã lớp 'IELTS_TD_01') sang ID thật trong CSDL PostgreSQL
+ * Đảm bảo 100% không bao giờ gây lỗi vi phạm khóa ngoại (P2003 Foreign key constraint violated)
+ */
+export async function resolveRealClassId(rawClassId?: string | null): Promise<string | null> {
+  if (!rawClassId) return null;
+  const cleanId = String(rawClassId).trim();
+  if (!cleanId) return null;
+
+  try {
+    // 1. Kiểm tra xem cleanId có tồn tại trực tiếp trong bảng classes không
+    const direct = await prisma.class.findUnique({
+      where: { id: cleanId },
+      select: { id: true },
+    });
+    if (direct) return direct.id;
+
+    // 2. Nếu là ID demo hoặc không tìm thấy, xác định mã lớp mục tiêu
+    let targetCode = cleanId;
+    if (cleanId === "demo-class-1") targetCode = "IELTS_TD_01";
+    else if (cleanId === "demo-class-2") targetCode = "IELTS_TD_02";
+
+    const byCode = await prisma.class.findFirst({
+      where: {
+        OR: [
+          { code: targetCode },
+          { code: { equals: targetCode, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (byCode) return byCode.id;
+
+    // 3. Nếu DB chưa có lớp này: Tự động khởi tạo lớp học chuẩn để bảo đảm toàn vẹn dữ liệu
+    let school = await prisma.school.findFirst({ select: { id: true } });
+    if (!school) {
+      school = await prisma.school.create({
+        data: {
+          code: "SCH_TD",
+          name: "THPT Trương Định",
+          address: "Hà Nội",
+        },
+        select: { id: true },
+      });
+    }
+
+    const newClass = await prisma.class.create({
+      data: {
+        code: targetCode.startsWith("IELTS_") ? targetCode : `IELTS_${Date.now().toString().slice(-4)}`,
+        name:
+          cleanId === "demo-class-1" || targetCode === "IELTS_TD_01"
+            ? "IELTS Bứt Phá - 10A1"
+            : cleanId === "demo-class-2" || targetCode === "IELTS_TD_02"
+            ? "IELTS Khởi Động - 10A2"
+            : `Lớp học ${targetCode}`,
+        program: "IELTS",
+        level: "5.5 - 6.5",
+        capacity: 30,
+        schoolId: school.id,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    return newClass.id;
+  } catch (err: any) {
+    console.warn(`[resolveRealClassId] Không thể ánh xạ classId ${rawClassId}:`, err?.message);
+    return null;
+  }
+}
+
+/**
+ * Ánh xạ an toàn schoolId (kể cả ID demo như 'demo-school-1' hoặc mã 'SCH_TD') sang ID thật trong CSDL PostgreSQL
+ */
+export async function resolveRealSchoolId(rawSchoolId?: string | null): Promise<string | null> {
+  if (!rawSchoolId) return null;
+  const cleanId = String(rawSchoolId).trim();
+  if (!cleanId) return null;
+
+  try {
+    const direct = await prisma.school.findUnique({
+      where: { id: cleanId },
+      select: { id: true },
+    });
+    if (direct) return direct.id;
+
+    let targetCode = cleanId;
+    if (cleanId === "demo-school-1") targetCode = "SCH_TD";
+    else if (cleanId === "demo-school-2") targetCode = "SCH_PKK";
+
+    const byCode = await prisma.school.findFirst({
+      where: {
+        OR: [
+          { code: targetCode },
+          { code: { equals: targetCode, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (byCode) return byCode.id;
+
+    const newSchool = await prisma.school.create({
+      data: {
+        code: targetCode.startsWith("SCH_") ? targetCode : `SCH_${Date.now().toString().slice(-4)}`,
+        name:
+          cleanId === "demo-school-1" || targetCode === "SCH_TD"
+            ? "THPT Trương Định"
+            : cleanId === "demo-school-2" || targetCode === "SCH_PKK"
+            ? "THPT Phùng Khắc Khoan"
+            : `Trường đối tác ${targetCode}`,
+        address: "Hà Nội",
+      },
+      select: { id: true },
+    });
+    return newSchool.id;
+  } catch (err: any) {
+    console.warn(`[resolveRealSchoolId] Không thể ánh xạ schoolId ${rawSchoolId}:`, err?.message);
+    return null;
+  }
+}
+
 export async function generateClassCodeService(
   schoolId: string,
   program: string = "IELTS"

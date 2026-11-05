@@ -1,6 +1,7 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { validateAssignmentConfig } from "@/lib/assignment-config";
 import { createNotifications } from "./notification.service";
+import { resolveRealClassId } from "./class.service";
 import { AssignmentSkill, AssignmentType, QuestionType } from "@prisma/client";
 
 const globalAssignmentsStore = globalThis as unknown as {
@@ -316,9 +317,19 @@ export async function createAssignmentService(
   }
 
   try {
+    const resolvedTargetClassList: string[] = [];
+    for (const cId of targetClassList) {
+      const realId = await resolveRealClassId(cId);
+      if (realId && !resolvedTargetClassList.includes(realId)) {
+        resolvedTargetClassList.push(realId);
+      }
+    }
+    const realPrimaryClassId = resolvedTargetClassList[0] || (await resolveRealClassId(primaryClassId)) || primaryClassId;
+    const finalClassList = resolvedTargetClassList.length > 0 ? resolvedTargetClassList : [realPrimaryClassId];
+
     const assignment = await prisma.assignment.create({
       data: {
-        classId: primaryClassId,
+        classId: realPrimaryClassId,
         title: data.title.trim(),
         description: JSON.stringify({
           instruction: data.description?.trim() || null,
@@ -338,7 +349,7 @@ export async function createAssignmentService(
         maxTabSwitches: maxTabLimit,
         createdById: createdById || "SYSTEM",
         assignedClasses: {
-          create: targetClassList.map((cId) => ({
+          create: finalClassList.map((cId) => ({
             classId: cId,
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
             startDate: data.startDate ? new Date(data.startDate) : new Date(),

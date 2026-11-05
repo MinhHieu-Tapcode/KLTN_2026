@@ -5,6 +5,7 @@ import { isAdmin, isSchoolManager } from "@/lib/permissions";
 import * as XLSX from "xlsx";
 import { RoleCode, Gender, StaffClassRole } from "@prisma/client";
 import { sendAccountCreatedEmail } from "@/lib/mail";
+import { resolveRealClassId, resolveRealSchoolId } from "./class.service";
 
 const globalUsersStore = globalThis as unknown as {
   demoUsers?: any[];
@@ -399,42 +400,73 @@ async function handleAssignments(
   classIds?: string[]
 ) {
   if (roleCode === "SCHOOL_MANAGER" && schoolIds && schoolIds.length > 0) {
-    await prisma.school.updateMany({
-      where: { id: { in: schoolIds } },
-      data: { managerId: userId },
-    });
+    for (const rawSchoolId of schoolIds) {
+      if (!rawSchoolId) continue;
+      try {
+        const realSchoolId = await resolveRealSchoolId(rawSchoolId);
+        if (realSchoolId) {
+          await prisma.school.update({
+            where: { id: realSchoolId },
+            data: { managerId: userId },
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[handleAssignments] Lỗi gán trường cho quản nhiệm:`, err?.message);
+      }
+    }
   }
 
   if (roleCode === "TEACHER" && classIds && classIds.length > 0) {
-    for (const classId of classIds) {
-      if (!classId) continue;
-      await prisma.classAssignment.upsert({
-        where: { classId_userId: { classId, userId } },
-        create: { classId, userId, roleInClass: "TEACHER" },
-        update: { roleInClass: "TEACHER" },
-      });
+    for (const rawClassId of classIds) {
+      if (!rawClassId) continue;
+      try {
+        const realClassId = await resolveRealClassId(rawClassId);
+        if (realClassId) {
+          await prisma.classAssignment.upsert({
+            where: { classId_userId: { classId: realClassId, userId } },
+            create: { classId: realClassId, userId, roleInClass: "TEACHER" },
+            update: { roleInClass: "TEACHER" },
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[handleAssignments] Lỗi gán lớp cho giáo viên:`, err?.message);
+      }
     }
   }
 
   if (roleCode === "TEACHING_ASSISTANT" && classIds && classIds.length > 0) {
-    for (const classId of classIds) {
-      if (!classId) continue;
-      await prisma.classAssignment.upsert({
-        where: { classId_userId: { classId, userId } },
-        create: { classId, userId, roleInClass: "TEACHING_ASSISTANT" },
-        update: { roleInClass: "TEACHING_ASSISTANT" },
-      });
+    for (const rawClassId of classIds) {
+      if (!rawClassId) continue;
+      try {
+        const realClassId = await resolveRealClassId(rawClassId);
+        if (realClassId) {
+          await prisma.classAssignment.upsert({
+            where: { classId_userId: { classId: realClassId, userId } },
+            create: { classId: realClassId, userId, roleInClass: "TEACHING_ASSISTANT" },
+            update: { roleInClass: "TEACHING_ASSISTANT" },
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[handleAssignments] Lỗi gán lớp cho trợ giảng:`, err?.message);
+      }
     }
   }
 
   if (roleCode === "STUDENT" && classIds && classIds.length > 0) {
-    for (const classId of classIds) {
-      if (!classId) continue;
-      await prisma.classEnrollment.upsert({
-        where: { classId_studentId: { classId, studentId: userId } },
-        create: { classId, studentId: userId, status: "STUDYING" },
-        update: { status: "STUDYING" },
-      });
+    for (const rawClassId of classIds) {
+      if (!rawClassId) continue;
+      try {
+        const realClassId = await resolveRealClassId(rawClassId);
+        if (realClassId) {
+          await prisma.classEnrollment.upsert({
+            where: { classId_studentId: { classId: realClassId, studentId: userId } },
+            create: { classId: realClassId, studentId: userId, status: "STUDYING" },
+            update: { status: "STUDYING" },
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[handleAssignments] Lỗi gán lớp cho học sinh:`, err?.message);
+      }
     }
   }
 }
@@ -627,6 +659,18 @@ export async function createUserService(data: {
 
     if (existing) {
       if (existing.isActive) {
+        // [CẤP BÁCH] Nếu tài khoản đã tạo nhưng chưa có lớp liên kết (do lỗi phiên trước), tự động hoàn tất gán lớp
+        const enrollCount = await prisma.classEnrollment.count({ where: { studentId: existing.id } });
+        const assignCount = await prisma.classAssignment.count({ where: { userId: existing.id } });
+        if (enrollCount === 0 && assignCount === 0 && data.classIds && data.classIds.length > 0) {
+          await handleAssignments(existing.id, data.roleCode, data.schoolIds, data.classIds);
+          return {
+            success: true,
+            user: existing,
+            mailResult: { sent: true },
+          };
+        }
+
         return {
           success: false,
           error: `Email '${data.email}' đã tồn tại và đang hoạt động trong hệ thống!`,

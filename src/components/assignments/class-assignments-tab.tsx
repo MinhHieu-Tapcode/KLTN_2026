@@ -480,17 +480,32 @@ export function ClassAssignmentsTab({
 
   const handleStartExam = async (assignmentId: string) => {
     setIsLoading(true);
-    const res = await getAssignmentDetailAction(assignmentId);
-    if (res.success && res.assignment) {
-      setExamAssignment(res.assignment);
-      setStudentAnswers({});
-      setTabSwitchCount(0);
-      setIsExamFinished(false);
-      setExamResult(null);
-    } else {
-      showAlert("Lỗi tải bài thi", res.error || "Không thể tải nội dung bài tập!", "error");
+    try {
+      const res = await getAssignmentDetailAction(assignmentId);
+      if (res.success && res.assignment) {
+        setExamAssignment(res.assignment);
+        setStudentAnswers({});
+        setTabSwitchCount(0);
+        setIsExamFinished(false);
+        setExamResult(null);
+      } else {
+        showAlert(
+          "Không thể mở bài thi",
+          res.error ||
+            "Hệ thống chưa tìm thấy dữ liệu câu hỏi của bài tập này. Vui lòng tải lại trang hoặc liên hệ Giáo viên phụ trách!",
+          "warning"
+        );
+      }
+    } catch (err: any) {
+      console.error("[handleStartExam] Lỗi:", err);
+      showAlert(
+        "Không thể mở bài thi",
+        "Có sự cố kết nối khi tải bài tập. Vui lòng kiểm tra lại đường truyền mạng hoặc thử lại sau!",
+        "error"
+      );
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   // Giám sát Out Tab chuẩn xác (lắng nghe cả visibilitychange và blur, debounce 1000ms để chống đếm trùng)

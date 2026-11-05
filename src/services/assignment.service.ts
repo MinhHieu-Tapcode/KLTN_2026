@@ -1515,25 +1515,25 @@ export async function getAssignmentDetailService(
             audioUrl: assignment.audioUrl,
             enableProctoring: assignment.enableProctoring,
             maxTabSwitches: assignment.maxTabSwitches,
-            questions: assignment.questions.map((q) => ({
+            questions: (assignment.questions || []).map((q) => ({
               id: q.id,
               questionNumber: q.questionNumber,
               passageText: resolveLegacyShortPassageText(q.passageText, assignment.title),
-              prompt: q.prompt,
+              prompt: q.prompt || "",
               type: q.type,
               ieltsQuestionType:
                 q.ieltsQuestionType ||
                 resolveIeltsQuestionType(null, q.type, assignment.skill, q.questionNumber),
               groupTitle: q.groupTitle,
               imageUrl: parsedMeta?.questionMediaMap?.[q.questionNumber]?.imageUrl || (q as any).imageUrl || null,
-              points: q.points,
+              points: q.points || 1,
               correctAnswer: revealAnswers ? q.correctAnswer : null,
               explanation: revealAnswers ? q.explanation : null,
-              options: q.options.map((opt) => ({
-                id: opt.id,
-                optionLabel: opt.optionLabel,
-                content: opt.content,
-                isCorrect: revealAnswers ? opt.isCorrect : false,
+              options: (q.options || []).map((opt) => ({
+                id: opt?.id || "",
+                optionLabel: opt?.optionLabel || "",
+                content: opt?.content || "",
+                isCorrect: revealAnswers ? Boolean(opt?.isCorrect) : false,
               })),
             })),
             latestSubmission: latestSubmission
@@ -1571,7 +1571,12 @@ export async function getAssignmentDetailService(
   }
 
   // 2. Fallback sang Demo Store (khi DB offline, timeout, hoặc bài tập lưu tạm trong bộ nhớ)
-  return formatDemoAssignmentDetail(assignmentId, studentId, opts?.hideAnswersUnlessAllowed);
+  try {
+    return formatDemoAssignmentDetail(assignmentId, studentId, opts?.hideAnswersUnlessAllowed);
+  } catch (demoErr: any) {
+    console.error("[getAssignmentDetailService] Lỗi format demo:", demoErr);
+    return { success: false, error: demoErr.message || "Không thể tải chi tiết bài tập!" };
+  }
 }
 
 function submitToDemoStore(
@@ -1953,7 +1958,7 @@ export async function getSubmissionsForAssignmentService(assignmentId: string) {
         orderBy: { submittedAt: "desc" },
       });
 
-      if (submissions && submissions.length > 0) {
+      if (submissions) {
         const formatted = submissions.map((s) => ({
           id: s.id,
           studentId: s.studentId,
