@@ -89,6 +89,9 @@ export function SmartParserModal({
 
   // State cấu hình bài tập giao (CR-02)
   const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [publishScope, setPublishScope] = useState<"ACTIVE_SECTION" | "SEPARATE_SECTIONS" | "ALL_COMBINED">("ACTIVE_SECTION");
+  const [publishTitle, setPublishTitle] = useState<string>("");
+  const [publishInstruction, setPublishInstruction] = useState<string>("");
   const [examConfig, setExamConfig] = useState<AssignmentConfigState>({
     durationMinutes: 60,
     startDate: "",
@@ -303,16 +306,45 @@ export function SmartParserModal({
     );
   };
 
-  // Xóa câu hỏi
+  // Xóa câu hỏi (Scoping theo Section hiện tại nếu có)
   const handleDeleteQuestion = (qNum: number) => {
     if (!parsedEbookData) return;
-    const updatedQuestions = (parsedEbookData.questions || []).filter((q: any) => q.questionNumber !== qNum);
-    const updatedSections = parsedEbookData.sections?.map((sec: any) => ({
-      ...sec,
-      questions: (sec.questions || []).filter((q: any) => q.questionNumber !== qNum),
-    }));
-    setSelectedQuestionNumbers((prev) => prev.filter((n) => n !== qNum));
-    setParsedEbookData({ ...parsedEbookData, questions: updatedQuestions, sections: updatedSections });
+    if (activeEbookSectionId && parsedEbookData.sections && parsedEbookData.sections.length > 0) {
+      const updatedSections = parsedEbookData.sections.map((sec: any) => {
+        if (sec.id === activeEbookSectionId) {
+          return {
+            ...sec,
+            questions: (sec.questions || []).filter((q: any) => q.questionNumber !== qNum),
+          };
+        }
+        return sec;
+      });
+      const updatedQuestions = updatedSections.flatMap((s: any) => s.questions || []);
+      setSelectedQuestionNumbers((prev) => prev.filter((n) => n !== qNum));
+      setParsedEbookData({ ...parsedEbookData, questions: updatedQuestions, sections: updatedSections });
+    } else {
+      const updatedQuestions = (parsedEbookData.questions || []).filter((q: any) => q.questionNumber !== qNum);
+      setSelectedQuestionNumbers((prev) => prev.filter((n) => n !== qNum));
+      setParsedEbookData({ ...parsedEbookData, questions: updatedQuestions });
+    }
+  };
+
+  // Xóa toàn bộ Section nhận nhầm / thừa
+  const handleDeleteSection = (sectionId: string) => {
+    if (!parsedEbookData || !parsedEbookData.sections || parsedEbookData.sections.length <= 1) return;
+    const remainingSections = parsedEbookData.sections.filter((s: any) => s.id !== sectionId);
+    const remainingQuestions = remainingSections.flatMap((s: any) => s.questions || []);
+    const remainingNums = remainingQuestions.map((q: any, i: number) => q.questionNumber || i + 1);
+
+    setActiveEbookSectionId(remainingSections[0]?.id || "");
+    setSelectedQuestionNumbers(remainingNums);
+    setParsedEbookData({
+      ...parsedEbookData,
+      sections: remainingSections.length > 1 ? remainingSections : undefined,
+      passageText: remainingSections[0]?.passageText || parsedEbookData.passageText,
+      questions: remainingQuestions,
+    });
+    showAlert("Đã xóa bài đọc", `Đã xóa bài đọc thừa và giữ lại ${remainingSections.length} bài đọc còn lại.`, "info");
   };
 
   // Thêm câu hỏi mới vào Section
@@ -389,6 +421,12 @@ export function SmartParserModal({
       ...prev,
       durationMinutes: parsedEbookData.durationMinutes || parserDuration || 60,
     }));
+    const curSec = parsedEbookData.sections?.find((s: any) => s.id === activeEbookSectionId) || parsedEbookData.sections?.[0];
+    const initialTitle = curSec?.title || parsedEbookData.title || "";
+    setPublishTitle(initialTitle);
+    const skillName = parsedEbookData.skill === "LISTENING" ? "Listening" : parsedEbookData.skill === "WRITING" ? "Writing" : parsedEbookData.skill === "SPEAKING" ? "Speaking" : "Reading";
+    setPublishInstruction(`Luyện tập kỹ năng ${skillName} chuẩn cấu trúc đề thi IELTS quốc tế.`);
+    setPublishScope("ACTIVE_SECTION");
     setShowConfigDialog(true);
   };
 
@@ -404,24 +442,12 @@ export function SmartParserModal({
     }
 
     startTransition(async () => {
-      if (parsedEbookData.skill === "ALL_SKILLS" && parsedEbookData.sections) {
-        const multiple = parsedEbookData.sections.map((sec: any) => ({
-          classId: primaryClassId,
-          targetClassIds: targetClassList,
-          title: sec.title || `${parsedEbookData.title} - ${sec.skill}`,
-          description: `Đề thi kỹ năng ${sec.skill} từ bộ đề: ${parsedEbookData.title}`,
-          skill: sec.skill,
-          type: "MOCK_EXAM",
-          durationMinutes: examConfig.durationMinutes || sec.durationMinutes || 60,
-          startDate: examConfig.startDate || null,
-          dueDate: examConfig.dueDate ? new Date(examConfig.dueDate).toISOString() : null,
-          maxAttempts: valResult.maxAttempts,
-          answerVisibility: valResult.answerVisibility,
-          answerVisibleAt: valResult.answerVisibleAt ? valResult.answerVisibleAt.toISOString() : null,
-          audioUrl: sec.audioUrl || (sec.skill === "LISTENING" ? parsedEbookData.audioUrl : null),
-          enableProctoring: true,
-          maxTabSwitches: 3,
-          questions: (sec.questions || [])
+      const hasMultipleSections = parsedEbookData.sections && parsedEbookData.sections.length > 1;
+
+      // Chế độ: Tách thành từng bài tập riêng cho từng Section
+      if ((hasMultipleSections && publishScope === "SEPARATE_SECTIONS") || (parsedEbookData.skill === "ALL_SKILLS" && parsedEbookData.sections)) {
+        const multiple = parsedEbookData.sections.map((sec: any) => {
+          const secQ = (sec.questions || [])
             .filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber))
             .map((q: any, idx: number) => ({
               questionNumber: q.questionNumber || idx + 1,
@@ -435,12 +461,35 @@ export function SmartParserModal({
               correctAnswer: q.correctAnswer,
               explanation: q.explanation,
               options: q.options,
-            })),
-          flowcharts: parsedEbookData.flowcharts || [],
-          tables: parsedEbookData.tables || [],
-          matchingHeadings: parsedEbookData.matchingHeadings || [],
-          summaries: parsedEbookData.summaries || [],
-        })).filter((a: any) => a.questions.length > 0);
+            }));
+          return {
+            classId: primaryClassId,
+            targetClassIds: targetClassList,
+            title: sec.title || `${publishTitle || parsedEbookData.title} - ${sec.skill || "Phần thi"}`,
+            description: publishInstruction.trim() || `Luyện tập kỹ năng ${sec.skill || parsedEbookData.skill || "Reading"} chuẩn cấu trúc đề thi IELTS quốc tế.`,
+            skill: sec.skill || parsedEbookData.skill || "READING",
+            type: "HOMEWORK",
+            durationMinutes: examConfig.durationMinutes || sec.durationMinutes || 60,
+            startDate: examConfig.startDate || null,
+            dueDate: examConfig.dueDate ? new Date(examConfig.dueDate).toISOString() : null,
+            maxAttempts: valResult.maxAttempts,
+            answerVisibility: valResult.answerVisibility,
+            answerVisibleAt: valResult.answerVisibleAt ? valResult.answerVisibleAt.toISOString() : null,
+            audioUrl: sec.audioUrl || (sec.skill === "LISTENING" ? parsedEbookData.audioUrl : null),
+            enableProctoring: true,
+            maxTabSwitches: 3,
+            questions: secQ,
+            flowcharts: parsedEbookData.flowcharts || [],
+            tables: parsedEbookData.tables || [],
+            matchingHeadings: parsedEbookData.matchingHeadings || [],
+            summaries: parsedEbookData.summaries || [],
+          };
+        }).filter((a: any) => a.questions.length > 0);
+
+        if (multiple.length === 0) {
+          showAlert("Chưa có câu hỏi", "Không có câu hỏi nào được chọn trong các phần thi!", "warning");
+          return;
+        }
 
         const res = await createMultipleAssignmentsAction(multiple);
         if (res.success) {
@@ -448,16 +497,38 @@ export function SmartParserModal({
           setParsedEbookData(null);
           setShowConfigDialog(false);
           onOpenChange(false);
-          onSuccess(`Đã phân tách và phát hành thành công ${multiple.length} bài tập cho ${targetClassList.length} lớp!`);
+          onSuccess(`Đã tạo thành công ${multiple.length} bài tập riêng biệt cho ${targetClassList.length} lớp!`, targetClassList);
         } else {
           showAlert("Lỗi phát hành", res.error || "Không thể lưu danh sách bài tập!", "error");
         }
         return;
       }
 
-      const filteredQ = activeQuestions.map((q: any, idx: number) => ({
+      // Chế độ: Chỉ phát hành Section đang chọn (hoặc đề đơn)
+      let questionsToSave: any[] = [];
+      let finalTitle = publishTitle.trim() || parsedEbookData.title;
+      let finalPassage = parsedEbookData.passageText;
+      let finalSkill = parsedEbookData.skill || "READING";
+
+      if (hasMultipleSections && publishScope === "ACTIVE_SECTION") {
+        const curSec = parsedEbookData.sections.find((s: any) => s.id === activeEbookSectionId) || parsedEbookData.sections[0];
+        finalTitle = publishTitle.trim() || curSec.title || parsedEbookData.title;
+        finalPassage = curSec.passageText || parsedEbookData.passageText;
+        finalSkill = curSec.skill || parsedEbookData.skill || "READING";
+        questionsToSave = (curSec.questions || []).filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber));
+      } else {
+        // Gộp tất cả
+        questionsToSave = activeQuestions;
+      }
+
+      if (questionsToSave.length === 0) {
+        showAlert("Chưa có câu hỏi", "Bài đọc này chưa có câu hỏi nào được chọn!", "warning");
+        return;
+      }
+
+      const filteredQ = questionsToSave.map((q: any, idx: number) => ({
         questionNumber: q.questionNumber || idx + 1,
-        passageText: q.passageText || parsedEbookData.passageText,
+        passageText: q.passageText || finalPassage,
         prompt: q.prompt,
         type: q.type,
         ieltsQuestionType: q.ieltsQuestionType || null,
@@ -469,12 +540,14 @@ export function SmartParserModal({
         options: q.options,
       }));
 
+      const finalDescription = publishInstruction.trim() || `Luyện tập kỹ năng ${finalSkill} chuẩn cấu trúc đề thi IELTS quốc tế.`;
+
       const res = await createAssignmentAction({
         classId: primaryClassId,
         targetClassIds: targetClassList,
-        title: parsedEbookData.title,
-        description: `Bài tập bóc tách Ebook: ${parsedEbookData.title}`,
-        skill: parsedEbookData.skill,
+        title: finalTitle,
+        description: finalDescription,
+        skill: finalSkill,
         type: "HOMEWORK",
         durationMinutes: examConfig.durationMinutes || parsedEbookData.durationMinutes || 60,
         startDate: examConfig.startDate || null,
@@ -497,7 +570,7 @@ export function SmartParserModal({
         setParsedEbookData(null);
         setShowConfigDialog(false);
         onOpenChange(false);
-        onSuccess(`Đã tạo bài tập "${parsedEbookData.title}" thành công cho ${targetClassList.length} lớp!`, targetClassList);
+        onSuccess(`Đã tạo bài tập "${finalTitle}" (${filteredQ.length} câu) thành công cho ${targetClassList.length} lớp!`, targetClassList);
       } else {
         showAlert("Lỗi lưu bài tập", res.error || "Không thể lưu bài tập!", "error");
       }
@@ -595,7 +668,7 @@ export function SmartParserModal({
                     <Upload className="size-8 mx-auto text-[#EA580C] mb-2" />
                   )}
                   <p className="text-sm font-bold text-slate-800">
-                    {isPending ? ocrStatusText || "Đang đọc tệp và bóc tách Ebook..." : parserPdfFile?.name || "Chọn tệp PDF (có chữ hoặc bản Scan) hoặc Word (.docx)"}
+                    {isPending ? ocrStatusText || "Đang đọc tệp và trích xuất câu hỏi IELTS..." : parserPdfFile?.name || "Chọn tệp PDF (có chữ hoặc bản Scan) hoặc Word (.docx)"}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">Hỗ trợ .pdf và .docx (Tối đa 25MB)</p>
                   <input
@@ -663,21 +736,40 @@ export function SmartParserModal({
               {parsedEbookData.sections && parsedEbookData.sections.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
                   <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
-                    <Layers className="size-3.5" /> Chọn phần:
+                    <Layers className="size-3.5" /> Chọn bài đọc / phần:
                   </span>
                   {parsedEbookData.sections.map((sec: any) => {
                     const isSelected = activeEbookSectionId === sec.id || (!activeEbookSectionId && sec.id === parsedEbookData.sections[0]?.id);
                     return (
-                      <button
+                      <div
                         key={sec.id}
-                        type="button"
-                        onClick={() => setActiveEbookSectionId(sec.id)}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition ${
-                          isSelected ? "bg-[#EA580C] text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        className={`inline-flex items-center rounded-xl p-0.5 border transition ${
+                          isSelected ? "bg-[#EA580C] border-[#EA580C] text-white shadow-sm" : "bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200"
                         }`}
                       >
-                        {sec.title} ({sec.questions?.length || 0} câu)
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveEbookSectionId(sec.id)}
+                          className="px-2.5 py-1 text-xs font-bold"
+                        >
+                          {sec.title} ({sec.questions?.length || 0} câu)
+                        </button>
+                        {parsedEbookData.sections.length > 1 && (
+                          <button
+                            type="button"
+                            title="Xóa bài đọc này nếu bị nhận nhầm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSection(sec.id);
+                            }}
+                            className={`p-1 rounded-lg transition mr-0.5 ${
+                              isSelected ? "text-orange-200 hover:text-white hover:bg-[#C2410C]" : "text-slate-400 hover:text-rose-600"
+                            }`}
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -700,12 +792,24 @@ export function SmartParserModal({
                 onUploadAudio={handleUploadAudio}
                 onSelectAll={() => {
                   if (isQuestionsFinalized) return;
-                  const allNums = (parsedEbookData.questions || []).map((q: any, i: number) => q.questionNumber || i + 1);
-                  setSelectedQuestionNumbers(allNums);
+                  if (activeEbookSectionId && parsedEbookData.sections && parsedEbookData.sections.length > 0) {
+                    const curSec = parsedEbookData.sections.find((s: any) => s.id === activeEbookSectionId);
+                    const secNums = (curSec?.questions || []).map((q: any, i: number) => q.questionNumber || i + 1);
+                    setSelectedQuestionNumbers((prev) => Array.from(new Set([...prev, ...secNums])));
+                  } else {
+                    const allNums = (parsedEbookData.questions || []).map((q: any, i: number) => q.questionNumber || i + 1);
+                    setSelectedQuestionNumbers(allNums);
+                  }
                 }}
                 onDeselectAll={() => {
                   if (isQuestionsFinalized) return;
-                  setSelectedQuestionNumbers([]);
+                  if (activeEbookSectionId && parsedEbookData.sections && parsedEbookData.sections.length > 0) {
+                    const curSec = parsedEbookData.sections.find((s: any) => s.id === activeEbookSectionId);
+                    const secNums = new Set((curSec?.questions || []).map((q: any, i: number) => q.questionNumber || i + 1));
+                    setSelectedQuestionNumbers((prev) => prev.filter((n) => !secNums.has(n)));
+                  } else {
+                    setSelectedQuestionNumbers([]);
+                  }
                 }}
                 onFinalize={() => {
                   const valid = selectedQuestionNumbers.filter((n) => (parsedEbookData.questions || []).some((q: any) => q.questionNumber === n));
@@ -748,7 +852,7 @@ export function SmartParserModal({
                   className="text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-semibold gap-1.5 shadow-sm px-5"
                 >
                   {isPending ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <Sparkles className="size-3.5" />}
-                  Xác nhận & Lưu bài tập Ebook
+                  Xác nhận & Lưu đề thi IELTS
                 </Button>
               </DialogFooter>
             </div>
@@ -762,7 +866,7 @@ export function SmartParserModal({
           <DialogContent className="max-w-lg rounded-2xl p-6">
             <DialogHeader>
               <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles className="size-4 text-[#EA580C]" /> Cấu hình phát hành bài tập Ebook
+                <Sparkles className="size-4 text-[#EA580C]" /> Cấu hình phát hành đề thi IELTS
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500">
                 Thiết lập thời gian làm bài, số lần làm bài và chế độ đáp án cho {targetClassList.length} lớp nhận bài.
@@ -770,9 +874,92 @@ export function SmartParserModal({
             </DialogHeader>
 
             <div className="space-y-4 py-2">
-              <div className="p-2.5 rounded-xl bg-orange-50/60 border border-orange-200 text-xs">
-                <span className="text-slate-500 block">Tên bài tập:</span>
-                <b className="text-slate-900 font-bold text-sm">{parsedEbookData?.title}</b>
+              {parsedEbookData.sections && parsedEbookData.sections.length > 1 && (
+                <div className="p-3 rounded-xl bg-orange-50/70 border border-orange-200 space-y-2">
+                  <span className="text-xs font-bold text-orange-950 block">
+                    Phạm vi phát hành đề thi ({parsedEbookData.sections.length} bài đọc):
+                  </span>
+                  <div className="grid grid-cols-1 gap-1.5 text-xs">
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg bg-white/80 hover:bg-white cursor-pointer border border-orange-100">
+                      <input
+                        type="radio"
+                        name="publishScope"
+                        value="ACTIVE_SECTION"
+                        checked={publishScope === "ACTIVE_SECTION"}
+                        onChange={() => {
+                          setPublishScope("ACTIVE_SECTION");
+                          const cur = parsedEbookData.sections.find((s: any) => s.id === activeEbookSectionId) || parsedEbookData.sections[0];
+                          if (cur?.title) setPublishTitle(cur.title);
+                        }}
+                        className="text-[#EA580C] focus:ring-[#EA580C]"
+                      />
+                      <div>
+                        <span className="font-bold text-slate-900">Chỉ phát hành bài đọc đang chọn</span>
+                        <p className="text-[11px] text-slate-500">
+                          {parsedEbookData.sections.find((s: any) => s.id === activeEbookSectionId)?.title || "Bài đọc hiện tại"}
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg bg-white/80 hover:bg-white cursor-pointer border border-orange-100">
+                      <input
+                        type="radio"
+                        name="publishScope"
+                        value="SEPARATE_SECTIONS"
+                        checked={publishScope === "SEPARATE_SECTIONS"}
+                        onChange={() => setPublishScope("SEPARATE_SECTIONS")}
+                        className="text-[#EA580C] focus:ring-[#EA580C]"
+                      />
+                      <div>
+                        <span className="font-bold text-slate-900">Tách thành {parsedEbookData.sections.length} bài tập riêng biệt</span>
+                        <p className="text-[11px] text-slate-500">
+                          Mỗi bài đọc được tạo thành 1 bài tập độc lập cho học sinh.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg bg-white/80 hover:bg-white cursor-pointer border border-orange-100">
+                      <input
+                        type="radio"
+                        name="publishScope"
+                        value="ALL_COMBINED"
+                        checked={publishScope === "ALL_COMBINED"}
+                        onChange={() => {
+                          setPublishScope("ALL_COMBINED");
+                          setPublishTitle(parsedEbookData.title || "");
+                        }}
+                        className="text-[#EA580C] focus:ring-[#EA580C]"
+                      />
+                      <div>
+                        <span className="font-bold text-slate-900">Gộp chung làm 1 bài thi lớn</span>
+                        <p className="text-[11px] text-slate-500">
+                          Gộp toàn bộ các bài đọc và câu hỏi vào chung 1 đề thi.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700">Tên bài tập / Đề thi:</Label>
+                <Input
+                  value={publishTitle}
+                  onChange={(e) => setPublishTitle(e.target.value)}
+                  placeholder="Nhập tên bài tập chuẩn format sư phạm..."
+                  className="text-xs rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700">Lời dặn dò / Hướng dẫn làm bài:</Label>
+                <textarea
+                  value={publishInstruction}
+                  onChange={(e) => setPublishInstruction(e.target.value)}
+                  placeholder="Nhập hướng dẫn làm bài cho học viên..."
+                  rows={2}
+                  className="w-full text-xs rounded-xl border border-slate-200 p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#EA580C]"
+                />
               </div>
 
               <AssignmentConfigFields

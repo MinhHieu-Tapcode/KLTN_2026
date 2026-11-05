@@ -372,18 +372,57 @@ export function splitIntoExamParts(cleanedText: string): Array<{
 }> {
   const numToken = "(?:\\d+|ONE|TWO|THREE|FOUR|I|II|III|IV|[A-D])";
   // CHỈ chia Phần thi khi gặp tiêu đề Phần thi / Bài đọc lớn (Passage 1, 2, 3 hoặc Section 1, 2, 3, 4 hoặc Writing Task 1, 2)
-  // TUYỆT ĐỐI KHÔNG chia theo nhóm câu hỏi con (như Questions 1-4, Questions 5-10) vì chúng thuộc chung 1 bài đọc
+  // CHỈ chia Phần thi khi gặp tiêu đề Phần thi / Bài đọc lớn (Passage 1, 2, 3 hoặc Section 1, 2, 3, 4 hoặc Writing Task 1, 2)
+  // TUYỆT ĐỐI KHÔNG chia theo các câu chỉ dẫn/tham chiếu (như 'Reading Passage 1 has six paragraphs', 'which are based on...')
+  // VÀ KHÔNG chia nếu số thứ tự phần thi đã xuất hiện trước đó (tránh nhân đôi 1 bài đọc thành 2)
   const headingRegex = new RegExp(
-    `(?:^|\\n)(?=(?:PART\\s*${numToken}\\s*[-–:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s*${numToken}\\b|PASSAGE\\s*${numToken}\\b|LISTENING\\s+(?:SECTION|PART)\\s*${numToken}\\b|SECTION\\s*${numToken}\\b|WRITING\\s+TASK\\s*${numToken}\\b|SPEAKING\\s+PART\\s*${numToken}\\b)\\b)`,
+    `(?:^|\\n)(?:[#*\\s]*)(PART\\s*${numToken}\\s*[-–:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s*${numToken}|PASSAGE\\s*${numToken}|LISTENING\\s+(?:SECTION|PART)\\s*${numToken}|SECTION\\s*${numToken}|WRITING\\s+TASK\\s*${numToken}|SPEAKING\\s+PART\\s*${numToken})\\b([^\\n]*)`,
     "gi"
   );
 
+  const normalizeTokenNum = (token: string): string => {
+    const raw = token.toUpperCase().trim();
+    const map: Record<string, string> = {
+      ONE: "1", I: "1",
+      TWO: "2", II: "2",
+      THREE: "3", III: "3",
+      FOUR: "4", IV: "4",
+    };
+    return map[raw] || raw;
+  };
+
   const indices: number[] = [];
+  const seenPartKeys = new Set<string>();
   let match: RegExpExecArray | null;
   while ((match = headingRegex.exec(cleanedText)) !== null) {
+    const headingCore = match[1] || "";
+    const restOfLine = match[2] || "";
+
+    // Bỏ qua nếu dòng này là một câu chỉ dẫn/tham chiếu chứ không phải tiêu đề độc lập
+    if (
+      /based on|has\s+\w+\s+paragraphs|referred to|below|according to|consists of|questions?\s+\d+/i.test(
+        restOfLine
+      )
+    ) {
+      continue;
+    }
+
+    // Trích xuất loại phần thi và số thứ tự
+    const numMatch = headingCore.match(new RegExp(numToken, "i"));
+    const partNum = numMatch ? normalizeTokenNum(numMatch[0]) : "";
+    const partType = headingCore.replace(new RegExp(numToken, "i"), "").trim().toUpperCase();
+    const partKey = `${partType}_${partNum}`;
+
+    // Nếu phần thi này (loại + số) đã xuất hiện trước đó trong bài, bỏ qua (không tạo thêm section trùng)
+    if (seenPartKeys.has(partKey)) {
+      continue;
+    }
+
     const pos = match.index + (cleanedText[match.index] === "\n" ? 1 : 0);
-    if (indices.length === 0 || pos - indices[indices.length - 1] > 350) {
+    // Yêu cầu khoảng cách tối thiểu giữa 2 bài đọc IELTS là 1200 ký tự (tránh phân tách vụn vặt)
+    if (indices.length === 0 || pos - indices[indices.length - 1] > 1200) {
       indices.push(pos);
+      seenPartKeys.add(partKey);
     }
   }
 

@@ -68,6 +68,30 @@ interface ClassAssignmentsTabProps {
   mode?: "inside-class" | "inside-global";
 }
 
+
+function cleanAssignmentDescription(desc?: string | null, skill?: string): string {
+  if (!desc) return `Luyện đề kỹ năng ${skill || "IELTS"} chuẩn format bài thi quốc tế.`;
+  let s = desc.trim();
+  if (s.startsWith("{") && s.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(s);
+      if (parsed?.instruction && typeof parsed.instruction === "string" && parsed.instruction.trim()) {
+        s = parsed.instruction.trim();
+      } else {
+        return `Luyện đề kỹ năng ${skill || "IELTS"} chuẩn format bài thi quốc tế.`;
+      }
+    } catch {
+      // not json
+    }
+  }
+  if (/^bài\s*tập\s*bóc\s*tách\s*ebook\s*:\s*/i.test(s)) {
+    s = s.replace(/^bài\s*tập\s*bóc\s*tách\s*ebook\s*:\s*/i, "").trim();
+    if (!s || s.length < 5) return `Luyện đề kỹ năng ${skill || "IELTS"} chuẩn format bài thi quốc tế.`;
+    return `Luyện tập đề thi: ${s}`;
+  }
+  return s || `Luyện đề kỹ năng ${skill || "IELTS"} chuẩn format bài thi quốc tế.`;
+}
+
 export function ClassAssignmentsTab({
   classId,
   className,
@@ -721,7 +745,7 @@ export function ClassAssignmentsTab({
           <FileText className="size-10 mx-auto text-slate-300" />
           <p className="text-sm font-semibold text-slate-700">Chưa có bài tập nào được giao cho lớp này.</p>
           <p className="text-xs text-slate-400">
-            Giáo viên có thể tạo thủ công từng câu hỏi hoặc bóc tách tự động từ file đề thi IELTS.
+            Giáo viên có thể tạo thủ công từng câu hỏi hoặc trích xuất tự động từ file đề thi IELTS.
           </p>
           {canManage && (
             <Button
@@ -754,7 +778,7 @@ export function ClassAssignmentsTab({
 
                 <h3 className="font-bold text-sm text-slate-900 line-clamp-1">{item.title}</h3>
                 <p className="text-xs text-slate-500 line-clamp-2">
-                  {item.description || "Luyện đề IELTS chuẩn format bài thi quốc tế."}
+                  {cleanAssignmentDescription(item.description, item.skill)}
                 </p>
 
                 <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-500">

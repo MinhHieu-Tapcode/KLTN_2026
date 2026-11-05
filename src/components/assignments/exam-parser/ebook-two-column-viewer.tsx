@@ -69,10 +69,9 @@ export function EbookTwoColumnViewer({
     ? currentSec.skill === "LISTENING"
     : parsedEbookData.skill === "LISTENING";
 
-  const questionsToShow =
-    currentSec && currentSec.questions && currentSec.questions.length > 0
-      ? currentSec.questions
-      : parsedEbookData.questions || [];
+  const questionsToShow = currentSec
+    ? (currentSec.questions || [])
+    : (parsedEbookData.questions || []);
 
   // Thu thập các câu hỏi đã thuộc về các thành phần chuyên biệt (Bảng biểu, Sơ đồ, Nối tiêu đề, Tóm tắt)
   const specializedQuestionNumbers = new Set<number>();
@@ -400,6 +399,18 @@ export function EbookTwoColumnViewer({
               </div>
             );
           })()}
+
+          {standaloneQuestionsToShow.length === 0 && specializedQuestionNumbers.size === 0 && (
+            <div className="py-12 px-4 text-center border-2 border-dashed border-slate-200 rounded-xl space-y-2">
+              <AlertCircle className="size-8 text-slate-300 mx-auto" />
+              <p className="text-xs text-slate-500 font-medium">
+                Phần này hiện chưa có câu hỏi nào.
+              </p>
+              <p className="text-[11px] text-slate-400">
+                Bạn có thể thêm câu hỏi mới bên dưới hoặc chuyển sang phần bài đọc khác.
+              </p>
+            </div>
+          )}
 
           {standaloneQuestionsToShow.map((q: any, qIdx: number) => (
             <EbookQuestionCard

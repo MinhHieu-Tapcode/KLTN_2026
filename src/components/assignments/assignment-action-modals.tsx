@@ -84,7 +84,7 @@ export function CreateModeChoiceModal({
             Chọn phương thức giao bài tập IELTS
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
-            Hệ thống hỗ trợ soạn thủ công từng câu hỏi hoặc bóc tách thông minh từ file đề thi.
+            Hệ thống hỗ trợ soạn thủ công từng câu hỏi hoặc trích xuất thông minh từ file đề thi IELTS.
           </DialogDescription>
         </DialogHeader>
 

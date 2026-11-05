@@ -46,7 +46,7 @@ export function InvariantsBanner({ report }: InvariantsBannerProps) {
             </span>
             <span>
               {isValid
-                ? `Đã bóc tách đủ ${totalQuestions} câu hỏi liên tục, không trùng lặp, sẵn sàng làm bài.`
+                ? `Đã trích xuất đủ ${totalQuestions} câu hỏi liên tục, không trùng lặp, sẵn sàng làm bài.`
                 : errors.join(". ")}
             </span>
           </div>

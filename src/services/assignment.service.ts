@@ -906,6 +906,39 @@ if (
   ];
 }
 
+
+function cleanAssignmentDescriptionMeta(rawDescription?: string | null, skill?: string): string {
+  if (!rawDescription) {
+    const skillName = skill === "LISTENING" ? "Listening" : skill === "WRITING" ? "Writing" : skill === "SPEAKING" ? "Speaking" : "Reading";
+    return `Luyện tập kỹ năng ${skillName} chuẩn cấu trúc đề thi IELTS quốc tế.`;
+  }
+  let desc = rawDescription.trim();
+  if (desc.startsWith("{") && desc.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(desc);
+      if (parsed?.instruction && typeof parsed.instruction === "string" && parsed.instruction.trim()) {
+        desc = parsed.instruction.trim();
+      } else {
+        const skillName = skill === "LISTENING" ? "Listening" : skill === "WRITING" ? "Writing" : skill === "SPEAKING" ? "Speaking" : "Reading";
+        return `Luyện tập kỹ năng ${skillName} chuẩn cấu trúc đề thi IELTS quốc tế.`;
+      }
+    } catch {
+      // not json, keep desc
+    }
+  }
+
+  if (/^bài\s*tập\s*bóc\s*tách\s*ebook\s*:\s*/i.test(desc)) {
+    desc = desc.replace(/^bài\s*tập\s*bóc\s*tách\s*ebook\s*:\s*/i, "").trim();
+    if (!desc || desc.length < 5) {
+      const skillName = skill === "LISTENING" ? "Listening" : skill === "WRITING" ? "Writing" : skill === "SPEAKING" ? "Speaking" : "Reading";
+      return `Luyện tập kỹ năng ${skillName} chuẩn cấu trúc đề thi IELTS quốc tế.`;
+    }
+    return `Luyện tập đề thi: ${desc}`;
+  }
+
+  return desc || `Luyện tập kỹ năng ${skill || "Reading"} chuẩn cấu trúc đề thi IELTS quốc tế.`;
+}
+
 export async function getClassAssignmentsService(classId: string, currentUserId?: string) {
   const now = new Date();
 
@@ -967,6 +1000,7 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
 
       return {
         ...a,
+        description: cleanAssignmentDescriptionMeta(a.description, a.skill),
         dueDate,
         startDate,
         isOverdue,
@@ -1077,7 +1111,7 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
       classId: classId || a.classId,
       originalClassId: a.classId,
       title: a.title,
-      description: a.description,
+      description: cleanAssignmentDescriptionMeta(a.description, a.skill),
       skill: a.skill,
       type: a.type,
       durationMinutes: a.durationMinutes,
