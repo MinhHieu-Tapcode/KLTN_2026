@@ -30,7 +30,7 @@ export function ClassDialog({
   tas?: any[];
   defaultSchoolId?: string;
   onAddSchoolShortcut: () => void;
-  onDone: () => void;
+  onDone: (newClass?: any) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
@@ -131,7 +131,7 @@ export function ClassDialog({
         return;
       }
 
-      onDone();
+      onDone(res.class);
     });
   };
 

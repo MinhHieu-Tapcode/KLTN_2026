@@ -15,7 +15,7 @@ interface MultiClassManualBuilderModalProps {
   onClose: () => void;
   targetClassIds: string[];
   classes: Array<{ id: string; name: string }>;
-  onSuccess: (count: number) => void;
+  onSuccess: (count: number, targetClassIds?: string[]) => void;
   showAlert?: (title: string, msg: string, type: "success" | "warning" | "error") => void;
 }
 
@@ -192,7 +192,7 @@ export function MultiClassManualBuilderModal({
 
       const res = await createMultipleAssignmentsAction(payload);
       if (res.success) {
-        onSuccess(res.count || targetClassIds.length);
+        onSuccess(res.count || targetClassIds.length, targetClassIds);
         onClose();
       } else {
         showAlert?.("Lỗi giao bài tập", res.error || "Không thể giao bài tập cho các lớp đã chọn!", "error");

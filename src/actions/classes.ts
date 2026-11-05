@@ -34,9 +34,10 @@ async function requireClassManager(): Promise<{ success: false; error: string } 
   return auth.ok ? null : { success: false, error: auth.error };
 }
 
-function safeRevalidate(path: string) {
+function safeRevalidate(path: string = "/") {
   try {
     revalidatePath(path);
+    revalidatePath("/");
   } catch {}
 }
 

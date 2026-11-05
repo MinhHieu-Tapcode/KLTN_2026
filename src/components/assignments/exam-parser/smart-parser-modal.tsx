@@ -48,7 +48,7 @@ export interface SmartParserModalProps {
   onOpenChange: (open: boolean) => void;
   classId?: string;
   targetClassIds?: string[];
-  onSuccess: (message: string) => void;
+  onSuccess: (message: string, targetClassIds?: string[]) => void;
   showAlert: (title: string, desc: string, type?: "success" | "error" | "warning" | "info") => void;
 }
 
@@ -497,7 +497,7 @@ export function SmartParserModal({
         setParsedEbookData(null);
         setShowConfigDialog(false);
         onOpenChange(false);
-        onSuccess(`Đã tạo bài tập "${parsedEbookData.title}" thành công cho ${targetClassList.length} lớp!`);
+        onSuccess(`Đã tạo bài tập "${parsedEbookData.title}" thành công cho ${targetClassList.length} lớp!`, targetClassList);
       } else {
         showAlert("Lỗi lưu bài tập", res.error || "Không thể lưu bài tập!", "error");
       }

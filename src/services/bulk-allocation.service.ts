@@ -795,6 +795,7 @@ export async function commitBulkAllocationService(
   success: boolean;
   createdCount?: number;
   createdClassesCount?: number;
+  createdClasses?: any[];
   summary?: { email: string; fullName: string; username: string; className: string }[];
   error?: string;
 }> {
@@ -813,6 +814,7 @@ export async function commitBulkAllocationService(
         name: "Trường đối tác",
       };
 
+    const allCreatedClasses: any[] = [];
     const createdUsersSummary: {
       email: string;
       fullName: string;
@@ -855,6 +857,7 @@ export async function commitBulkAllocationService(
             _count: { enrollments: 0 },
           };
           globalStore.demoClasses.push(classRecord);
+          allCreatedClasses.push(classRecord);
         } else {
           classRecord.name = propClass.name;
           classRecord.capacity = propClass.capacity;
@@ -865,6 +868,7 @@ export async function commitBulkAllocationService(
           if (propClass.startDate) classRecord.startDate = propClass.startDate;
           if (propClass.endDate) classRecord.endDate = propClass.endDate;
           if (assignedTeachers.length > 0) classRecord.assignments = assignedTeachers;
+          if (!allCreatedClasses.some((c: any) => c.id === classRecord.id)) allCreatedClasses.push(classRecord);
         }
 
         for (const student of propClass.students) {
@@ -931,6 +935,7 @@ export async function commitBulkAllocationService(
       success: true,
       createdCount: createdUsersSummary.length,
       createdClassesCount: plans.reduce((acc, p) => acc + p.classes.length, 0),
+    createdClasses: allCreatedClasses,
       summary: createdUsersSummary,
     };
   }
@@ -964,6 +969,7 @@ export async function commitBulkAllocationService(
     className: string;
   }[] = [];
 
+  const createdDbClassIds: string[] = [];
   await prisma.$transaction(async (tx) => {
     let currentStudentCount = await tx.user.count({
       where: { role: { code: "STUDENT" } },
@@ -1019,6 +1025,7 @@ export async function commitBulkAllocationService(
           });
         }
 
+        createdDbClassIds.push(classRecord.id);
         // Lưu phân công Giáo viên giảng dạy (teacherIds)
         if (propClass.teacherIds && propClass.teacherIds.length > 0) {
           for (const tid of propClass.teacherIds) {
@@ -1138,10 +1145,33 @@ export async function commitBulkAllocationService(
     }).catch((err) => console.error("Lỗi gửi mail học sinh:", err));
   }
 
+  const createdClasses = await prisma.class.findMany({
+    where: { id: { in: Array.from(new Set(createdDbClassIds)) } },
+    include: {
+      school: true,
+      assignments: {
+        include: { staff: { include: { profile: true } } },
+      },
+      enrollments: {
+        include: { student: { include: { profile: true } } },
+      },
+      _count: { select: { enrollments: true, materialFolders: true } },
+    },
+  }).catch(() => []);
+
+  const globalStore = globalThis as any;
+  if (!globalStore.demoClasses) globalStore.demoClasses = [];
+  for (const c of createdClasses) {
+    if (!globalStore.demoClasses.some((dc: any) => dc.id === c.id || dc.code === c.code)) {
+      globalStore.demoClasses.unshift(c);
+    }
+  }
+
   return {
     success: true,
     createdCount: createdUsersSummary.length,
     createdClassesCount: plans.reduce((acc, p) => acc + p.classes.length, 0),
+    createdClasses,
     summary: createdUsersSummary,
   };
 }

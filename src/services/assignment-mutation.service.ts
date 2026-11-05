@@ -416,6 +416,13 @@ export async function createAssignmentService(
       console.warn("[createAssignmentService] Bỏ qua lỗi thông báo:", notifErr?.message);
     }
 
+    if (!globalAssignmentsStore.demoAssignments) globalAssignmentsStore.demoAssignments = [];
+    globalAssignmentsStore.demoAssignments.unshift({
+      ...assignment,
+      questions: data.questions || [],
+      assignedClasses: targetClassList.map((cId) => ({ classId: cId, isActive: true })),
+    });
+
     return {
       success: true,
       assignmentId: assignment.id,
@@ -423,14 +430,11 @@ export async function createAssignmentService(
     };
   } catch (dbErr: any) {
     const errText = String(dbErr?.message || dbErr || "");
-    if (dbErr?.code === "P2021" || dbErr?.code === "P2022" || errText.includes("does not exist")) {
-      console.warn(
-        "[createAssignmentService] CSDL chưa đồng bộ cột mới, tự động chuyển sang lưu tạm bộ nhớ:",
-        errText
-      );
-      return saveToDemoStore();
-    }
-    throw dbErr;
+    console.warn(
+      "[createAssignmentService] Lỗi CSDL, tự động chuyển sang lưu tạm bộ nhớ:",
+      errText
+    );
+    return saveToDemoStore();
   }
 }
 

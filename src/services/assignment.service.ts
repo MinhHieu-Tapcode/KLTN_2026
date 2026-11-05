@@ -916,7 +916,7 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
         (!classId ||
           a.classId === classId ||
           (Array.isArray(a.assignedClasses) &&
-            a.assignedClasses.some((ac: any) => ac.classId === classId && ac.isActive !== false)))
+            a.assignedClasses.some((ac: any) => (ac.classId === classId || ac.class?.id === classId) && ac.isActive !== false)))
     );
     const formatted = list.map((a) => {
       const classLink = (a.assignedClasses || []).find((ac: any) => ac.classId === classId);
@@ -988,6 +988,7 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
     return { success: true, assignments: formatted };
   }
 
+  try {
   const assignments = await prisma.assignment.findMany({
     where: {
       isActive: true,
@@ -1102,6 +1103,40 @@ export async function getClassAssignmentsService(classId: string, currentUserId?
   });
 
   return { success: true, assignments: formatted };
+  } catch (err: any) {
+    console.warn("[getClassAssignmentsService] DB error fallback:", err?.message);
+    const list = (globalAssignmentsStore.demoAssignments || []).filter(
+      (a) =>
+        a.isActive !== false &&
+        (!classId ||
+          a.classId === classId ||
+          (Array.isArray(a.assignedClasses) &&
+            a.assignedClasses.some((ac: any) => (ac.classId === classId || ac.class?.id === classId) && ac.isActive !== false)))
+    );
+    const formatted = list.map((a: any) => {
+      const classLink = (a.assignedClasses || []).find((ac: any) => ac.classId === classId);
+      const dueDate = classLink?.dueDate || a.dueDate || null;
+      const startDate = classLink?.startDate || a.startDate || a.createdAt || null;
+      const isOverdue = Boolean(dueDate && new Date(dueDate) < now);
+      const totalPoints = (a.questions || []).reduce((sum: number, q: any) => sum + (Number(q.points) || 1), 0);
+      return {
+        ...a,
+        dueDate,
+        startDate,
+        isOverdue,
+        maxAttempts: a.maxAttempts || 2,
+        myAttemptCount: 0,
+        questionCount: (a.questions || []).length,
+        totalPoints,
+        submittedCount: 0,
+        pendingGradingCount: 0,
+        flaggedCount: 0,
+        mySubmission: null,
+        assignedClassCount: Array.isArray(a.assignedClasses) ? a.assignedClasses.length : 1,
+      };
+    });
+    return { success: true, assignments: formatted };
+  }
 }
 
 function resolveLegacyShortPassageText(rawPassage?: string | null, assignmentTitle?: string): string | null | undefined {

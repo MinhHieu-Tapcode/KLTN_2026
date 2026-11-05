@@ -205,25 +205,46 @@ export function SimpaceApp({
   };
 
   const refreshAll = async () => {
-    const [sc, cl, us, per, mgrs, tchs, taList, lvlRes] = await Promise.all([
-      getSchoolsAction("", "ALL"),
-      getClassesAction("ALL", "", "ALL"),
-      getUsersAction("Tất cả", "", "ACTIVE"),
-      getSystemPermissionsAction(),
-      getSchoolManagersAction(),
-      getTeachersAction(),
-      getTAsAction(),
-      getIeltsLevelsAction(),
-    ]);
-    setSchools(sc);
-    setClasses(cl);
-    setUsers(us);
-    setPermissions(per);
-    setManagers(mgrs);
-    setTeachers(tchs);
-    setTAs(taList);
-    if (lvlRes?.success && lvlRes.levels) {
-      setIeltsLevels(lvlRes.levels);
+    try {
+      const results = await Promise.allSettled([
+        getSchoolsAction("", "ALL"),
+        getClassesAction("ALL", "", "ALL"),
+        getUsersAction("Tất cả", "", "ACTIVE"),
+        getSystemPermissionsAction(),
+        getSchoolManagersAction(),
+        getTeachersAction(),
+        getTAsAction(),
+        getIeltsLevelsAction(),
+      ]);
+
+      const sc = results[0].status === "fulfilled" ? results[0].value : null;
+      const cl = results[1].status === "fulfilled" ? results[1].value : null;
+      const us = results[2].status === "fulfilled" ? results[2].value : null;
+      const per = results[3].status === "fulfilled" ? results[3].value : null;
+      const mgrs = results[4].status === "fulfilled" ? results[4].value : null;
+      const tchs = results[5].status === "fulfilled" ? results[5].value : null;
+      const taList = results[6].status === "fulfilled" ? results[6].value : null;
+      const lvlRes = results[7].status === "fulfilled" ? results[7].value : null;
+
+      if (sc && Array.isArray(sc)) setSchools(sc);
+      if (cl && Array.isArray(cl)) {
+        setClasses((prev) => {
+          const map = new Map<string, any>();
+          prev.forEach((item) => map.set(item.id, item));
+          cl.forEach((item) => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+      }
+      if (us && Array.isArray(us)) setUsers(us);
+      if (per) setPermissions(per);
+      if (mgrs && Array.isArray(mgrs)) setManagers(mgrs);
+      if (tchs && Array.isArray(tchs)) setTeachers(tchs);
+      if (taList && Array.isArray(taList)) setTAs(taList);
+      if (lvlRes?.success && lvlRes.levels) {
+        setIeltsLevels(lvlRes.levels);
+      }
+    } catch (err) {
+      console.warn("[refreshAll] Không thể đồng bộ toàn bộ dữ liệu:", err);
     }
   };
 
@@ -629,9 +650,19 @@ export function SimpaceApp({
           setView("schools");
           setAddSchoolOpen(true);
         }}
-        onCreatedSuccess={(acc) => {
+        onCreatedSuccess={async (acc) => {
           setAddUserOpen(false);
-          refreshAll();
+          if (acc?.createdClasses && Array.isArray(acc.createdClasses) && acc.createdClasses.length > 0) {
+            setClasses((prev) => {
+              const map = new Map<string, any>();
+              acc.createdClasses.forEach((item: any) => map.set(item.id, item));
+              prev.forEach((item: any) => {
+                if (!map.has(item.id)) map.set(item.id, item);
+              });
+              return Array.from(map.values());
+            });
+          }
+          await refreshAll();
           setCreatedAccountInfo(acc);
         }}
       />
@@ -647,10 +678,13 @@ export function SimpaceApp({
         tas={tas}
         defaultSchoolId={selectedSchoolForAdd}
         onAddSchoolShortcut={() => setAddSchoolOpen(true)}
-        onDone={() => {
+        onDone={async (newCls?: any) => {
           setAddClassOpen(false);
           setSelectedSchoolForAdd(undefined);
-          refreshAll();
+          if (newCls) {
+            setClasses((prev) => [newCls, ...prev.filter((c) => c.id !== newCls.id)]);
+          }
+          await refreshAll();
           setNotice("Đã tạo lớp học mới thành công!");
         }}
       />
@@ -746,9 +780,17 @@ export function SimpaceApp({
           onClose={() => setIsMultiManualBuilderOpen(false)}
           targetClassIds={multiClassTargetIds}
           classes={classes}
-          onSuccess={(count) => {
-            refreshAll();
+          onSuccess={async (count, assignedClassIds) => {
+            await refreshAll();
             setNotice(`Đã soạn và giao bài tập thủ công thành công cho ${count} lớp!`);
+            const targetId = (assignedClassIds && assignedClassIds[0]) || (multiClassTargetIds && multiClassTargetIds[0]);
+            if (targetId) {
+              const targetCls = classes.find((c) => c.id === targetId);
+              if (targetCls) {
+                const detail = await getClassDetailAction(targetCls.id);
+                setActiveGlobalAssignmentClass(detail || targetCls);
+              }
+            }
           }}
           showAlert={(title, msg) => {
             setNotice(`${title}: ${msg}`);
@@ -761,9 +803,17 @@ export function SimpaceApp({
           open={isMultiSmartParserOpen}
           onOpenChange={setIsMultiSmartParserOpen}
           targetClassIds={multiClassTargetIds}
-          onSuccess={(msg) => {
-            refreshAll();
+          onSuccess={async (msg, assignedClassIds) => {
+            await refreshAll();
             setNotice(msg);
+            const targetId = (assignedClassIds && assignedClassIds[0]) || (multiClassTargetIds && multiClassTargetIds[0]);
+            if (targetId) {
+              const targetCls = classes.find((c) => c.id === targetId);
+              if (targetCls) {
+                const detail = await getClassDetailAction(targetCls.id);
+                setActiveGlobalAssignmentClass(detail || targetCls);
+              }
+            }
           }}
           showAlert={(title, msg) => {
             setNotice(`${title}: ${msg}`);

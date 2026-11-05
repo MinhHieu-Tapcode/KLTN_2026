@@ -205,6 +205,7 @@ export async function commitBulkAllocationAction(
   success: boolean;
   createdCount?: number;
   createdClassesCount?: number;
+  createdClasses?: any[];
   summary?: { email: string; fullName: string; username: string; className: string }[];
   error?: string;
 }> {
@@ -214,6 +215,7 @@ export async function commitBulkAllocationAction(
       safeRevalidate("/users");
       safeRevalidate("/classes");
       safeRevalidate("/schools");
+      safeRevalidate("/");
     }
     return res;
   } catch (error: any) {

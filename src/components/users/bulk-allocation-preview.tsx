@@ -629,6 +629,7 @@ export function BulkAllocationPreview({
           email: "Đã gửi thông tin tài khoản qua email",
           role: "Học sinh",
           mailResult: { sent: true },
+          createdClasses: res.createdClasses || [],
         });
       }
     } catch (err: any) {
