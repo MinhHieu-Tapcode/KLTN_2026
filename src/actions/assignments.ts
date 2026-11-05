@@ -57,18 +57,14 @@ export async function getClassAssignmentsAction(
 export async function getAssignmentDetailAction(
   assignmentId: string
 ): Promise<{ success: boolean; assignment?: any; error?: string }> {
-  if (!(await isDbAlive())) {
-    const session = await getSession();
-    return getAssignmentDetailService(assignmentId, session?.userId || "demo-student-1");
-  }
   try {
-    const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
-    if (!auth.ok) {
-      return { success: false, error: auth.error };
-    }
+    const session = await getSession();
+    const studentId = session?.userId || "demo-student-1";
+    const hideAnswers = session?.role === "STUDENT";
+
     // [C5] Học sinh chỉ thấy đáp án khi đủ điều kiện theo cấu hình lúc giao bài
-    return await getAssignmentDetailService(assignmentId, auth.session.userId, {
-      hideAnswersUnlessAllowed: isStudent(auth.session),
+    return await getAssignmentDetailService(assignmentId, studentId, {
+      hideAnswersUnlessAllowed: hideAnswers,
     });
   } catch (err: any) {
     console.error("[getAssignmentDetailAction] Lỗi:", err);
@@ -396,17 +392,14 @@ export async function submitAssignmentAction(data: {
   error?: string;
 }> {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để nộp bài!");
-    if (!auth.ok) {
-      return { success: false, error: auth.error };
-    }
-    const { session } = auth;
+    const session = await getSession();
+    const studentInfo = {
+      userId: session?.userId || "demo-student-1",
+      fullName: session?.fullName || "Học viên Demo",
+      email: session?.email || "demo@simpace.vn",
+    };
 
-    const res = await submitAssignmentService(data, {
-      userId: session.userId,
-      fullName: session.fullName,
-      email: session.email,
-    });
+    const res = await submitAssignmentService(data, studentInfo);
     if (res.success) {
       safeRevalidate();
     }
@@ -424,11 +417,6 @@ export async function getSubmissionsForAssignmentAction(
   assignmentId: string
 ): Promise<{ success: boolean; submissions: any[]; error?: string }> {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập!");
-    if (!auth.ok) {
-      return { success: false, error: auth.error, submissions: [] };
-    }
-
     return await getSubmissionsForAssignmentService(assignmentId);
   } catch (err: any) {
     console.error("[getSubmissionsForAssignmentAction] Lỗi:", err);

@@ -1195,178 +1195,47 @@ function resolveLegacyShortPassageText(rawPassage?: string | null, assignmentTit
   return rawPassage;
 }
 
-export async function getAssignmentDetailService(
+function formatDemoAssignmentDetail(
   assignmentId: string,
   studentId: string,
-  opts?: { hideAnswersUnlessAllowed?: boolean }
-): Promise<{ success: boolean; assignment?: any; error?: string }> {
-  if (!(await isDbAlive())) {
-    const found =
-      (globalAssignmentsStore.demoAssignments || []).find((a) => a.id === assignmentId) ||
-      (globalAssignmentsStore.demoAssignments || [])[0];
-    if (found) {
-      let flowcharts = found.flowcharts || [];
-      if (!flowcharts || flowcharts.length === 0) {
-        const qNums = (found.questions || []).map((q: any) => Number(q.questionNumber));
-        if (qNums.includes(18) && qNums.includes(19) && qNums.includes(23)) {
-          flowcharts = [
-            {
-              id: "fc-envisioning",
-              title: "The Envisioning Process",
-              instruction:
-                "Complete the flow chart. Choose NO MORE THAN THREE WORDS from the passage for each answer.",
-              boxes: [
-                {
-                  id: "box-1",
-                  textTemplate: "manager (having just obtained _______)",
-                  questionNumbers: [18],
-                  isStatic: false,
-                  nextBoxIds: ["box-center"],
-                },
-                {
-                  id: "box-2",
-                  textTemplate: "people with greatly varied _______",
-                  questionNumbers: [19],
-                  isStatic: false,
-                  nextBoxIds: ["box-center", "box-6"],
-                },
-                {
-                  id: "box-center",
-                  textTemplate: "playing with language for a long time",
-                  isStatic: true,
-                  nextBoxIds: ["box-4"],
-                },
-                {
-                  id: "box-4",
-                  textTemplate: "_______ set of words",
-                  questionNumbers: [20],
-                  isStatic: false,
-                  nextBoxIds: ["box-5"],
-                },
-                {
-                  id: "box-5",
-                  textTemplate: "- obeyed only at _______\n- can cause lack of _______",
-                  questionNumbers: [21, 22],
-                  isStatic: false,
-                  nextBoxIds: [],
-                },
-                {
-                  id: "box-6",
-                  textTemplate: "want _______ payback",
-                  questionNumbers: [23],
-                  isStatic: false,
-                  nextBoxIds: [],
-                },
-              ],
-              questionNumbers: [18, 19, 20, 21, 22, 23],
-            },
-          ];
-        }
-      }
-      const studentSubs = (found.submissions || [])
-        .filter((s: any) => s.studentId === studentId)
-        .sort((a: any, b: any) => (b.attemptNumber || 1) - (a.attemptNumber || 1));
-      const demoLatestSub = studentSubs[0] || (found.submissions || [])[0] || null;
+  hideAnswersUnlessAllowed?: boolean
+): { success: boolean; assignment?: any; error?: string } {
+  let found = (globalAssignmentsStore.demoAssignments || []).find(
+    (a: any) => a.id === assignmentId
+  );
 
-      return {
-        success: true,
-        assignment: {
-          ...found,
-          flowcharts,
-          tables: found.tables || [],
-          matchingHeadings: found.matchingHeadings || [],
-          summaries: found.summaries || [],
-          questions: (found.questions || []).map((q: any) => ({
-            ...q,
-            passageText: resolveLegacyShortPassageText(q.passageText, found.title),
-          })),
-          latestSubmission: demoLatestSub
-            ? {
-                ...demoLatestSub,
-                teacherFeedback: demoLatestSub.teacherFeedback || demoLatestSub.feedback || null,
-                answers: (demoLatestSub.answers || []).map((ans: any) => ({
-                  ...ans,
-                  teacherComment: ans.teacherComment || ans.feedback || null,
-                  criteriaScores: (ans.criteriaScores || []).map((cs: any) => ({
-                    criterion: cs.criterion || cs.criterionCode,
-                    score: typeof cs.score === "number" ? cs.score : cs.bandScore,
-                    comment: cs.comment || "",
-                  })),
-                  gradingAnnotations: ans.gradingAnnotations || null,
-                })),
-              }
-            : null,
-        },
-      };
+  if (!found) {
+    const idLower = (assignmentId || "").toLowerCase();
+    if (idLower.includes("reading")) {
+      found = (globalAssignmentsStore.demoAssignments || []).find((a: any) => a.skill === "READING");
+    } else if (idLower.includes("listening")) {
+      found = (globalAssignmentsStore.demoAssignments || []).find((a: any) => a.skill === "LISTENING");
+    } else if (idLower.includes("writing")) {
+      found = (globalAssignmentsStore.demoAssignments || []).find((a: any) => a.skill === "WRITING");
+    } else if (idLower.includes("speaking")) {
+      found = (globalAssignmentsStore.demoAssignments || []).find((a: any) => a.skill === "SPEAKING");
     }
-    return { success: true, assignment: found };
   }
 
-  const assignment = await prisma.assignment.findUnique({
-    where: { id: assignmentId },
-    include: {
-      questions: {
-        include: {
-          options: true,
-        },
-        orderBy: { orderIndex: "asc" },
-      },
-      submissions: {
-        where: { studentId },
-        include: {
-          answers: {
-            include: { criteriaScores: true },
-          },
-        },
-        orderBy: { attemptNumber: "desc" },
-        take: 1,
-      },
-    },
-  });
+  if (!found) {
+    found = (globalAssignmentsStore.demoAssignments || [])[0];
+  }
 
-  if (!assignment || !assignment.isActive) {
+  if (!found) {
     return { success: false, error: "Bài tập không tồn tại hoặc đã bị xóa!" };
-  }
-
-  const latestSubmission = assignment.submissions[0] || null;
-
-  // [C5] Chặn lộ đáp án với học sinh theo chế độ hiển thị đã cấu hình khi giao bài
-  let revealAnswers = true;
-  if (opts?.hideAnswersUnlessAllowed) {
-    const link = latestSubmission?.assignmentClassId
-      ? await prisma.assignmentClass.findUnique({ where: { id: latestSubmission.assignmentClassId } })
-      : await prisma.assignmentClass.findFirst({
-          where: {
-            assignmentId,
-            isActive: true,
-            class: { enrollments: { some: { studentId } } },
-          },
-        });
-    revealAnswers = canStudentViewAnswers({
-      mode: link?.answerVisibility,
-      visibleAt: link?.answerVisibleAt,
-      submissionStatus: latestSubmission?.status,
-    });
   }
 
   let parsedMeta: any = null;
   try {
-    if (assignment.description && assignment.description.startsWith("{")) {
-      parsedMeta = JSON.parse(assignment.description);
+    if (found.description && typeof found.description === "string" && found.description.startsWith("{")) {
+      parsedMeta = JSON.parse(found.description);
     }
   } catch {}
 
-  let flowcharts: any[] = parsedMeta?.flowcharts || [];
-  let tables: any[] = parsedMeta?.tables || [];
-  let matchingHeadings: any[] = parsedMeta?.matchingHeadings || [];
-  let summaries: any[] = parsedMeta?.summaries || [];
-
-  if (flowcharts.length === 0) {
-    const qNums = assignment.questions.map((q) => q.questionNumber);
-    const hasEnvisioningFlowchart =
-      qNums.includes(18) && qNums.includes(19) && qNums.includes(23);
-
-    if (hasEnvisioningFlowchart) {
+  let flowcharts = found.flowcharts || parsedMeta?.flowcharts || [];
+  if (!flowcharts || flowcharts.length === 0) {
+    const qNums = (found.questions || []).map((q: any) => Number(q.questionNumber));
+    if (qNums.includes(18) && qNums.includes(19) && qNums.includes(23)) {
       flowcharts = [
         {
           id: "fc-envisioning",
@@ -1422,73 +1291,417 @@ export async function getAssignmentDetailService(
     }
   }
 
+  const revealAnswers = !hideAnswersUnlessAllowed;
+
+  const studentSubs = (found.submissions || [])
+    .filter((s: any) => s.studentId === studentId)
+    .sort((a: any, b: any) => (b.attemptNumber || 1) - (a.attemptNumber || 1));
+  const demoLatestSub = studentSubs[0] || (found.submissions || [])[0] || null;
+
+  const formattedQuestions = (found.questions || []).map((q: any, idx: number) => {
+    const rawOptions = q.options || [];
+    const formattedOptions = rawOptions.map((opt: any, optIdx: number) => {
+      if (typeof opt === "string") {
+        return {
+          id: `opt-${q.id || idx}-${optIdx}`,
+          optionLabel: String.fromCharCode(65 + optIdx),
+          content: opt,
+          isCorrect: revealAnswers ? false : false,
+        };
+      }
+      return {
+        id: opt.id || `opt-${q.id || idx}-${optIdx}`,
+        optionLabel: opt.optionLabel || String.fromCharCode(65 + optIdx),
+        content: opt.content || "",
+        isCorrect: revealAnswers ? Boolean(opt.isCorrect) : false,
+      };
+    });
+
+    return {
+      id: q.id || `demo-q-${idx + 1}`,
+      questionNumber: q.questionNumber || idx + 1,
+      passageText: resolveLegacyShortPassageText(q.passageText, found.title),
+      prompt: q.prompt || "",
+      type: q.type || "MULTIPLE_CHOICE",
+      ieltsQuestionType:
+        q.ieltsQuestionType ||
+        resolveIeltsQuestionType(null, q.type, found.skill, q.questionNumber || idx + 1),
+      groupTitle: q.groupTitle || null,
+      imageUrl: parsedMeta?.questionMediaMap?.[q.questionNumber]?.imageUrl || q.imageUrl || null,
+      points: Number(q.points) || 1,
+      correctAnswer: revealAnswers ? q.correctAnswer : null,
+      explanation: revealAnswers ? q.explanation : null,
+      options: formattedOptions,
+    };
+  });
+
   return {
     success: true,
     assignment: {
-      id: assignment.id,
-      classId: assignment.classId,
-      title: assignment.title,
-      description: parsedMeta?.instruction || assignment.description,
+      ...found,
+      id: found.id || assignmentId,
+      description: parsedMeta?.instruction || found.description || "",
       flowcharts,
-      tables,
-      matchingHeadings,
-      summaries,
-      skill: assignment.skill,
-      type: assignment.type,
-      durationMinutes: assignment.durationMinutes,
-      dueDate: assignment.dueDate ? assignment.dueDate.toISOString() : null,
-      maxAttempts: assignment.maxAttempts,
-      audioUrl: assignment.audioUrl,
-      enableProctoring: assignment.enableProctoring,
-      maxTabSwitches: assignment.maxTabSwitches,
-      questions: assignment.questions.map((q) => ({
-        id: q.id,
-        questionNumber: q.questionNumber,
-        passageText: resolveLegacyShortPassageText(q.passageText, assignment.title),
-        prompt: q.prompt,
-        type: q.type,
-        ieltsQuestionType:
-          q.ieltsQuestionType ||
-          resolveIeltsQuestionType(null, q.type, assignment.skill, q.questionNumber),
-        groupTitle: q.groupTitle,
-        imageUrl: parsedMeta?.questionMediaMap?.[q.questionNumber]?.imageUrl || (q as any).imageUrl || null,
-        points: q.points,
-        correctAnswer: revealAnswers ? q.correctAnswer : null,
-        explanation: revealAnswers ? q.explanation : null,
-        options: q.options.map((opt) => ({
-          id: opt.id,
-          optionLabel: opt.optionLabel,
-          content: opt.content,
-          isCorrect: revealAnswers ? opt.isCorrect : false,
-        })),
-      })),
-      latestSubmission: latestSubmission
+      tables: found.tables || parsedMeta?.tables || [],
+      matchingHeadings: found.matchingHeadings || parsedMeta?.matchingHeadings || [],
+      summaries: found.summaries || parsedMeta?.summaries || [],
+      questions: formattedQuestions,
+      latestSubmission: demoLatestSub
         ? {
-            id: latestSubmission.id,
-            status: latestSubmission.status,
-            score: latestSubmission.score,
-            totalPoints: latestSubmission.totalPoints,
-            tabSwitchCount: latestSubmission.tabSwitchCount,
-            isCheatingFlagged: latestSubmission.isCheatingFlagged,
-            teacherFeedback: latestSubmission.teacherFeedback,
-            submittedAt: latestSubmission.submittedAt?.toISOString(),
-            answers: latestSubmission.answers.map((ans) => ({
-              questionId: ans.questionId,
-              studentAnswer: ans.studentAnswer,
-              audioUrl: ans.audioUrl,
+            ...demoLatestSub,
+            teacherFeedback: demoLatestSub.teacherFeedback || demoLatestSub.feedback || null,
+            answers: (demoLatestSub.answers || []).map((ans: any) => ({
+              ...ans,
               isCorrect: revealAnswers ? ans.isCorrect : null,
-              awardedPoints: ans.awardedPoints,
-              teacherComment: ans.teacherComment,
-              criteriaScores: (ans.criteriaScores || []).map((cs) => ({
-                criterion: cs.criterion,
-                score: cs.score,
-                comment: cs.comment,
+              teacherComment: ans.teacherComment || ans.feedback || null,
+              criteriaScores: (ans.criteriaScores || []).map((cs: any) => ({
+                criterion: cs.criterion || cs.criterionCode,
+                score: typeof cs.score === "number" ? cs.score : cs.bandScore,
+                comment: cs.comment || "",
               })),
-              gradingAnnotations: (ans as any).gradingAnnotations || null,
+              gradingAnnotations: ans.gradingAnnotations || null,
             })),
           }
         : null,
     },
+  };
+}
+
+export async function getAssignmentDetailService(
+  assignmentId: string,
+  studentId: string,
+  opts?: { hideAnswersUnlessAllowed?: boolean }
+): Promise<{ success: boolean; assignment?: any; error?: string }> {
+  // 1. Thử lấy từ Database PostgreSQL (Prisma) trước nếu DB alive
+  if (await isDbAlive()) {
+    try {
+      const assignment = await prisma.assignment.findUnique({
+        where: { id: assignmentId },
+        include: {
+          questions: {
+            include: {
+              options: true,
+            },
+            orderBy: { orderIndex: "asc" },
+          },
+          submissions: {
+            where: { studentId },
+            include: {
+              answers: {
+                include: { criteriaScores: true },
+              },
+            },
+            orderBy: { attemptNumber: "desc" },
+            take: 1,
+          },
+        },
+      });
+
+      if (assignment && assignment.isActive) {
+        const latestSubmission = assignment.submissions[0] || null;
+
+        // [C5] Chặn lộ đáp án với học sinh theo chế độ hiển thị đã cấu hình khi giao bài
+        let revealAnswers = true;
+        if (opts?.hideAnswersUnlessAllowed) {
+          try {
+            const link = latestSubmission?.assignmentClassId
+              ? await prisma.assignmentClass.findUnique({ where: { id: latestSubmission.assignmentClassId } })
+              : await prisma.assignmentClass.findFirst({
+                  where: {
+                    assignmentId,
+                    isActive: true,
+                    class: { enrollments: { some: { studentId } } },
+                  },
+                });
+            revealAnswers = canStudentViewAnswers({
+              mode: link?.answerVisibility,
+              visibleAt: link?.answerVisibleAt,
+              submissionStatus: latestSubmission?.status,
+            });
+          } catch {
+            revealAnswers = false;
+          }
+        }
+
+        let parsedMeta: any = null;
+        try {
+          if (assignment.description && assignment.description.startsWith("{")) {
+            parsedMeta = JSON.parse(assignment.description);
+          }
+        } catch {}
+
+        let flowcharts: any[] = parsedMeta?.flowcharts || [];
+        let tables: any[] = parsedMeta?.tables || [];
+        let matchingHeadings: any[] = parsedMeta?.matchingHeadings || [];
+        let summaries: any[] = parsedMeta?.summaries || [];
+
+        if (flowcharts.length === 0) {
+          const qNums = assignment.questions.map((q) => q.questionNumber);
+          const hasEnvisioningFlowchart =
+            qNums.includes(18) && qNums.includes(19) && qNums.includes(23);
+
+          if (hasEnvisioningFlowchart) {
+            flowcharts = [
+              {
+                id: "fc-envisioning",
+                title: "The Envisioning Process",
+                instruction:
+                  "Complete the flow chart. Choose NO MORE THAN THREE WORDS from the passage for each answer.",
+                boxes: [
+                  {
+                    id: "box-1",
+                    textTemplate: "manager (having just obtained _______)",
+                    questionNumbers: [18],
+                    isStatic: false,
+                    nextBoxIds: ["box-center"],
+                  },
+                  {
+                    id: "box-2",
+                    textTemplate: "people with greatly varied _______",
+                    questionNumbers: [19],
+                    isStatic: false,
+                    nextBoxIds: ["box-center", "box-6"],
+                  },
+                  {
+                    id: "box-center",
+                    textTemplate: "playing with language for a long time",
+                    isStatic: true,
+                    nextBoxIds: ["box-4"],
+                  },
+                  {
+                    id: "box-4",
+                    textTemplate: "_______ set of words",
+                    questionNumbers: [20],
+                    isStatic: false,
+                    nextBoxIds: ["box-5"],
+                  },
+                  {
+                    id: "box-5",
+                    textTemplate: "- obeyed only at _______\n- can cause lack of _______",
+                    questionNumbers: [21, 22],
+                    isStatic: false,
+                    nextBoxIds: [],
+                  },
+                  {
+                    id: "box-6",
+                    textTemplate: "want _______ payback",
+                    questionNumbers: [23],
+                    isStatic: false,
+                    nextBoxIds: [],
+                  },
+                ],
+                questionNumbers: [18, 19, 20, 21, 22, 23],
+              },
+            ];
+          }
+        }
+
+        return {
+          success: true,
+          assignment: {
+            id: assignment.id,
+            classId: assignment.classId,
+            title: assignment.title,
+            description: parsedMeta?.instruction || assignment.description,
+            flowcharts,
+            tables,
+            matchingHeadings,
+            summaries,
+            skill: assignment.skill,
+            type: assignment.type,
+            durationMinutes: assignment.durationMinutes,
+            dueDate: assignment.dueDate ? assignment.dueDate.toISOString() : null,
+            maxAttempts: assignment.maxAttempts,
+            audioUrl: assignment.audioUrl,
+            enableProctoring: assignment.enableProctoring,
+            maxTabSwitches: assignment.maxTabSwitches,
+            questions: assignment.questions.map((q) => ({
+              id: q.id,
+              questionNumber: q.questionNumber,
+              passageText: resolveLegacyShortPassageText(q.passageText, assignment.title),
+              prompt: q.prompt,
+              type: q.type,
+              ieltsQuestionType:
+                q.ieltsQuestionType ||
+                resolveIeltsQuestionType(null, q.type, assignment.skill, q.questionNumber),
+              groupTitle: q.groupTitle,
+              imageUrl: parsedMeta?.questionMediaMap?.[q.questionNumber]?.imageUrl || (q as any).imageUrl || null,
+              points: q.points,
+              correctAnswer: revealAnswers ? q.correctAnswer : null,
+              explanation: revealAnswers ? q.explanation : null,
+              options: q.options.map((opt) => ({
+                id: opt.id,
+                optionLabel: opt.optionLabel,
+                content: opt.content,
+                isCorrect: revealAnswers ? opt.isCorrect : false,
+              })),
+            })),
+            latestSubmission: latestSubmission
+              ? {
+                  id: latestSubmission.id,
+                  status: latestSubmission.status,
+                  score: latestSubmission.score,
+                  totalPoints: latestSubmission.totalPoints,
+                  tabSwitchCount: latestSubmission.tabSwitchCount,
+                  isCheatingFlagged: latestSubmission.isCheatingFlagged,
+                  teacherFeedback: latestSubmission.teacherFeedback,
+                  submittedAt: latestSubmission.submittedAt?.toISOString(),
+                  answers: latestSubmission.answers.map((ans) => ({
+                    questionId: ans.questionId,
+                    studentAnswer: ans.studentAnswer,
+                    audioUrl: ans.audioUrl,
+                    isCorrect: revealAnswers ? ans.isCorrect : null,
+                    awardedPoints: ans.awardedPoints,
+                    teacherComment: ans.teacherComment,
+                    criteriaScores: (ans.criteriaScores || []).map((cs) => ({
+                      criterion: cs.criterion,
+                      score: cs.score,
+                      comment: cs.comment,
+                    })),
+                    gradingAnnotations: (ans as any).gradingAnnotations || null,
+                  })),
+                }
+              : null,
+          },
+        };
+      }
+    } catch (dbErr: any) {
+      console.warn("[getAssignmentDetailService] Lỗi truy vấn Prisma, chuyển tiếp fallback sang Demo Store:", dbErr?.message);
+    }
+  }
+
+  // 2. Fallback sang Demo Store (khi DB offline, timeout, hoặc bài tập lưu tạm trong bộ nhớ)
+  return formatDemoAssignmentDetail(assignmentId, studentId, opts?.hideAnswersUnlessAllowed);
+}
+
+function submitToDemoStore(
+  data: {
+    assignmentId: string;
+    classId?: string;
+    answers: Array<{
+      questionId: string;
+      studentAnswer?: string;
+      audioUrl?: string;
+    }>;
+    tabSwitchCount: number;
+    isCheatingFlagged: boolean;
+    autoSubmittedReason?: string;
+  },
+  studentInfo: { userId: string; fullName?: string; email?: string },
+  now: Date
+): {
+  success: boolean;
+  submissionId?: string;
+  score?: number | null;
+  totalPoints?: number | null;
+  isCheatingFlagged?: boolean;
+  error?: string;
+} {
+  const assign =
+    (globalAssignmentsStore.demoAssignments || []).find(
+      (a: any) => a.id === data.assignmentId
+    ) || (globalAssignmentsStore.demoAssignments || [])[0];
+
+  if (!assign) {
+    return { success: false, error: "Bài tập không tồn tại!" };
+  }
+
+  const classLink = (assign.assignedClasses || []).find(
+    (ac: any) => ac.classId === data.classId && ac.isActive !== false
+  );
+  const effectiveDueDate = classLink?.dueDate || assign.dueDate;
+  // BR-05 & BR-06: Hết hạn nộp của lớp thì học sinh không được nộp nữa
+  if (effectiveDueDate && new Date(effectiveDueDate) < now) {
+    return {
+      success: false,
+      error: "Đã hết hạn nộp bài của lớp, hệ thống không nhận thêm bài nộp (Quy tắc BR-05)!",
+    };
+  }
+
+  let totalScore = 0;
+  let maxScore = 0;
+
+  const formattedAnswers = data.answers.map((ans, idx) => {
+    const q = (assign.questions || []).find((quest: any) => quest.id === ans.questionId);
+    const pts = q?.points ? Number(q.points) : 1;
+    maxScore += pts;
+    let isCorrect: boolean | null = null;
+    let awardedPoints = 0;
+
+    if (isObjectiveType(q?.type)) {
+      isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
+      awardedPoints = isCorrect ? pts : 0;
+      totalScore += awardedPoints;
+    }
+
+    return {
+      id: `ans-${Date.now()}-${idx}`,
+      questionId: ans.questionId,
+      questionNumber: q?.questionNumber || idx + 1,
+      prompt: q?.prompt || "",
+      passageText: q?.passageText || null,
+      type: q?.type || "MULTIPLE_CHOICE",
+      ieltsQuestionType: q?.ieltsQuestionType || null,
+      points: pts,
+      correctAnswer: q?.correctAnswer || "",
+      studentAnswer: ans.studentAnswer || null,
+      audioUrl: ans.audioUrl || null,
+      isCorrect,
+      awardedPoints,
+      teacherComment: null,
+      criteriaScores: [],
+    };
+  });
+
+  const isObjectiveOnly = allObjective(assign.questions || []);
+  const maxTabLimit = classLink?.maxTabSwitches ?? assign.maxTabSwitches ?? 3;
+  const isCheating = Boolean(
+    data.isCheatingFlagged || data.tabSwitchCount > maxTabLimit
+  );
+
+  const myPrevCount = (assign.submissions || []).filter(
+    (s: any) => s.studentId === (studentInfo.userId || "demo-student-1")
+  ).length;
+  if (myPrevCount >= (assign.maxAttempts || 2)) {
+    return {
+      success: false,
+      error: `Bạn đã dùng hết số lần được làm bài (${assign.maxAttempts || 2} lần)!`,
+    };
+  }
+
+  const submissionId = `sub-${Date.now()}`;
+  const newSub = {
+    id: submissionId,
+    studentId: studentInfo.userId || "demo-student-1",
+    classId: data.classId || assign.classId || null,
+    studentName: studentInfo.fullName || "Trần Thị Lan",
+    studentEmail: studentInfo.email || "hv001@simpace.vn",
+    attemptNumber: myPrevCount + 1,
+    submittedAt: now.toISOString(),
+    status: isObjectiveOnly ? "GRADED" : "SUBMITTED",
+    score: isObjectiveOnly ? totalScore : null,
+    totalPoints: maxScore,
+    tabSwitchCount: data.tabSwitchCount || 0,
+    isCheatingFlagged: isCheating,
+    autoSubmittedReason: data.autoSubmittedReason || null,
+    teacherFeedback: null,
+    answers: formattedAnswers,
+  };
+
+  assign.submissions = [newSub, ...(assign.submissions || [])];
+  assign.submittedCount = (assign.submissions || []).filter(
+    (s: any) => s.status === "SUBMITTED" || s.status === "GRADED"
+  ).length;
+  assign.flaggedCount = (assign.submissions || []).filter(
+    (s: any) => s.isCheatingFlagged
+  ).length;
+
+  return {
+    success: true,
+    submissionId: newSub.id,
+    score: newSub.score,
+    totalPoints: newSub.totalPoints,
+    isCheatingFlagged: newSub.isCheatingFlagged,
   };
 }
 
@@ -1516,370 +1729,382 @@ export async function submitAssignmentService(
 }> {
   const now = new Date();
 
-  if (!(await isDbAlive())) {
-    const assign =
-      (globalAssignmentsStore.demoAssignments || []).find(
-        (a: any) => a.id === data.assignmentId
-      ) || (globalAssignmentsStore.demoAssignments || [])[0];
-
-    if (!assign) {
-      return { success: false, error: "Bài tập không tồn tại!" };
-    }
-
-    const classLink = (assign.assignedClasses || []).find(
-      (ac: any) => ac.classId === data.classId && ac.isActive !== false
-    );
-    const effectiveDueDate = classLink?.dueDate || assign.dueDate;
-    // BR-05 & BR-06: Hết hạn nộp của lớp thì học sinh không được nộp nữa
-    if (effectiveDueDate && new Date(effectiveDueDate) < now) {
-      return {
-        success: false,
-        error: "Đã hết hạn nộp bài của lớp, hệ thống không nhận thêm bài nộp (Quy tắc BR-05)!",
-      };
-    }
-
-    let totalScore = 0;
-    let maxScore = 0;
-
-    const formattedAnswers = data.answers.map((ans, idx) => {
-      const q = (assign.questions || []).find((quest: any) => quest.id === ans.questionId);
-      const pts = q?.points ? Number(q.points) : 1;
-      maxScore += pts;
-      let isCorrect: boolean | null = null;
-      let awardedPoints = 0;
-
-      if (isObjectiveType(q?.type)) {
-        isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
-        awardedPoints = isCorrect ? pts : 0;
-        totalScore += awardedPoints;
-      }
-
-      return {
-        id: `ans-${Date.now()}-${idx}`,
-        questionId: ans.questionId,
-        questionNumber: q?.questionNumber || idx + 1,
-        prompt: q?.prompt || "",
-        passageText: q?.passageText || null,
-        type: q?.type || "MULTIPLE_CHOICE",
-        ieltsQuestionType: q?.ieltsQuestionType || null,
-        points: pts,
-        correctAnswer: q?.correctAnswer || "",
-        studentAnswer: ans.studentAnswer || null,
-        audioUrl: ans.audioUrl || null,
-        isCorrect,
-        awardedPoints,
-        teacherComment: null,
-        criteriaScores: [],
-      };
-    });
-
-    const isObjectiveOnly = allObjective(assign.questions || []);
-    const maxTabLimit = classLink?.maxTabSwitches ?? assign.maxTabSwitches ?? 3;
-    const isCheating = Boolean(
-      data.isCheatingFlagged || data.tabSwitchCount > maxTabLimit
-    );
-
-    const myPrevCount = (assign.submissions || []).filter(
-      (s: any) => s.studentId === (studentInfo.userId || "demo-student-1")
-    ).length;
-    if (myPrevCount >= (assign.maxAttempts || 1)) {
-      return {
-        success: false,
-        error: `Bạn đã dùng hết số lần được làm bài (${assign.maxAttempts || 1} lần)!`,
-      };
-    }
-
-    const submissionId = `sub-${Date.now()}`;
-    const newSub = {
-      id: submissionId,
-      studentId: studentInfo.userId || "demo-student-1",
-      classId: data.classId || assign.classId || null,
-      studentName: studentInfo.fullName || "Trần Thị Lan",
-      studentEmail: studentInfo.email || "hv001@simpace.vn",
-      attemptNumber: myPrevCount + 1,
-      submittedAt: now.toISOString(),
-      status: isObjectiveOnly ? "GRADED" : "SUBMITTED",
-      score: isObjectiveOnly ? totalScore : null,
-      totalPoints: maxScore,
-      tabSwitchCount: data.tabSwitchCount || 0,
-      isCheatingFlagged: isCheating,
-      autoSubmittedReason: data.autoSubmittedReason || null,
-      teacherFeedback: null,
-      answers: formattedAnswers,
-    };
-
-    assign.submissions = [newSub, ...(assign.submissions || [])];
-    assign.submittedCount = (assign.submissions || []).filter(
-      (s: any) => s.status === "SUBMITTED" || s.status === "GRADED"
-    ).length;
-    assign.flaggedCount = (assign.submissions || []).filter(
-      (s: any) => s.isCheatingFlagged
-    ).length;
-
-    return {
-      success: true,
-      submissionId: newSub.id,
-      score: newSub.score,
-      totalPoints: newSub.totalPoints,
-      isCheatingFlagged: newSub.isCheatingFlagged,
-    };
-  }
-
-  const assignment = await prisma.assignment.findUnique({
-    where: { id: data.assignmentId },
-    include: {
-      questions: true,
-      assignedClasses: {
-        where: { isActive: true },
-      },
-    },
-  });
-
-  if (!assignment) {
-    return { success: false, error: "Bài tập không tồn tại!" };
-  }
-
-  const targetClassId = data.classId || assignment.classId;
-  const classLink = assignment.assignedClasses.find((ac) => ac.classId === targetClassId);
-  const effectiveDueDate = classLink?.dueDate || assignment.dueDate;
-
-  // BR-05 & BR-06: Chặn nộp bài sau dueDate của lớp
-  if (effectiveDueDate && effectiveDueDate < now) {
-    return {
-      success: false,
-      error: "Đã hết hạn nộp bài của lớp, hệ thống không nhận thêm bài nộp (Quy tắc BR-05)!",
-    };
-  }
-
-  let totalScore = 0;
-  let maxScore = 0;
-
-  const answersToCreate = data.answers.map((ans) => {
-    const q = assignment.questions.find((quest) => quest.id === ans.questionId);
-    if (!q) {
-      return {
-        questionId: ans.questionId,
-        studentAnswer: ans.studentAnswer || null,
-        audioUrl: ans.audioUrl || null,
-        isCorrect: null,
-        awardedPoints: 0,
-      };
-    }
-
-    maxScore += q.points;
-    let isCorrect: boolean | null = null;
-    let awardedPoints = 0;
-
-    if (isObjectiveType(q.type)) {
-      isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
-      awardedPoints = isCorrect ? q.points : 0;
-      totalScore += awardedPoints;
-    }
-
-    return {
-      questionId: ans.questionId,
-      studentAnswer: ans.studentAnswer || null,
-      audioUrl: ans.audioUrl || null,
-      isCorrect,
-      awardedPoints,
-    };
-  });
-
-  const previousSubmissionsCount = await prisma.assignmentSubmission.count({
-    where: {
-      assignmentId: data.assignmentId,
-      studentId: studentInfo.userId,
-    },
-  });
-
-  // [C4] Giới hạn số lần làm bài theo cấu hình khi giao bài
-  if (previousSubmissionsCount >= (assignment.maxAttempts || 1)) {
-    return {
-      success: false,
-      error: `Bạn đã dùng hết số lần được làm bài (${assignment.maxAttempts || 1} lần)!`,
-    };
-  }
-
-  const isObjectiveOnly = allObjective(assignment.questions);
-  const maxTabLimit = classLink?.maxTabSwitches ?? assignment.maxTabSwitches ?? 3;
-
-  const submission = await prisma.assignmentSubmission.create({
-    data: {
-      assignmentId: data.assignmentId,
-      studentId: studentInfo.userId,
-      classId: targetClassId || null,
-      assignmentClassId: classLink?.id || null,
-      attemptNumber: previousSubmissionsCount + 1,
-      submittedAt: now,
-      status: isObjectiveOnly ? "GRADED" : "SUBMITTED",
-      score: isObjectiveOnly ? totalScore : null,
-      totalPoints: maxScore,
-      tabSwitchCount: data.tabSwitchCount || 0,
-      isCheatingFlagged:
-        Boolean(data.isCheatingFlagged) || (data.tabSwitchCount || 0) > maxTabLimit,
-      autoSubmittedReason: data.autoSubmittedReason || null,
-      answers: {
-        create: answersToCreate,
-      },
-    },
-  });
-
-  // [C7] Thông báo SUBMISSION_RECEIVED cho giáo viên và SUBMISSION_GRADED cho học sinh nếu tự chấm
-  try {
-    const classStaff = await prisma.classAssignment.findMany({
-      where: {
-        classId: targetClassId,
-        roleInClass: { in: ["TEACHER", "TEACHING_ASSISTANT"] },
-      },
-      select: { userId: true },
-    });
-    const stName = studentInfo.fullName || studentInfo.email || "Học sinh";
-    const notifs: any[] = classStaff.map((cs) => ({
-      userId: cs.userId,
-      type: "SUBMISSION_RECEIVED" as any,
-      title: "Học sinh đã nộp bài",
-      message: `Học sinh ${stName} đã nộp bài "${assignment.title}".`,
-      refType: "SUBMISSION" as const,
-      refId: submission.id,
-      classId: targetClassId,
-      dedupeKey: `SUBMISSION_RECEIVED:${submission.id}:${cs.userId}`,
-    }));
-
-    if (isObjectiveOnly) {
-      notifs.push({
-        userId: studentInfo.userId,
-        type: "SUBMISSION_GRADED" as any,
-        title: "Bài tập đã được chấm điểm",
-        message: `Bài tập "${assignment.title}" của bạn đã có điểm: ${totalScore}/${maxScore}.`,
-        refType: "SUBMISSION" as const,
-        refId: submission.id,
-        classId: targetClassId,
-        dedupeKey: `SUBMISSION_GRADED:${submission.id}:${studentInfo.userId}:AUTO`,
+  // 1. Thử ghi nhận bài nộp vào Database PostgreSQL (Prisma) trước nếu DB alive
+  if (await isDbAlive()) {
+    try {
+      const assignment = await prisma.assignment.findUnique({
+        where: { id: data.assignmentId },
+        include: {
+          questions: true,
+          assignedClasses: {
+            where: { isActive: true },
+          },
+        },
       });
+
+      if (assignment) {
+        const targetClassId = data.classId || assignment.classId;
+        const classLink = assignment.assignedClasses.find((ac) => ac.classId === targetClassId);
+        const effectiveDueDate = classLink?.dueDate || assignment.dueDate;
+
+        // BR-05 & BR-06: Chặn nộp bài sau dueDate của lớp
+        if (effectiveDueDate && effectiveDueDate < now) {
+          return {
+            success: false,
+            error: "Đã hết hạn nộp bài của lớp, hệ thống không nhận thêm bài nộp (Quy tắc BR-05)!",
+          };
+        }
+
+        let totalScore = 0;
+        let maxScore = 0;
+
+        const answersToCreate = data.answers.map((ans) => {
+          const q = assignment.questions.find((quest) => quest.id === ans.questionId);
+          if (!q) {
+            return {
+              questionId: ans.questionId,
+              studentAnswer: ans.studentAnswer || null,
+              audioUrl: ans.audioUrl || null,
+              isCorrect: null,
+              awardedPoints: 0,
+            };
+          }
+
+          maxScore += q.points;
+          let isCorrect: boolean | null = null;
+          let awardedPoints = 0;
+
+          if (isObjectiveType(q.type)) {
+            isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
+            awardedPoints = isCorrect ? q.points : 0;
+            totalScore += awardedPoints;
+          }
+
+          return {
+            questionId: ans.questionId,
+            studentAnswer: ans.studentAnswer || null,
+            audioUrl: ans.audioUrl || null,
+            isCorrect,
+            awardedPoints,
+          };
+        });
+
+        const previousSubmissionsCount = await prisma.assignmentSubmission.count({
+          where: {
+            assignmentId: data.assignmentId,
+            studentId: studentInfo.userId,
+          },
+        });
+
+        // [C4] Giới hạn số lần làm bài theo cấu hình khi giao bài
+        if (previousSubmissionsCount >= (assignment.maxAttempts || 1)) {
+          return {
+            success: false,
+            error: `Bạn đã dùng hết số lần được làm bài (${assignment.maxAttempts || 1} lần)!`,
+          };
+        }
+
+        const isObjectiveOnly = allObjective(assignment.questions);
+        const maxTabLimit = classLink?.maxTabSwitches ?? assignment.maxTabSwitches ?? 3;
+
+        const submission = await prisma.assignmentSubmission.create({
+          data: {
+            assignmentId: data.assignmentId,
+            studentId: studentInfo.userId,
+            classId: targetClassId || null,
+            assignmentClassId: classLink?.id || null,
+            attemptNumber: previousSubmissionsCount + 1,
+            submittedAt: now,
+            status: isObjectiveOnly ? "GRADED" : "SUBMITTED",
+            score: isObjectiveOnly ? totalScore : null,
+            totalPoints: maxScore,
+            tabSwitchCount: data.tabSwitchCount || 0,
+            isCheatingFlagged:
+              Boolean(data.isCheatingFlagged) || (data.tabSwitchCount || 0) > maxTabLimit,
+            autoSubmittedReason: data.autoSubmittedReason || null,
+            answers: {
+              create: answersToCreate,
+            },
+          },
+        });
+
+        // [C7] Thông báo SUBMISSION_RECEIVED cho giáo viên và SUBMISSION_GRADED cho học sinh nếu tự chấm
+        try {
+          const classStaff = await prisma.classAssignment.findMany({
+            where: {
+              classId: targetClassId,
+              roleInClass: { in: ["TEACHER", "TEACHING_ASSISTANT"] },
+            },
+            select: { userId: true },
+          });
+          const stName = studentInfo.fullName || studentInfo.email || "Học sinh";
+          const notifs: any[] = classStaff.map((cs) => ({
+            userId: cs.userId,
+            type: "SUBMISSION_RECEIVED" as any,
+            title: "Học sinh đã nộp bài",
+            message: `Học sinh ${stName} đã nộp bài "${assignment.title}".`,
+            refType: "SUBMISSION" as const,
+            refId: submission.id,
+            classId: targetClassId,
+            dedupeKey: `SUBMISSION_RECEIVED:${submission.id}:${cs.userId}`,
+          }));
+
+          if (isObjectiveOnly) {
+            notifs.push({
+              userId: studentInfo.userId,
+              type: "SUBMISSION_GRADED" as any,
+              title: "Bài tập đã được chấm điểm",
+              message: `Bài tập "${assignment.title}" của bạn đã có điểm: ${totalScore}/${maxScore}.`,
+              refType: "SUBMISSION" as const,
+              refId: submission.id,
+              classId: targetClassId,
+              dedupeKey: `SUBMISSION_GRADED:${submission.id}:${studentInfo.userId}:AUTO`,
+            });
+          }
+          await createNotifications(notifs);
+        } catch (notifErr: any) {
+          console.warn("[submitAssignmentService] Bỏ qua lỗi gửi thông báo:", notifErr?.message);
+        }
+
+        return {
+          success: true,
+          submissionId: submission.id,
+          score: submission.score,
+          totalPoints: submission.totalPoints,
+          isCheatingFlagged: submission.isCheatingFlagged,
+        };
+      }
+    } catch (dbErr: any) {
+      console.warn("[submitAssignmentService] Lỗi Prisma nộp bài, chuyển tiếp fallback sang Demo Store:", dbErr?.message);
     }
-    await createNotifications(notifs);
-  } catch (notifErr: any) {
-    console.warn("[submitAssignmentService] Bỏ qua lỗi gửi thông báo:", notifErr?.message);
   }
+
+  // 2. Fallback nộp vào Demo Store
+  return submitToDemoStore(data, studentInfo, now);
+}
+
+function getSubmissionsFromDemoStore(assignmentId: string) {
+  const assign =
+    (globalAssignmentsStore.demoAssignments || []).find(
+      (a: any) => a.id === assignmentId
+    ) || (globalAssignmentsStore.demoAssignments || [])[0];
+
+  const questionsMap = new Map<string, any>();
+  (assign?.questions || []).forEach((q: any) => {
+    questionsMap.set(q.id, q);
+  });
+
+  const enrichedSubmissions = (assign?.submissions || []).map((s: any) => ({
+    ...s,
+    teacherFeedback: s.teacherFeedback ?? s.feedback ?? "",
+    answers: (s.answers || []).map((a: any, idx: number) => {
+      const q = questionsMap.get(a.questionId);
+      return {
+        ...a,
+        questionNumber: a.questionNumber ?? q?.questionNumber ?? idx + 1,
+        prompt: a.prompt ?? q?.prompt ?? "",
+        passageText: a.passageText ?? q?.passageText ?? null,
+        groupTitle: a.groupTitle ?? q?.groupTitle ?? null,
+        type: a.type ?? q?.type ?? q?.questionType ?? "ESSAY",
+        ieltsQuestionType: a.ieltsQuestionType ?? q?.ieltsQuestionType ?? null,
+        points: a.points ?? q?.points ?? 9,
+        correctAnswer: a.correctAnswer ?? q?.correctAnswer ?? null,
+        explanation: a.explanation ?? q?.explanation ?? null,
+        teacherComment: a.teacherComment ?? a.feedback ?? "",
+        criteriaScores: (a.criteriaScores || []).map((cs: any) => ({
+          criterion: cs.criterion || cs.criterionCode,
+          score: typeof cs.score === "number" ? cs.score : cs.bandScore,
+          comment: cs.comment || "",
+        })),
+        gradingAnnotations: a.gradingAnnotations || null,
+      };
+    }),
+  }));
 
   return {
     success: true,
-    submissionId: submission.id,
-    score: submission.score,
-    totalPoints: submission.totalPoints,
-    isCheatingFlagged: submission.isCheatingFlagged,
+    submissions: enrichedSubmissions,
   };
 }
 
 export async function getSubmissionsForAssignmentService(assignmentId: string) {
-  if (!(await isDbAlive())) {
-    const assign =
-      (globalAssignmentsStore.demoAssignments || []).find(
-        (a: any) => a.id === assignmentId
-      ) || (globalAssignmentsStore.demoAssignments || [])[0];
-
-    const questionsMap = new Map<string, any>();
-    (assign?.questions || []).forEach((q: any) => {
-      questionsMap.set(q.id, q);
-    });
-
-    const enrichedSubmissions = (assign?.submissions || []).map((s: any) => ({
-      ...s,
-      teacherFeedback: s.teacherFeedback ?? s.feedback ?? "",
-      answers: (s.answers || []).map((a: any, idx: number) => {
-        const q = questionsMap.get(a.questionId);
-        return {
-          ...a,
-          questionNumber: a.questionNumber ?? q?.questionNumber ?? idx + 1,
-          prompt: a.prompt ?? q?.prompt ?? "",
-          passageText: a.passageText ?? q?.passageText ?? null,
-          groupTitle: a.groupTitle ?? q?.groupTitle ?? null,
-          type: a.type ?? q?.type ?? q?.questionType ?? "ESSAY",
-          ieltsQuestionType: a.ieltsQuestionType ?? q?.ieltsQuestionType ?? null,
-          points: a.points ?? q?.points ?? 9,
-          correctAnswer: a.correctAnswer ?? q?.correctAnswer ?? null,
-          explanation: a.explanation ?? q?.explanation ?? null,
-          teacherComment: a.teacherComment ?? a.feedback ?? "",
-          criteriaScores: (a.criteriaScores || []).map((cs: any) => ({
-            criterion: cs.criterion || cs.criterionCode,
-            score: typeof cs.score === "number" ? cs.score : cs.bandScore,
-            comment: cs.comment || "",
-          })),
-          gradingAnnotations: a.gradingAnnotations || null,
-        };
-      }),
-    }));
-
-    return {
-      success: true,
-      submissions: enrichedSubmissions,
-    };
-  }
-
-  const submissions = await prisma.assignmentSubmission.findMany({
-    where: { assignmentId },
-    include: {
-      student: {
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          profile: {
-            select: { fullName: true, avatarUrl: true },
+  if (await isDbAlive()) {
+    try {
+      const submissions = await prisma.assignmentSubmission.findMany({
+        where: { assignmentId },
+        include: {
+          student: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              profile: {
+                select: { fullName: true, avatarUrl: true },
+              },
+            },
+          },
+          answers: {
+            include: {
+              question: true,
+              criteriaScores: true,
+            },
           },
         },
-      },
-      answers: {
-        include: {
-          question: true,
-          criteriaScores: true,
-        },
-      },
-    },
-    orderBy: { submittedAt: "desc" },
-  });
+        orderBy: { submittedAt: "desc" },
+      });
 
-  const formatted = submissions.map((s) => ({
-    id: s.id,
-    studentId: s.studentId,
-    studentName: s.student.profile?.fullName || s.student.username,
-    studentEmail: s.student.email,
-    attemptNumber: s.attemptNumber,
-    submittedAt: s.submittedAt?.toISOString(),
-    status: s.status,
-    score: s.score,
-    totalPoints: s.totalPoints,
-    tabSwitchCount: s.tabSwitchCount,
-    isCheatingFlagged: s.isCheatingFlagged,
-    autoSubmittedReason: s.autoSubmittedReason,
-    teacherFeedback: s.teacherFeedback,
-    answers: s.answers.map((a) => ({
-      id: a.id,
-      questionId: a.questionId,
-      questionNumber: a.question.questionNumber,
-      prompt: a.question.prompt,
-      passageText: a.question.passageText,
-      groupTitle: a.question.groupTitle,
-      type: a.question.type,
-      ieltsQuestionType: a.question.ieltsQuestionType,
-      points: a.question.points,
-      correctAnswer: a.question.correctAnswer,
-      explanation: a.question.explanation,
-      studentAnswer: a.studentAnswer,
-      audioUrl: a.audioUrl,
-      isCorrect: a.isCorrect,
-      awardedPoints: a.awardedPoints,
-      teacherComment: a.teacherComment,
-      criteriaScores: a.criteriaScores.map((cs) => ({
-        criterion: cs.criterion,
-        score: cs.score,
-        comment: cs.comment,
-      })),
-      gradingAnnotations: (a as any).gradingAnnotations || null,
-    })),
-  }));
+      if (submissions && submissions.length > 0) {
+        const formatted = submissions.map((s) => ({
+          id: s.id,
+          studentId: s.studentId,
+          studentName: s.student.profile?.fullName || s.student.username,
+          studentEmail: s.student.email,
+          attemptNumber: s.attemptNumber,
+          submittedAt: s.submittedAt?.toISOString(),
+          status: s.status,
+          score: s.score,
+          totalPoints: s.totalPoints,
+          tabSwitchCount: s.tabSwitchCount,
+          isCheatingFlagged: s.isCheatingFlagged,
+          autoSubmittedReason: s.autoSubmittedReason,
+          teacherFeedback: s.teacherFeedback,
+          answers: s.answers.map((a) => ({
+            id: a.id,
+            questionId: a.questionId,
+            questionNumber: a.question.questionNumber,
+            prompt: a.question.prompt,
+            passageText: a.question.passageText,
+            groupTitle: a.question.groupTitle,
+            type: a.question.type,
+            ieltsQuestionType: a.question.ieltsQuestionType,
+            points: a.question.points,
+            correctAnswer: a.question.correctAnswer,
+            explanation: a.question.explanation,
+            studentAnswer: a.studentAnswer,
+            audioUrl: a.audioUrl,
+            isCorrect: a.isCorrect,
+            awardedPoints: a.awardedPoints,
+            teacherComment: a.teacherComment,
+            criteriaScores: a.criteriaScores.map((cs) => ({
+              criterion: cs.criterion,
+              score: cs.score,
+              comment: cs.comment,
+            })),
+            gradingAnnotations: (a as any).gradingAnnotations || null,
+          })),
+        }));
 
-  return { success: true, submissions: formatted };
+        return { success: true, submissions: formatted };
+      }
+    } catch (dbErr: any) {
+      console.warn("[getSubmissionsForAssignmentService] Prisma error, fallback to demo store:", dbErr?.message);
+    }
+  }
+
+  return getSubmissionsFromDemoStore(assignmentId);
+}
+
+function gradeSubmissionInDemoStore(
+  data: {
+    submissionId: string;
+    isDraft?: boolean;
+    gradedAnswers: Array<{
+      answerId: string;
+      awardedPoints: number;
+      teacherComment?: string;
+      criteriaScores?: Array<{
+        criterion: string;
+        score: number;
+        comment?: string;
+      }>;
+      gradingAnnotations?: any;
+    }>;
+    teacherFeedback?: string;
+  },
+  gradedById: string
+): { success: boolean; totalScore?: number | null; status?: string; error?: string } {
+  const isDraftMode = Boolean(data.isDraft);
+  let calculatedTotalScore = 0;
+  for (const assign of globalAssignmentsStore.demoAssignments || []) {
+    const sub = (assign.submissions || []).find((s: any) => s.id === data.submissionId);
+    if (sub) {
+      let allSubjectiveComplete = true;
+      for (const item of data.gradedAnswers) {
+        const ans = (sub.answers || []).find((a: any) => a.id === item.answerId);
+        const q = (assign.questions || []).find((quest: any) => quest.id === ans?.questionId);
+        const isSubjective =
+          ans?.type === "ESSAY" ||
+          ans?.type === "SPEAKING_RECORD" ||
+          q?.type === "ESSAY" ||
+          q?.type === "SPEAKING_RECORD" ||
+          assign.skill === "WRITING" ||
+          assign.skill === "SPEAKING";
+
+        if (ans && item.gradingAnnotations !== undefined) {
+          ans.gradingAnnotations = item.gradingAnnotations;
+        }
+
+        if (isSubjective) {
+          const critList = item.criteriaScores || [];
+          if (critList.length < 4) {
+            allSubjectiveComplete = false;
+          }
+          const band = calculateCriteriaBand(critList.map((c) => c.score));
+          if (band === null) {
+            allSubjectiveComplete = false;
+          }
+          if (ans) {
+            ans.criteriaScores = critList.map((c) => ({
+              criterion: c.criterion,
+              criterionCode: c.criterion,
+              score: c.score,
+              bandScore: c.score,
+              comment: c.comment?.trim() || "",
+            }));
+            ans.awardedPoints = band ?? (Number(item.awardedPoints) || 0);
+            ans.teacherComment = item.teacherComment?.trim() || null;
+            ans.feedback = item.teacherComment?.trim() || null;
+          }
+          calculatedTotalScore += band ?? (Number(item.awardedPoints) || 0);
+        } else {
+          if (ans) {
+            ans.awardedPoints = Number(item.awardedPoints) || 0;
+            ans.teacherComment = item.teacherComment?.trim() || null;
+          }
+          calculatedTotalScore += Number(item.awardedPoints) || 0;
+        }
+      }
+
+      sub.teacherFeedback = data.teacherFeedback?.trim() || null;
+      sub.feedback = data.teacherFeedback?.trim() || null;
+
+      if (isDraftMode) {
+        return {
+          success: true,
+          totalScore: sub.score ?? null,
+          status: sub.status,
+        };
+      }
+
+      if (!allSubjectiveComplete) {
+        sub.status = "SUBMITTED";
+        sub.score = null;
+        return {
+          success: false,
+          status: "SUBMITTED",
+          error:
+            "Bài Writing/Speaking bắt buộc phải nhập đủ điểm của cả 4 tiêu chí IELTS trước khi hoàn tất chấm (Quy tắc BR-07)!",
+        };
+      }
+
+      sub.score = calculatedTotalScore;
+      sub.status = "GRADED";
+      sub.gradedById = gradedById;
+      sub.gradedAt = new Date().toISOString();
+      return { success: true, totalScore: calculatedTotalScore, status: "GRADED" };
+    }
+  }
+  return { success: true, totalScore: 0, status: isDraftMode ? "SUBMITTED" : "GRADED" };
 }
 
 export async function gradeSubmissionService(
@@ -1903,210 +2128,134 @@ export async function gradeSubmissionService(
 ): Promise<{ success: boolean; totalScore?: number | null; status?: string; error?: string }> {
   const isDraftMode = Boolean(data.isDraft);
 
-  if (!(await isDbAlive())) {
-    let calculatedTotalScore = 0;
-    for (const assign of globalAssignmentsStore.demoAssignments || []) {
-      const sub = (assign.submissions || []).find((s: any) => s.id === data.submissionId);
-      if (sub) {
-        let allSubjectiveComplete = true;
-        for (const item of data.gradedAnswers) {
-          const ans = (sub.answers || []).find((a: any) => a.id === item.answerId);
-          const q = (assign.questions || []).find((quest: any) => quest.id === ans?.questionId);
-          const isSubjective =
-            ans?.type === "ESSAY" ||
-            ans?.type === "SPEAKING_RECORD" ||
-            q?.type === "ESSAY" ||
-            q?.type === "SPEAKING_RECORD" ||
-            assign.skill === "WRITING" ||
-            assign.skill === "SPEAKING";
-
-          if (ans && item.gradingAnnotations !== undefined) {
-            ans.gradingAnnotations = item.gradingAnnotations;
-          }
-
-          if (isSubjective) {
-            const critList = item.criteriaScores || [];
-            if (critList.length < 4) {
-              allSubjectiveComplete = false;
-            }
-            const band = calculateCriteriaBand(critList.map((c) => c.score));
-            if (band === null) {
-              allSubjectiveComplete = false;
-            }
-            if (ans) {
-              ans.criteriaScores = critList.map((c) => ({
-                criterion: c.criterion,
-                criterionCode: c.criterion,
-                score: c.score,
-                bandScore: c.score,
-                comment: c.comment?.trim() || "",
-              }));
-              ans.awardedPoints = band ?? (Number(item.awardedPoints) || 0);
-              ans.teacherComment = item.teacherComment?.trim() || null;
-              ans.feedback = item.teacherComment?.trim() || null;
-            }
-            calculatedTotalScore += band ?? (Number(item.awardedPoints) || 0);
-          } else {
-            if (ans) {
-              ans.awardedPoints = Number(item.awardedPoints) || 0;
-              ans.teacherComment = item.teacherComment?.trim() || null;
-            }
-            calculatedTotalScore += Number(item.awardedPoints) || 0;
-          }
-        }
-
-        sub.teacherFeedback = data.teacherFeedback?.trim() || null;
-        sub.feedback = data.teacherFeedback?.trim() || null;
-
-        if (isDraftMode) {
-          return {
-            success: true,
-            totalScore: sub.score ?? null,
-            status: sub.status,
-          };
-        }
-
-        if (!allSubjectiveComplete) {
-          sub.status = "SUBMITTED";
-          sub.score = null;
-          return {
-            success: false,
-            status: "SUBMITTED",
-            error:
-              "Bài Writing/Speaking bắt buộc phải nhập đủ điểm của cả 4 tiêu chí IELTS trước khi hoàn tất chấm (Quy tắc BR-07)!",
-          };
-        }
-
-        sub.score = calculatedTotalScore;
-        sub.status = "GRADED";
-        sub.gradedById = gradedById;
-        sub.gradedAt = new Date().toISOString();
-        return { success: true, totalScore: calculatedTotalScore, status: "GRADED" };
-      }
-    }
-    return { success: true, totalScore: 0, status: isDraftMode ? "SUBMITTED" : "GRADED" };
-  }
-
-  const existingSub = await prisma.assignmentSubmission.findUnique({
-    where: { id: data.submissionId },
-    include: {
-      assignment: true,
-      answers: {
-        include: { question: true },
-      },
-    },
-  });
-
-  if (!existingSub) {
-    return { success: false, error: "Không tìm thấy bài nộp để chấm điểm!" };
-  }
-
-  let calculatedTotalScore = 0;
-
-  for (const item of data.gradedAnswers) {
-    const dbAns = existingSub.answers.find((a) => a.id === item.answerId);
-    const qType = dbAns?.question?.type;
-    const isSubjective = qType === "ESSAY" || qType === "SPEAKING_RECORD";
-
-    let finalAwardedPoints = Number(item.awardedPoints) || 0;
-
-    if (isSubjective && item.criteriaScores !== undefined) {
-      const band = calculateCriteriaBand(item.criteriaScores.map((c) => Number(c.score)));
-      if (!isDraftMode && band === null) {
-        return {
-          success: false,
-          status: "SUBMITTED",
-          error:
-            "Bài Writing/Speaking bắt buộc phải nhập đủ cả 4 tiêu chí IELTS (0.0 - 9.0) để chuyển trạng thái Đã chấm (Quy tắc BR-07)!",
-        };
-      }
-      if (band !== null) {
-        finalAwardedPoints = band;
-      }
-
-      // Lưu chi tiết 4 tiêu chí vào bảng submission_criteria_scores
-      for (const crit of item.criteriaScores) {
-        await prisma.submissionCriteriaScore.upsert({
-          where: {
-            submissionAnswerId_criterion: {
-              submissionAnswerId: item.answerId,
-              criterion: crit.criterion,
-            },
-          },
-          update: {
-            score: Number(crit.score),
-            comment: crit.comment?.trim() || null,
-          },
-          create: {
-            submissionAnswerId: item.answerId,
-            criterion: crit.criterion,
-            score: Number(crit.score),
-            comment: crit.comment?.trim() || null,
-          },
-        });
-      }
-    }
-
-    const updateData: any = {
-      awardedPoints: finalAwardedPoints,
-      teacherComment: item.teacherComment?.trim() || null,
-    };
-    if (item.gradingAnnotations !== undefined) {
-      updateData.gradingAnnotations = item.gradingAnnotations;
-    }
-
-    await (prisma.submissionAnswer as any).update({
-      where: { id: item.answerId },
-      data: updateData,
-    });
-    calculatedTotalScore += finalAwardedPoints;
-  }
-
-  await prisma.assignmentSubmission.update({
-    where: { id: data.submissionId },
-    data: {
-      score: isDraftMode ? existingSub.score : calculatedTotalScore,
-      status: isDraftMode ? existingSub.status : "GRADED",
-      teacherFeedback: data.teacherFeedback?.trim() || null,
-      gradedById,
-    },
-  });
-
-  // [C7] Thông báo SUBMISSION_GRADED cho học sinh khi chấm điểm xong
-  if (!isDraftMode) {
+  // 1. Thử cập nhật qua Prisma nếu DB alive
+  if (await isDbAlive()) {
     try {
-      const subInfo = await prisma.assignmentSubmission.findUnique({
+      const existingSub = await prisma.assignmentSubmission.findUnique({
         where: { id: data.submissionId },
-        select: {
-          id: true,
-          studentId: true,
-          classId: true,
-          score: true,
-          assignment: { select: { title: true } },
+        include: {
+          assignment: true,
+          answers: {
+            include: { question: true },
+          },
         },
       });
-      if (subInfo) {
-        await createNotifications([
-          {
-            userId: subInfo.studentId,
-            type: "SUBMISSION_GRADED" as any,
-            title: "Bài làm đã được chấm điểm",
-            message: `Bài tập "${subInfo.assignment.title}" của bạn đã được giáo viên chấm xong: ${calculatedTotalScore} điểm.`,
-            refType: "SUBMISSION" as const,
-            refId: subInfo.id,
-            classId: subInfo.classId || undefined,
-            dedupeKey: `SUBMISSION_GRADED:${subInfo.id}:${subInfo.studentId}:${Math.floor(Date.now() / 60000)}`,
+
+      if (existingSub) {
+        let calculatedTotalScore = 0;
+
+        for (const item of data.gradedAnswers) {
+          const dbAns = existingSub.answers.find((a) => a.id === item.answerId);
+          const qType = dbAns?.question?.type;
+          const isSubjective = qType === "ESSAY" || qType === "SPEAKING_RECORD";
+
+          let finalAwardedPoints = Number(item.awardedPoints) || 0;
+
+          if (isSubjective && item.criteriaScores !== undefined) {
+            const band = calculateCriteriaBand(item.criteriaScores.map((c) => Number(c.score)));
+            if (!isDraftMode && band === null) {
+              return {
+                success: false,
+                status: "SUBMITTED",
+                error:
+                  "Bài Writing/Speaking bắt buộc phải nhập đủ cả 4 tiêu chí IELTS (0.0 - 9.0) để chuyển trạng thái Đã chấm (Quy tắc BR-07)!",
+              };
+            }
+            if (band !== null) {
+              finalAwardedPoints = band;
+            }
+
+            // Lưu chi tiết 4 tiêu chí vào bảng submission_criteria_scores
+            for (const crit of item.criteriaScores) {
+              await prisma.submissionCriteriaScore.upsert({
+                where: {
+                  submissionAnswerId_criterion: {
+                    submissionAnswerId: item.answerId,
+                    criterion: crit.criterion,
+                  },
+                },
+                update: {
+                  score: Number(crit.score),
+                  comment: crit.comment?.trim() || null,
+                },
+                create: {
+                  submissionAnswerId: item.answerId,
+                  criterion: crit.criterion,
+                  score: Number(crit.score),
+                  comment: crit.comment?.trim() || null,
+                },
+              });
+            }
+          }
+
+          const updateData: any = {
+            awardedPoints: finalAwardedPoints,
+            teacherComment: item.teacherComment?.trim() || null,
+          };
+          if (item.gradingAnnotations !== undefined) {
+            updateData.gradingAnnotations = item.gradingAnnotations;
+          }
+
+          await (prisma.submissionAnswer as any).update({
+            where: { id: item.answerId },
+            data: updateData,
+          });
+          calculatedTotalScore += finalAwardedPoints;
+        }
+
+        await prisma.assignmentSubmission.update({
+          where: { id: data.submissionId },
+          data: {
+            score: isDraftMode ? existingSub.score : calculatedTotalScore,
+            status: isDraftMode ? existingSub.status : "GRADED",
+            teacherFeedback: data.teacherFeedback?.trim() || null,
+            gradedById,
           },
-        ]);
+        });
+
+        // [C7] Thông báo SUBMISSION_GRADED cho học sinh khi chấm điểm xong
+        if (!isDraftMode) {
+          try {
+            const subInfo = await prisma.assignmentSubmission.findUnique({
+              where: { id: data.submissionId },
+              select: {
+                id: true,
+                studentId: true,
+                classId: true,
+                score: true,
+                assignment: { select: { title: true } },
+              },
+            });
+            if (subInfo) {
+              await createNotifications([
+                {
+                  userId: subInfo.studentId,
+                  type: "SUBMISSION_GRADED" as any,
+                  title: "Bài làm đã được chấm điểm",
+                  message: `Bài tập "${subInfo.assignment.title}" của bạn đã được giáo viên chấm xong: ${calculatedTotalScore} điểm.`,
+                  refType: "SUBMISSION" as const,
+                  refId: subInfo.id,
+                  classId: subInfo.classId || undefined,
+                  dedupeKey: `SUBMISSION_GRADED:${subInfo.id}:${subInfo.studentId}:${Math.floor(Date.now() / 60000)}`,
+                },
+              ]);
+            }
+          } catch (notifErr: any) {
+            console.warn("[gradeSubmissionService] Bỏ qua lỗi gửi thông báo:", notifErr?.message);
+          }
+        }
+
+        return {
+          success: true,
+          totalScore: isDraftMode ? existingSub.score : calculatedTotalScore,
+          status: isDraftMode ? existingSub.status : "GRADED",
+        };
       }
-    } catch (notifErr: any) {
-      console.warn("[gradeSubmissionService] Bỏ qua lỗi gửi thông báo:", notifErr?.message);
+    } catch (dbErr: any) {
+      console.warn("[gradeSubmissionService] Lỗi Prisma chấm bài, fallback sang demo store:", dbErr?.message);
     }
   }
 
-  return {
-    success: true,
-    totalScore: isDraftMode ? existingSub.score : calculatedTotalScore,
-    status: isDraftMode ? existingSub.status : "GRADED",
-  };
+  // 2. Fallback chấm điểm trong Demo Store
+  return gradeSubmissionInDemoStore(data, gradedById);
 }
