@@ -23,7 +23,7 @@ import { canStudentViewAnswers } from "@/lib/assignment-config";
 import { createNotifications } from "./notification.service";
 import { logSystemWarning } from "@/lib/telemetry";
 
-const DEMO_STORE_VERSION = "v2026-reports-v3";
+const DEMO_STORE_VERSION = "v2026-15-users-reports-v4";
 
 const globalAssignmentsStore = globalThis as unknown as {
   demoAssignments?: any[];
@@ -85,6 +85,10 @@ if (
     {
       id: "demo-assign-1",
       classId: "demo-class-1",
+      assignedClasses: [
+        { id: "ac-1-1", classId: "demo-class-1", isActive: true },
+        { id: "ac-1-2", classId: "demo-class-2", isActive: true },
+      ],
       title: "IELTS Reading Practice: The History of Tea Culture",
       description: "Đọc bài khóa học thuật và hoàn thành 4 câu hỏi thuộc các dạng MCQ, True/False/Not Given và Summary Completion.",
       skill: "READING",
@@ -223,7 +227,7 @@ if (
           classId: "demo-class-1",
           studentId: "st-1",
           studentName: "Trần Thị Lan",
-          studentEmail: "hv001@simpace.vn",
+          studentEmail: "lan.tran@simpace.vn",
           attemptNumber: 1,
           status: "GRADED",
           score: 3,
@@ -242,9 +246,9 @@ if (
           id: "sub-r-long",
           assignmentId: "demo-assign-1",
           classId: "demo-class-1",
-          studentId: "st-2",
+          studentId: "demo-student-3",
           studentName: "Lê Hoàng Long",
-          studentEmail: "hv002@simpace.vn",
+          studentEmail: "long.le@simpace.vn",
           attemptNumber: 1,
           status: "GRADED",
           score: 1,
@@ -265,6 +269,10 @@ if (
     {
       id: "demo-assign-2",
       classId: "demo-class-1",
+      assignedClasses: [
+        { id: "ac-2-1", classId: "demo-class-1", isActive: true },
+        { id: "ac-2-2", classId: "demo-class-2", isActive: true },
+      ],
       title: "IELTS Listening Practice: Campus Accommodation & Library Tour",
       description: "Nghe audio và hoàn thành 3 câu hỏi Form Completion, Multiple Choice & Map Labeling.",
       skill: "LISTENING",
@@ -358,9 +366,9 @@ if (
           id: "sub-l-lan",
           assignmentId: "demo-assign-2",
           classId: "demo-class-1",
-          studentId: "st-1",
+          studentId: "demo-student-2",
           studentName: "Trần Thị Lan",
-          studentEmail: "hv001@simpace.vn",
+          studentEmail: "lan.tran@simpace.vn",
           attemptNumber: 1,
           status: "GRADED",
           score: 2,
@@ -379,6 +387,10 @@ if (
     {
       id: "demo-assign-3",
       classId: "demo-class-1",
+      assignedClasses: [
+        { id: "ac-3-1", classId: "demo-class-1", isActive: true },
+        { id: "ac-3-2", classId: "demo-class-2", isActive: true },
+      ],
       title: "IELTS Academic Writing Test: Task 1 & Task 2 (Urbanization)",
       description: "Bài thi Writing gồm Task 1 (150 từ) và Task 2 (250 từ). Chấm theo 4 tiêu chí chuẩn IELTS: TA/TR, CC, LR, GRA.",
       skill: "WRITING",
@@ -567,9 +579,9 @@ if (
           id: "sub-w-lan-pending",
           assignmentId: "demo-assign-3",
           classId: "demo-class-1",
-          studentId: "st-1",
+          studentId: "demo-student-2",
           studentName: "Trần Thị Lan",
-          studentEmail: "hv001@simpace.vn",
+          studentEmail: "lan.tran@simpace.vn",
           attemptNumber: 1,
           status: "SUBMITTED",
           score: null,
@@ -642,9 +654,9 @@ if (
           id: "sub-w-long-pending",
           assignmentId: "demo-assign-3",
           classId: "demo-class-1",
-          studentId: "st-2",
+          studentId: "demo-student-3",
           studentName: "Lê Hoàng Long",
-          studentEmail: "hv002@simpace.vn",
+          studentEmail: "long.le@simpace.vn",
           attemptNumber: 1,
           status: "SUBMITTED",
           score: null,
@@ -678,6 +690,10 @@ if (
     {
       id: "demo-assign-4",
       classId: "demo-class-1",
+      assignedClasses: [
+        { id: "ac-4-1", classId: "demo-class-1", isActive: true },
+        { id: "ac-4-2", classId: "demo-class-2", isActive: true },
+      ],
       title: "IELTS Speaking Mock Test: Part 2 & Part 3 (Technology in Education)",
       description: "Bài thi Speaking thu âm trực tiếp. Giáo viên chấm theo 4 tiêu chí chuẩn IELTS: FC, LR, GRA, P.",
       skill: "SPEAKING",
@@ -803,9 +819,9 @@ if (
           id: "sub-s-lan-pending",
           assignmentId: "demo-assign-4",
           classId: "demo-class-1",
-          studentId: "st-1",
+          studentId: "demo-student-2",
           studentName: "Trần Thị Lan",
-          studentEmail: "hv001@simpace.vn",
+          studentEmail: "lan.tran@simpace.vn",
           attemptNumber: 1,
           status: "SUBMITTED",
           score: null,
@@ -830,6 +846,10 @@ if (
     {
       id: "demo-assign-5",
       classId: "demo-class-1",
+      assignedClasses: [
+        { id: "ac-5-1", classId: "demo-class-1", isActive: true },
+        { id: "ac-5-2", classId: "demo-class-2", isActive: true },
+      ],
       title: "IELTS Reading Intensive: Renewable Energy (Bài tập đã quá hạn)",
       description: "Bài tập đã qua hạn nộp để kiểm tra quy tắc khóa nút nộp bài (BR-05, BR-06) và cảnh báo học sinh quá hạn.",
       skill: "READING",

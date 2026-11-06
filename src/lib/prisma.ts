@@ -21,8 +21,10 @@ function parseDbHostAndPort(): { host: string; port: number } {
     const urlStr = process.env.DATABASE_URL;
     if (!urlStr) return { host: "127.0.0.1", port: 5432 };
     const parsed = new URL(urlStr);
+    let host = parsed.hostname || "127.0.0.1";
+    if (host === "localhost") host = "127.0.0.1";
     return {
-      host: parsed.hostname || "127.0.0.1",
+      host,
       port: parsed.port ? parseInt(parsed.port, 10) : 5432,
     };
   } catch {
@@ -64,6 +66,7 @@ export async function isDbAlive(): Promise<boolean> {
   const isSocketOpen = await new Promise<boolean>((resolve) => {
     try {
       const socket = net.createConnection({ host, port, timeout: 300 });
+      socket.unref();
       socket.once("connect", () => {
         socket.destroy();
         resolve(true);

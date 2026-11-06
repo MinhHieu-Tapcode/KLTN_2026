@@ -8,19 +8,27 @@ import { sendAccountCreatedEmail } from "@/lib/mail";
 import { resolveRealClassId, resolveRealSchoolId } from "./class.service";
 import { logSystemWarning } from "@/lib/telemetry";
 
+const DEMO_USERS_VERSION = "v2026-15-users-v2";
+
 const globalUsersStore = globalThis as unknown as {
   demoUsers?: any[];
+  demoUsersVersion?: string;
 };
 
-if (!globalUsersStore.demoUsers) {
+const BCRYPT_SIMPACE_2026 = "$2a$10$kBQUZavMrSd7zY/VMpYOdeYWfzP5ZJ9QxQQ59Jncrlj2ytKSCtjhy";
+
+if (!globalUsersStore.demoUsers || globalUsersStore.demoUsersVersion !== DEMO_USERS_VERSION) {
+  globalUsersStore.demoUsersVersion = DEMO_USERS_VERSION;
   globalUsersStore.demoUsers = [
     {
       id: "admin-demo-id",
       username: "admin",
       email: "admin@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
       role: { code: "ADMIN", name: "Quản trị viên" },
       profile: { fullName: "Quản trị viên Hệ thống", phoneNumber: "0987654321" },
       isActive: true,
+      mustChangePassword: false,
       classAssignments: [],
       classEnrollments: [],
       managedSchools: [],
@@ -29,9 +37,11 @@ if (!globalUsersStore.demoUsers) {
       id: "demo-manager-1",
       username: "manager_quan",
       email: "manager@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
       role: { code: "SCHOOL_MANAGER", name: "Quản nhiệm trường học" },
       profile: { fullName: "ThS. Hoàng Văn Quản", phoneNumber: "0981234567" },
       isActive: true,
+      mustChangePassword: false,
       classAssignments: [],
       classEnrollments: [],
       managedSchools: [
@@ -42,9 +52,11 @@ if (!globalUsersStore.demoUsers) {
       id: "demo-staff-1",
       username: "teacher_huong",
       email: "teacher@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
       role: { code: "TEACHER", name: "Giáo viên giảng dạy" },
       profile: { fullName: "Cô Nguyễn Thu Hường", phoneNumber: "0912345678" },
       isActive: true,
+      mustChangePassword: false,
       classAssignments: [
         {
           id: "as-1",
@@ -56,26 +68,32 @@ if (!globalUsersStore.demoUsers) {
             school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
           },
         },
+        {
+          id: "as-2",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_TD_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
       ],
       classEnrollments: [],
       managedSchools: [],
     },
     {
-      id: "demo-student-1",
-      username: "HV1001",
-      email: "student@simpace.vn",
-      role: { code: "STUDENT", name: "Học viên" },
-      profile: {
-        fullName: "Nguyễn Văn An",
-        phoneNumber: "0934567890",
-        entryIeltsScore: 6.0,
-        ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
-      },
+      id: "teacher-1",
+      username: "teacher1",
+      email: "gv.nguyenvan@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "TEACHER", name: "Giáo viên giảng dạy" },
+      profile: { fullName: "ThS. Nguyễn Văn A", phoneNumber: "0901234567" },
       isActive: true,
-      classAssignments: [],
-      classEnrollments: [
+      mustChangePassword: false,
+      classAssignments: [
         {
-          id: "en-0",
+          id: "as-3",
           classId: "demo-class-1",
           class: {
             id: "demo-class-1",
@@ -85,20 +103,49 @@ if (!globalUsersStore.demoUsers) {
           },
         },
       ],
+      classEnrollments: [],
       managedSchools: [],
     },
     {
-      id: "st-1",
-      username: "HV1002",
-      email: "lan.tran@gmail.com",
+      id: "ta-1",
+      username: "ta_mai",
+      email: "ta.mai@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "TEACHING_ASSISTANT", name: "Trợ giảng" },
+      profile: { fullName: "Vũ Phương Mai", phoneNumber: "0907654321" },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [
+        {
+          id: "as-ta-1",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      classEnrollments: [],
+      managedSchools: [],
+    },
+
+    // 15 Học viên mẫu (HV1001 -> HV1015) đầy đủ dữ liệu thực tế
+    {
+      id: "demo-student-1",
+      username: "HV1001",
+      email: "student@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
       role: { code: "STUDENT", name: "Học viên" },
       profile: {
-        fullName: "Trần Thị Lan",
-        phoneNumber: "0912345671",
-        entryIeltsScore: 5.5,
+        fullName: "Nguyễn Văn An",
+        phoneNumber: "0934567801",
+        entryIeltsScore: 6.0,
         ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
       },
       isActive: true,
+      mustChangePassword: false,
       classAssignments: [],
       classEnrollments: [
         {
@@ -115,33 +162,444 @@ if (!globalUsersStore.demoUsers) {
       managedSchools: [],
     },
     {
-      id: "st-2",
-      username: "HV1003",
-      email: "long.le@gmail.com",
+      id: "st-1",
+      username: "HV1002",
+      email: "lan.tran@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
       role: { code: "STUDENT", name: "Học viên" },
       profile: {
-        fullName: "Lê Hoàng Long",
-        phoneNumber: "0912345672",
-        entryIeltsScore: 6.5,
-        ieltsLevel: { id: "lvl-advanced", name: "Nâng cao", code: "ADVANCED" },
+        fullName: "Trần Thị Lan",
+        phoneNumber: "0934567802",
+        entryIeltsScore: 5.5,
+        ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
       },
       isActive: true,
+      mustChangePassword: false,
       classAssignments: [],
       classEnrollments: [
         {
           id: "en-2",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-3",
+      username: "HV1003",
+      email: "long.le@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Lê Hoàng Long",
+        phoneNumber: "0934567803",
+        entryIeltsScore: 6.5,
+        ieltsLevel: { id: "lvl-advanced", name: "Nâng cao", code: "ADVANCED" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-3",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-4",
+      username: "HV1004",
+      email: "chau.pham@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Phạm Minh Châu",
+        phoneNumber: "0934567804",
+        entryIeltsScore: 5.0,
+        ieltsLevel: { id: "lvl-pre-int", name: "Tiền trung cấp", code: "PRE_INTERMEDIATE" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-4",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-5",
+      username: "HV1005",
+      email: "duc.hoang@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Hoàng Anh Đức",
+        phoneNumber: "0934567805",
+        entryIeltsScore: 7.0,
+        ieltsLevel: { id: "lvl-advanced", name: "Nâng cao", code: "ADVANCED" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-5",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-6",
+      username: "HV1006",
+      email: "ngoc.vu@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Vũ Bảo Ngọc",
+        phoneNumber: "0934567806",
+        entryIeltsScore: 4.5,
+        ieltsLevel: { id: "lvl-pre-int", name: "Tiền trung cấp", code: "PRE_INTERMEDIATE" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-6",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-7",
+      username: "HV1007",
+      email: "tuan.dang@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Đặng Quốc Tuấn",
+        phoneNumber: "0934567807",
+        entryIeltsScore: 6.0,
+        ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-7",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-8",
+      username: "HV1008",
+      email: "mai.bui@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Bùi Thanh Mai",
+        phoneNumber: "0934567808",
+        entryIeltsScore: 7.5,
+        ieltsLevel: { id: "lvl-advanced", name: "Nâng cao", code: "ADVANCED" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-8",
+          classId: "demo-class-1",
+          class: {
+            id: "demo-class-1",
+            code: "IELTS_TD_01",
+            name: "IELTS Bứt Phá - 10A1",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-9",
+      username: "HV1009",
+      email: "nam.dinh@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Đinh Hải Nam",
+        phoneNumber: "0934567809",
+        entryIeltsScore: 3.5,
+        ieltsLevel: { id: "lvl-beginner", name: "Mới bắt đầu", code: "BEGINNER" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-9",
           classId: "demo-class-2",
           class: {
             id: "demo-class-2",
-            code: "IELTS_KL_02",
+            code: "IELTS_TD_02",
             name: "IELTS Nền Tảng - 11B2",
-            school: { id: "demo-school-2", name: "THPT Kim Liên", code: "SCH_KL" },
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-10",
+      username: "HV1010",
+      email: "linh.do@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Đỗ Khánh Linh",
+        phoneNumber: "0934567810",
+        entryIeltsScore: 5.5,
+        ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-10",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_TD_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-11",
+      username: "HV1011",
+      email: "trung.ngo@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Ngô Quang Trung",
+        phoneNumber: "0934567811",
+        entryIeltsScore: 6.5,
+        ieltsLevel: { id: "lvl-advanced", name: "Nâng cao", code: "ADVANCED" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-11",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_TD_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-12",
+      username: "HV1012",
+      email: "ha.duong@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Dương Thu Hà",
+        phoneNumber: "0934567812",
+        entryIeltsScore: 4.0,
+        ieltsLevel: { id: "lvl-beginner", name: "Mới bắt đầu", code: "BEGINNER" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-12",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_TD_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-13",
+      username: "HV1013",
+      email: "huy.ly@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Lý Gia Huy",
+        phoneNumber: "0934567813",
+        entryIeltsScore: 5.0,
+        ieltsLevel: { id: "lvl-pre-int", name: "Tiền trung cấp", code: "PRE_INTERMEDIATE" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-13",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_TD_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-14",
+      username: "HV1014",
+      email: "nhu.phan@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Phan Quỳnh Như",
+        phoneNumber: "0934567814",
+        entryIeltsScore: 8.0,
+        ieltsLevel: { id: "lvl-advanced", name: "Nâng cao", code: "ADVANCED" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-14",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_TD_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
+          },
+        },
+      ],
+      managedSchools: [],
+    },
+    {
+      id: "demo-student-15",
+      username: "HV1015",
+      email: "khoa.truong@simpace.vn",
+      passwordHash: BCRYPT_SIMPACE_2026,
+      role: { code: "STUDENT", name: "Học viên" },
+      profile: {
+        fullName: "Trương Đăng Khoa",
+        phoneNumber: "0934567815",
+        entryIeltsScore: 6.0,
+        ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
+      },
+      isActive: true,
+      mustChangePassword: false,
+      classAssignments: [],
+      classEnrollments: [
+        {
+          id: "en-15",
+          classId: "demo-class-2",
+          class: {
+            id: "demo-class-2",
+            code: "IELTS_TD_02",
+            name: "IELTS Nền Tảng - 11B2",
+            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
           },
         },
       ],
       managedSchools: [],
     },
   ];
+}
+
+/**
+ * Trả về danh sách người dùng demo trong bộ nhớ
+ */
+export function getDemoUsersList(): any[] {
+  return globalUsersStore.demoUsers || [];
+}
+
+/**
+ * Tìm kiếm người dùng demo theo username hoặc email (hỗ trợ xác thực Vercel offline)
+ */
+export function findDemoUserByIdentifier(identifier: string): any | null {
+  const clean = identifier.trim().toLowerCase();
+  return (
+    (globalUsersStore.demoUsers || []).find((u) => {
+      const email = u.email?.toLowerCase();
+      const uname = u.username?.toLowerCase();
+      return (
+        email === clean ||
+        uname === clean ||
+        (clean === "student" && email === "student@simpace.vn") ||
+        (clean === "teacher" && email === "teacher@simpace.vn") ||
+        (clean === "admin" && email === "admin@simpace.vn") ||
+        (clean === "manager" && email === "manager@simpace.vn") ||
+        (clean === "student_an" && email === "student@simpace.vn") ||
+        (clean === "teacher_huong" && email === "teacher@simpace.vn") ||
+        (clean === "lan.tran@gmail.com" && email === "lan.tran@simpace.vn") ||
+        (clean === "long.le@gmail.com" && email === "long.le@simpace.vn")
+      );
+    }) || null
+  );
 }
 
 const RFC5322_EMAIL_REGEX =
@@ -374,6 +832,13 @@ export async function getTeachersService() {
   if (!(await isDbAlive())) {
     return [
       {
+        id: "demo-staff-1",
+        username: "teacher_huong",
+        email: "teacher@simpace.vn",
+        role: { code: "TEACHER", name: "Giáo viên giảng dạy" },
+        profile: { fullName: "Cô Nguyễn Thu Hường", phoneNumber: "0912345678" },
+      },
+      {
         id: "teacher-1",
         username: "teacher1",
         email: "gv.nguyenvan@simpace.vn",
@@ -391,6 +856,13 @@ export async function getTeachersService() {
   } catch (err: any) {
     console.warn("[getTeachersService] DB offline fallback:", err?.message);
     return [
+      {
+        id: "demo-staff-1",
+        username: "teacher_huong",
+        email: "teacher@simpace.vn",
+        role: { code: "TEACHER", name: "Giáo viên giảng dạy" },
+        profile: { fullName: "Cô Nguyễn Thu Hường", phoneNumber: "0912345678" },
+      },
       {
         id: "teacher-1",
         username: "teacher1",

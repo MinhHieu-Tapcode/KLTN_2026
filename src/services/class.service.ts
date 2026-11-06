@@ -5,11 +5,15 @@ import { ClassStatus, StaffClassRole } from "@prisma/client";
 import { areSchedulesConflicting, validateScheduleString } from "@/lib/schedule";
 import { logSystemWarning } from "@/lib/telemetry";
 
+const DEMO_CLASSES_VERSION = "v2026-15-users-classes-v2";
+
 const globalClassesStore = globalThis as unknown as {
   demoClasses?: any[];
+  demoClassesVersion?: string;
 };
 
-if (!globalClassesStore.demoClasses) {
+if (!globalClassesStore.demoClasses || globalClassesStore.demoClassesVersion !== DEMO_CLASSES_VERSION) {
+  globalClassesStore.demoClassesVersion = DEMO_CLASSES_VERSION;
   globalClassesStore.demoClasses = [
     {
       id: "demo-class-1",
@@ -26,64 +30,137 @@ if (!globalClassesStore.demoClasses) {
       assignments: [
         {
           id: "as-1",
+          userId: "demo-staff-1",
+          roleInClass: "TEACHER",
+          staff: {
+            id: "demo-staff-1",
+            username: "teacher_huong",
+            email: "teacher@simpace.vn",
+            profile: { fullName: "Cô Nguyễn Thu Hường" },
+          },
+        },
+        {
+          id: "as-2",
           userId: "teacher-1",
           roleInClass: "TEACHER",
           staff: {
+            id: "teacher-1",
             username: "teacher1",
             email: "gv.nguyenvan@simpace.vn",
             profile: { fullName: "ThS. Nguyễn Văn A" },
           },
         },
         {
-          id: "as-2",
-          userId: "demo-staff-1",
-          roleInClass: "TEACHER",
+          id: "as-ta-1",
+          userId: "ta-1",
+          roleInClass: "TEACHING_ASSISTANT",
           staff: {
-            username: "teacher_huong",
-            email: "teacher@simpace.vn",
-            profile: { fullName: "Cô Nguyễn Thu Hường" },
+            id: "ta-1",
+            username: "ta_mai",
+            email: "ta.mai@simpace.vn",
+            profile: { fullName: "Vũ Phương Mai" },
           },
         },
       ],
       enrollments: [
         {
-          id: "en-0",
+          id: "en-1",
           studentId: "demo-student-1",
           status: "STUDYING",
           student: {
             id: "demo-student-1",
-            username: "student_an",
+            username: "HV1001",
             email: "student@simpace.vn",
             isActive: true,
             profile: { fullName: "Nguyễn Văn An", entryIeltsScore: 6.0 },
           },
         },
         {
-          id: "en-1",
+          id: "en-2",
           studentId: "st-1",
           status: "STUDYING",
           student: {
             id: "st-1",
-            username: "HV001",
-            email: "hv001@simpace.vn",
+            username: "HV1002",
+            email: "lan.tran@simpace.vn",
             isActive: true,
             profile: { fullName: "Trần Thị Lan", entryIeltsScore: 5.5 },
           },
         },
         {
-          id: "en-2",
-          studentId: "st-2",
+          id: "en-3",
+          studentId: "demo-student-3",
           status: "STUDYING",
           student: {
-            id: "st-2",
-            username: "HV002",
-            email: "hv002@simpace.vn",
+            id: "demo-student-3",
+            username: "HV1003",
+            email: "long.le@simpace.vn",
             isActive: true,
-            profile: { fullName: "Lê Hoàng Long", entryIeltsScore: 5.0 },
+            profile: { fullName: "Lê Hoàng Long", entryIeltsScore: 6.5 },
+          },
+        },
+        {
+          id: "en-4",
+          studentId: "demo-student-4",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-4",
+            username: "HV1004",
+            email: "chau.pham@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Phạm Minh Châu", entryIeltsScore: 5.0 },
+          },
+        },
+        {
+          id: "en-5",
+          studentId: "demo-student-5",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-5",
+            username: "HV1005",
+            email: "duc.hoang@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Hoàng Anh Đức", entryIeltsScore: 7.0 },
+          },
+        },
+        {
+          id: "en-6",
+          studentId: "demo-student-6",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-6",
+            username: "HV1006",
+            email: "ngoc.vu@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Vũ Bảo Ngọc", entryIeltsScore: 4.5 },
+          },
+        },
+        {
+          id: "en-7",
+          studentId: "demo-student-7",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-7",
+            username: "HV1007",
+            email: "tuan.dang@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Đặng Quốc Tuấn", entryIeltsScore: 6.0 },
+          },
+        },
+        {
+          id: "en-8",
+          studentId: "demo-student-8",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-8",
+            username: "HV1008",
+            email: "mai.bui@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Bùi Thanh Mai", entryIeltsScore: 7.5 },
           },
         },
       ],
-      _count: { enrollments: 3 },
+      _count: { enrollments: 8 },
     },
     {
       id: "demo-class-2",
@@ -99,31 +176,126 @@ if (!globalClassesStore.demoClasses) {
       isActive: true,
       assignments: [
         {
-          id: "as-3",
+          id: "as-4",
           userId: "demo-staff-1",
           roleInClass: "TEACHER",
           staff: {
+            id: "demo-staff-1",
             username: "teacher_huong",
             email: "teacher@simpace.vn",
             profile: { fullName: "Cô Nguyễn Thu Hường" },
           },
         },
-      ],
-      enrollments: [
         {
-          id: "en-3",
-          studentId: "st-3",
-          status: "STUDYING",
-          student: {
-            id: "st-3",
-            username: "HV003",
-            email: "hv003@simpace.vn",
-            isActive: true,
-            profile: { fullName: "Phạm Minh Châu", entryIeltsScore: 5.0 },
+          id: "as-5",
+          userId: "teacher-1",
+          roleInClass: "TEACHER",
+          staff: {
+            id: "teacher-1",
+            username: "teacher1",
+            email: "gv.nguyenvan@simpace.vn",
+            profile: { fullName: "ThS. Nguyễn Văn A" },
+          },
+        },
+        {
+          id: "as-ta-2",
+          userId: "ta-1",
+          roleInClass: "TEACHING_ASSISTANT",
+          staff: {
+            id: "ta-1",
+            username: "ta_mai",
+            email: "ta.mai@simpace.vn",
+            profile: { fullName: "Vũ Phương Mai" },
           },
         },
       ],
-      _count: { enrollments: 1 },
+      enrollments: [
+        {
+          id: "en-9",
+          studentId: "demo-student-9",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-9",
+            username: "HV1009",
+            email: "nam.dinh@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Đinh Hải Nam", entryIeltsScore: 3.5 },
+          },
+        },
+        {
+          id: "en-10",
+          studentId: "demo-student-10",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-10",
+            username: "HV1010",
+            email: "linh.do@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Đỗ Khánh Linh", entryIeltsScore: 5.5 },
+          },
+        },
+        {
+          id: "en-11",
+          studentId: "demo-student-11",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-11",
+            username: "HV1011",
+            email: "trung.ngo@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Ngô Quang Trung", entryIeltsScore: 6.5 },
+          },
+        },
+        {
+          id: "en-12",
+          studentId: "demo-student-12",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-12",
+            username: "HV1012",
+            email: "ha.duong@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Dương Thu Hà", entryIeltsScore: 4.0 },
+          },
+        },
+        {
+          id: "en-13",
+          studentId: "demo-student-13",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-13",
+            username: "HV1013",
+            email: "huy.ly@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Lý Gia Huy", entryIeltsScore: 5.0 },
+          },
+        },
+        {
+          id: "en-14",
+          studentId: "demo-student-14",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-14",
+            username: "HV1014",
+            email: "nhu.phan@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Phan Quỳnh Như", entryIeltsScore: 8.0 },
+          },
+        },
+        {
+          id: "en-15",
+          studentId: "demo-student-15",
+          status: "STUDYING",
+          student: {
+            id: "demo-student-15",
+            username: "HV1015",
+            email: "khoa.truong@simpace.vn",
+            isActive: true,
+            profile: { fullName: "Trương Đăng Khoa", entryIeltsScore: 6.0 },
+          },
+        },
+      ],
+      _count: { enrollments: 7 },
     },
   ];
 }
@@ -392,7 +564,8 @@ export async function getClassesService(
         (a: any) =>
           a.userId === session?.userId ||
           a.staff?.id === session?.userId ||
-          a.staff?.username === session?.username
+          a.staff?.username === session?.username ||
+          a.staff?.email === session?.email
       )
     );
   } else if (isSchoolManager(session)) {
