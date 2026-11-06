@@ -1,7 +1,14 @@
 "use server";
 
+import { redactClassmatesForStudent, stripSensitive } from "@/lib/sanitize";
 import { getSession } from "@/lib/auth";
-import { checkRole, ROLE_GROUPS } from "@/lib/permissions";
+import { checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
+import { requireFeature } from "@/services/feature-access.service";
+import {
+  assertClassAccess,
+  assertSchoolAccess,
+  assertUserHasRole,
+} from "@/services/access-scope.service";
 import { revalidatePath } from "next/cache";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
 import {
@@ -31,7 +38,29 @@ async function requireClassManager(): Promise<{ success: false; error: string } 
     ROLE_GROUPS.ADMIN_AND_MANAGER,
     "Chỉ Quản trị viên hoặc Quản nhiệm trường mới có quyền thay đổi thông tin lớp học!"
   );
-  return auth.ok ? null : { success: false, error: auth.error };
+  if (!auth.ok) return { success: false, error: auth.error };
+  const feature = await requireFeature(auth.session, "VIEW_CLASSES", "Quyền quản lý lớp học đã bị tắt đối với vai trò của bạn!");
+  return feature.ok ? null : { success: false, error: feature.error };
+}
+
+// Admin / Quản nhiệm + lớp phải thuộc trường mình quản nhiệm (AUTHZ-05, 15)
+async function requireClassManagerFor(
+  ...classIds: string[]
+): Promise<{ success: false; error: string } | null> {
+  const session = await getSession();
+  const auth = checkRole(
+    session,
+    ROLE_GROUPS.ADMIN_AND_MANAGER,
+    "Chỉ Quản trị viên hoặc Quản nhiệm trường mới có quyền thay đổi thông tin lớp học!"
+  );
+  if (!auth.ok) return { success: false, error: auth.error };
+  const feature = await requireFeature(auth.session, "VIEW_CLASSES", "Quyền quản lý lớp học đã bị tắt đối với vai trò của bạn!");
+  if (!feature.ok) return { success: false, error: feature.error };
+  for (const cid of classIds) {
+    const scope = await assertClassAccess(auth.session, cid, "MANAGE");
+    if (!scope.ok) return { success: false, error: scope.error };
+  }
+  return null;
 }
 
 function safeRevalidate(path: string = "/") {
@@ -46,6 +75,8 @@ export async function generateClassCode(
   schoolId: string,
   program: string = "IELTS"
 ): Promise<string> {
+  const denied = await requireClassManager();
+  if (denied) throw new Error(denied.error);
   return generateClassCodeService(schoolId, program);
 }
 
@@ -55,6 +86,8 @@ export async function getNextClassCodeAction(
   program: string
 ): Promise<{ success: boolean; code: string }> {
   if (!schoolId) return { success: false, code: "" };
+  const denied = await requireClassManager();
+  if (denied) return { success: false, code: "" };
   const code = await generateClassCodeService(schoolId, program);
   return { success: true, code };
 }
@@ -66,11 +99,17 @@ export async function getClassesAction(
   activeState: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
 ) {
   const session = await getSession();
-  return getClassesService(session, statusFilter, searchKeyword, activeState);
+  const classes = stripSensitive(await getClassesService(session, statusFilter, searchKeyword, activeState));
+  return session?.role === "STUDENT" ? redactClassmatesForStudent(classes, session.userId) : classes;
 }
 
 export async function getClassDetailAction(id: string) {
-  return getClassDetailService(id);
+  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để xem chi tiết lớp học!");
+  if (!auth.ok) return null;
+  const scope = await assertClassAccess(auth.session, id, "VIEW");
+  if (!scope.ok) return null;
+  const detail = stripSensitive(await getClassDetailService(id));
+  return auth.session.role === "STUDENT" ? redactClassmatesForStudent(detail, auth.session.userId) : detail;
 }
 
 // Tạo lớp học mới - Tự động sinh mã nếu không nhập, hỗ trợ gán đa giáo viên / trợ giảng
@@ -89,7 +128,13 @@ export async function createClassAction(data: {
   endDate?: string;
   schedule?: string;
 }) {
-  const res = await createClassService(data);
+  const denied = await requireClassManager();
+  if (denied) return denied;
+  const session = await getSession();
+  if (!session) return { success: false, error: "Vui lòng đăng nhập!" };
+  const schoolScope = await assertSchoolAccess(session, data.schoolId);
+  if (!schoolScope.ok) return { success: false, error: schoolScope.error };
+  const res = stripSensitive(await createClassService(data));
   if (res.success) safeRevalidate("/classes");
   return res;
 }
@@ -111,7 +156,7 @@ export async function updateClassAction(
     schedule?: string;
   }
 ): Promise<{ success: boolean; error?: string }> {
-  const denied = await requireClassManager();
+  const denied = await requireClassManagerFor(id);
   if (denied) return denied;
   const res = await updateClassService(id, data);
   if (res.success) safeRevalidate("/classes");
@@ -122,6 +167,8 @@ export async function updateClassAction(
 export async function deleteClassAction(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
+  const denied = await requireClassManagerFor(id);
+  if (denied) return denied;
   return deleteClassService(id);
 }
 
@@ -129,12 +176,16 @@ export async function deleteClassAction(
 export async function restoreClassAction(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
+  const denied = await requireClassManagerFor(id);
+  if (denied) return denied;
   return restoreClassService(id);
 }
 
 export async function deleteMultipleClassesAction(
   ids: string[]
 ): Promise<{ success: boolean; error?: string }> {
+  const denied = await requireClassManagerFor(...ids);
+  if (denied) return denied;
   return deleteMultipleClassesService(ids);
 }
 
@@ -143,8 +194,10 @@ export async function assignStaffToClassAction(
   userId: string,
   roleInClass: StaffClassRole
 ) {
-  const denied = await requireClassManager();
+  const denied = await requireClassManagerFor(classId);
   if (denied) return denied;
+  const staffRole = await assertUserHasRole(userId, ["TEACHER", "TEACHING_ASSISTANT"]);
+  if (!staffRole.ok) return { success: false, error: staffRole.error };
   const res = await assignStaffToClassService(classId, userId, roleInClass);
   if (res.success) safeRevalidate("/classes");
   return res;
@@ -154,7 +207,7 @@ export async function removeStaffFromClassAction(
   classId: string,
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const denied = await requireClassManager();
+  const denied = await requireClassManagerFor(classId);
   if (denied) return denied;
   const res = await removeStaffFromClassService(classId, userId);
   if (res.success) safeRevalidate("/classes");
@@ -166,8 +219,10 @@ export async function enrollStudentToClassAction(
   classId: string,
   studentId: string
 ) {
-  const denied = await requireClassManager();
+  const denied = await requireClassManagerFor(classId);
   if (denied) return denied;
+  const studentRole = await assertUserHasRole(studentId, ["STUDENT"]);
+  if (!studentRole.ok) return { success: false, error: studentRole.error };
   const res = await enrollStudentToClassService(classId, studentId);
   if (res.success) safeRevalidate("/classes");
   return res;
@@ -178,7 +233,7 @@ export async function removeStudentFromClassAction(
   classId: string,
   studentId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const denied = await requireClassManager();
+  const denied = await requireClassManagerFor(classId);
   if (denied) return denied;
   const res = await removeStudentFromClassService(classId, studentId);
   if (res.success) safeRevalidate("/classes");
@@ -189,7 +244,9 @@ export async function removeStudentFromClassAction(
 export async function getAvailableStudentsForClassAction(
   classId: string
 ): Promise<{ success: boolean; error?: string; students: any[] }> {
-  return getAvailableStudentsForClassService(classId);
+  const denied = await requireClassManagerFor(classId);
+  if (denied) return { ...denied, students: [] };
+  return stripSensitive(await getAvailableStudentsForClassService(classId));
 }
 
 // Chuyển học viên giữa các lớp TRONG CÙNG MỘT TRƯỜNG (Bắt buộc cùng schoolId)
@@ -198,7 +255,7 @@ export async function transferStudentClassAction(
   targetClassId: string,
   studentId: string
 ) {
-  const denied = await requireClassManager();
+  const denied = await requireClassManagerFor(currentClassId, targetClassId);
   if (denied) return denied;
   const res = await transferStudentClassService(
     currentClassId,
@@ -216,7 +273,12 @@ export async function transferStudentClassAction(
 export async function getSchoolClassesWithStudentsAction(
   schoolId: string
 ): Promise<{ success: boolean; error?: string; school: any }> {
-  return getSchoolClassesWithStudentsService(schoolId);
+  const session = await getSession();
+  const auth = checkRole(session, ROLE_GROUPS.ADMIN_AND_MANAGER, "Bạn không có quyền xem dữ liệu này!");
+  if (!auth.ok) return { success: false, error: auth.error, school: null };
+  const scope = await assertSchoolAccess(auth.session, schoolId);
+  if (!scope.ok) return { success: false, error: scope.error, school: null };
+  return stripSensitive(await getSchoolClassesWithStudentsService(schoolId));
 }
 
 // Lấy danh sách học sinh cùng trường khả dụng để thêm / chuyển sang lớp này
@@ -229,5 +291,7 @@ export async function getEligibleSchoolStudentsForClassAction(
   schoolId?: string;
   students: any[];
 }> {
-  return getEligibleSchoolStudentsForClassService(classId);
+  const denied = await requireClassManagerFor(classId);
+  if (denied) return { ...denied, students: [] };
+  return stripSensitive(await getEligibleSchoolStudentsForClassService(classId));
 }

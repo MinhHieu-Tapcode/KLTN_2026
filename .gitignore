@@ -55,3 +55,6 @@ screenshot*.png
 # AI Agent Workspaces
 .agents/
 .gemini/
+
+# Bản ghi âm Speaking của học viên là dữ liệu cá nhân, không đưa lên git
+public/uploads/materials/*speaking_response_*

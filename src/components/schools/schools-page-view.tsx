@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useTransition } from "react";
 import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
@@ -315,15 +315,17 @@ export function SchoolsPageView({
                       >
                         <Edit2 className="size-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-[#64748B] hover:text-[#EF4444]"
-                        onClick={() => handleDeleteSingle(s.id, s.name, s.code)}
-                        title="Xóa trường học"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      {currentUser?.role === "ADMIN" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-[#64748B] hover:text-[#EF4444]"
+                          onClick={() => handleDeleteSingle(s.id, s.name, s.code)}
+                          title="Xóa trường học"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

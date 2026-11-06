@@ -1,3 +1,12 @@
+import {
+  allowOtpRequest,
+  clearOtpFailures,
+  generateOtp,
+  isOtpLocked,
+  OTP_COOLDOWN_MESSAGE,
+  OTP_LOCKED_MESSAGE,
+  recordOtpFailure,
+} from "@/lib/otp-guard";
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { hashPassword, verifyPassword } from "@/lib/auth";
 import { sendOtpEmail } from "@/lib/mail";
@@ -133,6 +142,13 @@ export async function requestActivationOtpService(userId: string) {
     if (!user) {
       return { success: false, error: "Người dùng không tồn tại!" };
     }
+    // Chỉ tài khoản đang chờ kích hoạt mới được cấp OTP kích hoạt
+    if (!user.mustChangePassword) {
+      return { success: false, error: "Tài khoản này đã được kích hoạt!" };
+    }
+    if (!allowOtpRequest(`activate:${user.id}`)) {
+      return { success: false, error: OTP_COOLDOWN_MESSAGE };
+    }
 
     // Dọn dẹp token đã hết hạn hoặc đã sử dụng
     await prisma.passwordResetToken.deleteMany({
@@ -142,7 +158,7 @@ export async function requestActivationOtpService(userId: string) {
       },
     });
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOtp();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
 
     await prisma.passwordResetToken.create({
@@ -188,7 +204,14 @@ export async function activateWithOtpService(params: {
     });
 
     if (!user) {
-      return { success: false, error: "Người dùng không tồn tại!" };
+      return { success: false, error: "Mã OTP không chính xác hoặc đã hết hạn (15 phút)!" };
+    }
+    if (!user.mustChangePassword) {
+      return { success: false, error: "Tài khoản này đã được kích hoạt!" };
+    }
+    const guardKey = `activate:${user.id}`;
+    if (isOtpLocked(guardKey)) {
+      return { success: false, error: OTP_LOCKED_MESSAGE };
     }
 
     const validToken = await prisma.passwordResetToken.findFirst({
@@ -201,8 +224,10 @@ export async function activateWithOtpService(params: {
     });
 
     if (!validToken) {
+      recordOtpFailure(guardKey);
       return { success: false, error: "Mã OTP không chính xác hoặc đã hết hạn (15 phút)!" };
     }
+    clearOtpFailures(guardKey);
 
     const newHash = await hashPassword(newPassword);
 
@@ -284,10 +309,14 @@ export async function requestPasswordResetOtpService(email: string) {
     });
 
     if (!user) {
-      return { success: false, error: "Không tìm thấy tài khoản với email này!" };
+      // Không tiết lộ email có tồn tại hay không
+      return { success: true, mailResult: { sent: true } };
+    }
+    if (!allowOtpRequest(`reset:${user.id}`)) {
+      return { success: false, error: OTP_COOLDOWN_MESSAGE };
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOtp();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
 
     await prisma.passwordResetToken.deleteMany({
@@ -333,7 +362,11 @@ export async function resetPasswordWithOtpService(
     });
 
     if (!user) {
-      return { success: false, error: "Người dùng không tồn tại!" };
+      return { success: false, error: "Mã OTP không đúng hoặc đã hết hạn!" };
+    }
+    const guardKey = `reset:${user.id}`;
+    if (isOtpLocked(guardKey)) {
+      return { success: false, error: OTP_LOCKED_MESSAGE };
     }
 
     const resetToken = await prisma.passwordResetToken.findFirst({
@@ -346,8 +379,10 @@ export async function resetPasswordWithOtpService(
     });
 
     if (!resetToken) {
+      recordOtpFailure(guardKey);
       return { success: false, error: "Mã OTP không đúng hoặc đã hết hạn!" };
     }
+    clearOtpFailures(guardKey);
 
     const newHash = await hashPassword(newPassword);
 
@@ -418,14 +453,23 @@ export async function ensureDefaultAdminService() {
       });
 
       if (adminRole) {
-        const defaultHash = await hashPassword("simpace2026");
+        // Production bắt buộc cấu hình DEFAULT_ADMIN_PASSWORD, không dùng mật khẩu công khai trong mã nguồn
+        const isProd = process.env.NODE_ENV === "production";
+        const envPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+        if (isProd && (!envPassword || envPassword.length < 12)) {
+          console.warn(
+            "[ensureDefaultAdminService] Bỏ qua tạo Admin mặc định: cần đặt DEFAULT_ADMIN_PASSWORD (>= 12 ký tự) ở production."
+          );
+          return;
+        }
+        const defaultHash = await hashPassword(envPassword || "simpace2026");
         await prisma.user.create({
           data: {
             username: "admin",
             email: "admin@simpace.vn",
             passwordHash: defaultHash,
             roleId: adminRole.id,
-            mustChangePassword: false,
+            mustChangePassword: isProd,
             profile: {
               create: {
                 fullName: "Quản trị viên Hệ thống",
@@ -434,7 +478,7 @@ export async function ensureDefaultAdminService() {
             },
           },
         });
-        console.log("✔ Đã tự động tạo tài khoản Admin mặc định: admin@simpace.vn / simpace2026");
+        console.log("✔ Đã tự động tạo tài khoản Admin mặc định: admin@simpace.vn");
       }
     }
   } catch (err: any) {

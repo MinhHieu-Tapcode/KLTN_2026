@@ -15,7 +15,20 @@ export interface SystemActivity {
  * - Đợt import Excel danh sách học sinh
  * - Tài liệu học liệu mới tải lên
  */
-export async function getRecentActivitiesService(): Promise<SystemActivity[]> {
+export async function getRecentActivitiesService(
+  viewer?: { userId: string; role: string }
+): Promise<SystemActivity[]> {
+  // Phạm vi hiển thị: ADMIN thấy toàn hệ thống; Quản nhiệm / Giáo viên / Trợ giảng chỉ thấy lớp và học liệu thuộc phạm vi mình;
+  // Học viên không xem nhật ký hoạt động hệ thống.
+  const role = viewer?.role;
+  if (!viewer || role === "STUDENT") return [];
+  const isAdminViewer = role === "ADMIN";
+  const classScope: any = isAdminViewer
+    ? {}
+    : role === "SCHOOL_MANAGER"
+    ? { school: { managerId: viewer.userId } }
+    : { assignments: { some: { userId: viewer.userId } } };
+
   if (!(await isDbAlive())) {
     return [
       { id: "act-1", time: "Hôm nay", title: "Khởi tạo hệ thống đào tạo SIMPACE LMS", actor: "Hệ thống" },
@@ -24,26 +37,34 @@ export async function getRecentActivitiesService(): Promise<SystemActivity[]> {
 
   try {
     const [recentUsers, recentClasses, recentSchools, recentImports, recentMaterials] = await Promise.all([
-      prisma.user.findMany({
-        take: 5,
-        orderBy: { createdAt: "desc" },
-        include: { role: true, profile: true },
-      }),
+      isAdminViewer
+        ? prisma.user.findMany({
+            take: 5,
+            orderBy: { createdAt: "desc" },
+            include: { role: true, profile: true },
+          })
+        : Promise.resolve([] as any[]),
       prisma.class.findMany({
         take: 5,
+        where: classScope,
         orderBy: { createdAt: "desc" },
       }),
-      prisma.school.findMany({
-        take: 5,
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.importLog.findMany({
-        take: 5,
-        orderBy: { createdAt: "desc" },
-        include: { importedBy: { include: { profile: true } } },
-      }),
+      isAdminViewer
+        ? prisma.school.findMany({
+            take: 5,
+            orderBy: { createdAt: "desc" },
+          })
+        : Promise.resolve([] as any[]),
+      isAdminViewer
+        ? prisma.importLog.findMany({
+            take: 5,
+            orderBy: { createdAt: "desc" },
+            include: { importedBy: { include: { profile: true } } },
+          })
+        : Promise.resolve([] as any[]),
       prisma.learningMaterial.findMany({
         take: 5,
+        where: isAdminViewer ? {} : { folder: { class: classScope } },
         orderBy: { createdAt: "desc" },
       }),
     ]);

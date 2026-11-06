@@ -177,6 +177,7 @@ export function SimpaceApp({
     if (next === "schools" && !hasPerm("VIEW_SCHOOLS")) return;
     if (next === "classes" && !hasPerm("VIEW_CLASSES") && !hasPerm("VIEW_SCHEDULE")) return;
     if (next === "import" && !hasPerm("IMPORT_EXCEL")) return;
+    if (next === "reports" && !hasPerm("VIEW_REPORTS")) return;
     if (next === "materials-global") setActiveGlobalMaterialClass(null);
     if (next === "assignments-global") setActiveGlobalAssignmentClass(null);
     setView(next);
@@ -190,10 +191,24 @@ export function SimpaceApp({
     if (view === "classes" && !hasPerm("VIEW_CLASSES") && !hasPerm("VIEW_SCHEDULE")) setView("dashboard");
     if (view === "schedule") setView("classes");
     if (view === "import" && !hasPerm("IMPORT_EXCEL")) setView("dashboard");
+    if (view === "reports" && !hasPerm("VIEW_REPORTS")) setView("dashboard");
   }, [currentUser?.role, permissions, view]);
+
+  // Xóa toàn bộ dữ liệu của phiên trước để tài khoản kế tiếp không thấy lại lớp / người dùng của người trước
+  const resetSessionData = () => {
+    setSchools([]);
+    setClasses([]);
+    setUsers([]);
+    setManagers([]);
+    setTeachers([]);
+    setTAs([]);
+    setSelectedClass(null);
+    setView("dashboard");
+  };
 
   const handleLogout = async () => {
     await logoutAction();
+    resetSessionData();
     setCurrentUser(null);
   };
 
@@ -228,12 +243,8 @@ export function SimpaceApp({
 
       if (sc && Array.isArray(sc)) setSchools(sc);
       if (cl && Array.isArray(cl)) {
-        setClasses((prev) => {
-          const map = new Map<string, any>();
-          prev.forEach((item) => map.set(item.id, item));
-          cl.forEach((item) => map.set(item.id, item));
-          return Array.from(map.values());
-        });
+        // Danh sách do server trả về đã lọc theo quyền của người đăng nhập => dùng làm nguồn đúng duy nhất
+        setClasses(cl);
       }
       if (us && Array.isArray(us)) setUsers(us);
       if (per) setPermissions(per);
@@ -285,6 +296,7 @@ export function SimpaceApp({
     return (
       <LoginView
         onLoggedIn={async (user) => {
+          resetSessionData();
           setCurrentUser(user);
           setNotice("Đăng nhập thành công!");
           await refreshAll();
@@ -644,6 +656,7 @@ export function SimpaceApp({
         classes={classes}
         users={users}
         ieltsLevels={ieltsLevels}
+        currentUser={currentUser}
         onAddClassShortcut={() => setAddClassOpen(true)}
         onAddSchoolShortcut={() => {
           setAddUserOpen(false);

@@ -1,3 +1,4 @@
+import { generateTempPassword } from "@/lib/temp-password";
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { sendAccountCreatedEmail } from "@/lib/mail";
@@ -204,7 +205,7 @@ export async function commitAdmissionAllocationService(
 
   // Chạy trên PostgreSQL với Prisma Transaction
   try {
-    const defaultPassword = process.env.DEFAULT_STUDENT_PASSWORD || "Simpace@2026";
+    const defaultPassword = process.env.DEFAULT_STUDENT_PASSWORD || generateTempPassword();
     const passwordHash = await hashPassword(defaultPassword);
 
     let createdUserCount = 0;

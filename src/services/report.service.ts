@@ -1,3 +1,4 @@
+import { isDemoMode } from "@/services/access-scope.service";
 import { prisma, isDbAlive } from "@/lib/prisma";
 import {
   calculateWritingOverallBand,
@@ -125,7 +126,7 @@ function getMemoryScopeOptions(user: { userId: string; role: string }): ScopeOpt
     .filter((c) => {
       if (user.role === "TEACHER") {
         return (c.assignments || []).some(
-          (a: any) => a.userId === user.userId || a.userId === "teacher-1"
+          (a: any) => a.userId === user.userId || (isDemoMode() && a.userId === "teacher-1")
         );
       }
       return true;
@@ -963,7 +964,7 @@ export async function getClassReportService(params: {
   // Kiểm tra quyền của Giáo viên trên lớp này (Mục 2.1)
   if (params.user.role === "TEACHER") {
     const isAssigned = cls.assignments.some(
-      (a: any) => a.userId === params.user.userId || a.userId === "teacher-1"
+      (a: any) => a.userId === params.user.userId || (isDemoMode() && a.userId === "teacher-1")
     );
     if (!isAssigned) {
       return {
@@ -1419,7 +1420,7 @@ export async function getStudentReportService(params: {
   if (params.user.role === "TEACHER") {
     const teacherHasStudent = student.classEnrollments.some((en: any) =>
       en.class.assignments.some(
-        (a: any) => a.userId === params.user.userId || a.userId === "teacher-1"
+        (a: any) => a.userId === params.user.userId || (isDemoMode() && a.userId === "teacher-1")
       )
     );
     if (!teacherHasStudent) {

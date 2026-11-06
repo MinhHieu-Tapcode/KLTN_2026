@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { deleteClassAction, deleteMultipleClassesAction } from "@/actions/classes";
 import { ConfirmDialog, Status } from "@/components/shared/common-widgets";
 import { ClassesTimetableGrid } from "./classes-page-modals";
+import { filterAccessibleClasses } from "@/lib/accessible-classes";
 
 const CLASS_TABS = [
   ["ALL", "Tất cả"],

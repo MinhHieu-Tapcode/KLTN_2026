@@ -364,7 +364,7 @@ export function ClassDetailView({
                         <td className="px-4 py-3.5 font-bold text-[#0F172A]">
                           {enr.student?.profile?.fullName || enr.student?.username}
                         </td>
-                        <td className="px-4 py-3.5 text-[#475569]">{enr.student?.email}</td>
+                        <td className="px-4 py-3.5 text-[#475569]">{enr.student?.email || "—"}</td>
                         <td className="px-4 py-3.5 font-mono text-xs">{enr.student?.username}</td>
                         <td className="px-4 py-3.5 text-[#64748B]">
                           {new Date(enr.enrolledAt).toLocaleDateString("vi-VN")}

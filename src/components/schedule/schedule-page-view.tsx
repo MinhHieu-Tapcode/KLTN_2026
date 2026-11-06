@@ -41,18 +41,25 @@ export function SchedulePageView({
     }
 
     if (currentUser?.role === "STUDENT") {
-      if (c.enrollments && c.enrollments.length > 0) {
-        return c.enrollments.some(
-          (e: any) =>
-            e.studentId === currentUid ||
-            e.student?.id === currentUid ||
-            e.student?.username === currentUser?.username
-        );
-      }
-      return true;
+      // Học viên chỉ thấy lớp mà mình có ghi danh (không còn mặc định hiển thị khi lớp chưa tải danh sách ghi danh)
+      return (c.enrollments || []).some(
+        (e: any) =>
+          e.studentId === currentUid ||
+          e.student?.id === currentUid ||
+          e.student?.username === currentUser?.username
+      );
     }
 
-    return true;
+    if (currentUser?.role === "TEACHING_ASSISTANT") {
+      return c.assignments?.some(
+        (a: any) =>
+          a.userId === currentUid ||
+          a.staff?.id === currentUid ||
+          a.staff?.username === currentUser?.username
+      );
+    }
+
+    return false;
   });
 
   const displayed = relevantClasses.filter(

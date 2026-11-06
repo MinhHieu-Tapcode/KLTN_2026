@@ -1,3 +1,4 @@
+import { generateTempPassword } from "@/lib/temp-password";
 import * as XLSX from "xlsx";
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
@@ -960,7 +961,7 @@ export async function commitBulkAllocationService(
     }
   }
 
-  const defaultPassword = "Simpace@2026";
+  const defaultPassword = generateTempPassword(); // mỗi đợt phân lớp một mật khẩu tạm ngẫu nhiên
   const passwordHash = await hashPassword(defaultPassword);
   const createdUsersSummary: {
     email: string;

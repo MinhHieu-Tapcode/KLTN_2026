@@ -153,7 +153,7 @@ export function TopNavbar({
       labelFull: currentUser.role === "STUDENT" ? "Báo cáo học tập" : "Báo cáo & Thống kê",
       labelShort: "Báo cáo & Thống kê",
       icon: BarChart3,
-      visible: true,
+      visible: hasPerm("VIEW_REPORTS"),
     },
   ].filter((item) => item.visible);
 

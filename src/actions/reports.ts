@@ -1,9 +1,17 @@
 "use server";
 
+import { stripSensitive } from "@/lib/sanitize";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
+import { requireFeature } from "@/services/feature-access.service";
+import {
+  assertClassAccess,
+  assertSchoolAccess,
+  assertStudentAccess,
+  isStudentEnrolledInClass,
+} from "@/services/access-scope.service";
 import { ReportPeriodKey } from "@/lib/ielts-report-config";
 import {
   getClassReportService,
@@ -79,6 +87,10 @@ export async function getSchoolReportAction(input: {
   if (!auth.ok) {
     return { success: false as const, error: auth.error };
   }
+  const feature = await requireFeature(auth.session, "VIEW_REPORTS", "Quyền xem báo cáo đã bị tắt đối với vai trò của bạn!");
+  if (!feature.ok) {
+    return { success: false as const, error: feature.error };
+  }
 
   const parsed = schoolReportSchema.safeParse(input);
   if (!parsed.success) {
@@ -88,14 +100,18 @@ export async function getSchoolReportAction(input: {
     };
   }
 
-  return getSchoolReportService({
+  // AUTHZ-17: Quản nhiệm chỉ xem báo cáo trường mình
+  const schoolScope = await assertSchoolAccess(auth.session, parsed.data.schoolId);
+  if (!schoolScope.ok) return { success: false as const, error: schoolScope.error };
+
+  return stripSensitive(await getSchoolReportService({
     schoolId: parsed.data.schoolId,
     periodKey: parsed.data.periodKey,
     user: {
       userId: auth.session.userId,
       role: auth.session.role,
     },
-  });
+  }));
 }
 
 /**
@@ -114,6 +130,10 @@ export async function getClassReportAction(input: {
   if (!auth.ok) {
     return { success: false as const, error: auth.error };
   }
+  const feature = await requireFeature(auth.session, "VIEW_REPORTS", "Quyền xem báo cáo đã bị tắt đối với vai trò của bạn!");
+  if (!feature.ok) {
+    return { success: false as const, error: feature.error };
+  }
 
   const parsed = classReportSchema.safeParse(input);
   if (!parsed.success) {
@@ -123,14 +143,17 @@ export async function getClassReportAction(input: {
     };
   }
 
-  return getClassReportService({
+  const classScope = await assertClassAccess(auth.session, parsed.data.classId, "VIEW");
+  if (!classScope.ok) return { success: false as const, error: classScope.error };
+
+  return stripSensitive(await getClassReportService({
     classId: parsed.data.classId,
     periodKey: parsed.data.periodKey,
     user: {
       userId: auth.session.userId,
       role: auth.session.role,
     },
-  });
+  }));
 }
 
 /**
@@ -142,9 +165,18 @@ export async function getStudentReportAction(input: {
   periodKey?: ReportPeriodKey;
 }) {
   const session = await getSession();
-  const auth = checkAuth(session);
+  // Khớp quyền VIEW_REPORTS: Trợ giảng không xem báo cáo học sinh
+  const auth = checkRole(
+    session,
+    ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "STUDENT"],
+    "Bạn không có quyền xem báo cáo học sinh!"
+  );
   if (!auth.ok) {
     return { success: false as const, error: auth.error };
+  }
+  const feature = await requireFeature(auth.session, "VIEW_REPORTS", "Quyền xem báo cáo đã bị tắt đối với vai trò của bạn!");
+  if (!feature.ok) {
+    return { success: false as const, error: feature.error };
   }
 
   const parsed = studentReportSchema.safeParse(input);
@@ -167,7 +199,15 @@ export async function getStudentReportAction(input: {
     };
   }
 
-  return getStudentReportService({
+  // AUTHZ-17: HS chỉ xem chính mình; GV chỉ HS lớp mình; Quản nhiệm chỉ HS trường mình
+  const studentScope = await assertStudentAccess(auth.session, resolvedStudentId);
+  if (!studentScope.ok) return { success: false as const, error: studentScope.error };
+  if (parsed.data.classId) {
+    const classScope = await assertClassAccess(auth.session, parsed.data.classId, "VIEW");
+    if (!classScope.ok) return { success: false as const, error: classScope.error };
+  }
+
+  return stripSensitive(await getStudentReportService({
     studentId: resolvedStudentId,
     classId: parsed.data.classId,
     periodKey: parsed.data.periodKey,
@@ -175,7 +215,7 @@ export async function getStudentReportAction(input: {
       userId: auth.session.userId,
       role: auth.session.role,
     },
-  });
+  }));
 }
 
 /**
@@ -197,6 +237,10 @@ export async function saveReportCommentAction(input: {
   if (!auth.ok) {
     return { success: false as const, error: auth.error };
   }
+  const feature = await requireFeature(auth.session, "VIEW_REPORTS", "Quyền xem báo cáo đã bị tắt đối với vai trò của bạn!");
+  if (!feature.ok) {
+    return { success: false as const, error: feature.error };
+  }
 
   const parsed = saveCommentSchema.safeParse(input);
   if (!parsed.success) {
@@ -211,6 +255,17 @@ export async function saveReportCommentAction(input: {
     SCHOOL_MANAGER: "Quản nhiệm",
     TEACHER: "Giáo viên",
   };
+
+  // AUTHZ-18: lớp phải thuộc phạm vi của người viết; nhận xét học sinh thì học sinh phải thuộc lớp đó
+  const classScope = await assertClassAccess(auth.session, parsed.data.classId, "VIEW");
+  if (!classScope.ok) return { success: false as const, error: classScope.error };
+  if (parsed.data.scope === "STUDENT") {
+    if (!parsed.data.studentId) {
+      return { success: false as const, error: "Vui lòng chọn học sinh cần nhận xét!" };
+    }
+    const member = await isStudentEnrolledInClass(parsed.data.studentId, parsed.data.classId);
+    if (!member.ok) return { success: false as const, error: member.error };
+  }
 
   const res = await upsertReportCommentService({
     scope: parsed.data.scope,
@@ -236,8 +291,9 @@ export async function saveReportCommentAction(input: {
  * Đánh dấu Học sinh đã đọc nhận xét mới (tắt chấm đỏ NX-08)
  */
 export async function markReportCommentReadAction(commentId: string) {
+  // AUTHZ-19: chỉ học sinh đánh dấu đã đọc
   const session = await getSession();
-  const auth = checkAuth(session);
+  const auth = checkRole(session, ["STUDENT"], "Chỉ học viên mới đánh dấu đã đọc nhận xét!");
   if (!auth.ok) {
     return { success: false as const, error: auth.error };
   }

@@ -307,7 +307,7 @@ export function GlobalMaterialsView({
         <LevelRepositoryTab
           levelFolders={levelFolders}
           ieltsLevels={ieltsLevels}
-          isAdmin={isAdmin}
+          isAdmin={currentUser.role === "ADMIN"} // Kho trình độ chung: chỉ Admin được thêm / xóa (khớp kiểm tra ở server)
           onOpenQuickAdd={() => {
             setQuickAddDest("COMMON");
             setIsQuickAddOpen(true);
@@ -323,7 +323,7 @@ export function GlobalMaterialsView({
         onOpenChange={setIsQuickAddOpen}
         classes={accessibleClasses}
         ieltsLevels={ieltsLevels}
-        isTeacher={isTeacher}
+        isTeacher={currentUser.role !== "ADMIN"} // chỉ Admin được lưu vào kho chung; vai trò khác chỉ lưu vào lớp
         defaultDestination={quickAddDest}
         onSubmit={handleQuickAddSubmit}
       />

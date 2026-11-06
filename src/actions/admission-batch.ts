@@ -2,7 +2,20 @@
 
 import * as XLSX from "xlsx";
 import { getSession } from "@/lib/auth";
-import { checkAuth, isAdmin, isSchoolManager } from "@/lib/permissions";
+import { checkAuth, checkRole, isAdmin, isSchoolManager, ROLE_GROUPS } from "@/lib/permissions";
+import { assertSchoolAccess } from "@/services/access-scope.service";
+import { requireFeature } from "@/services/feature-access.service";
+
+// Admin / Quản nhiệm + ma trận quyền IMPORT_EXCEL (AUTHZ-06, 35)
+async function requireAdmissionStaff() {
+  const auth = checkRole(
+    await getSession(),
+    ROLE_GROUPS.ADMIN_AND_MANAGER,
+    "Chỉ Quản trị viên hoặc Quản nhiệm trường mới có quyền thực hiện tuyển sinh!"
+  );
+  if (!auth.ok) return auth;
+  return requireFeature(auth.session, "IMPORT_EXCEL");
+}
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import {
@@ -51,7 +64,7 @@ export async function parsePhase1AdmissionExcelAction(
   minAdmissionScore: number = 3.5
 ) {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập!");
+    const auth = await requireAdmissionStaff();
     if (!auth.ok) return { success: false, error: auth.error };
 
     const buffer = Buffer.from(fileBase64, "base64");
@@ -110,6 +123,9 @@ export async function parsePhase1AdmissionExcelAction(
  */
 export async function exportPhase1ExcelAction(candidates: ProcessedCandidate[], schoolName?: string) {
   try {
+    const auth = await requireAdmissionStaff();
+    if (!auth.ok) return { success: false, error: auth.error };
+
     const dataForExport = candidates.map((c, idx) => ({
       "STT": idx + 1,
       "Họ và tên": c.fullName,
@@ -156,7 +172,7 @@ export async function parsePhase2FeedbackExcelAction(
   existingCandidates: ProcessedCandidate[]
 ) {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập!");
+    const auth = await requireAdmissionStaff();
     if (!auth.ok) return { success: false, error: auth.error };
 
     const buffer = Buffer.from(fileBase64, "base64");
@@ -199,6 +215,8 @@ export async function generatePhase2AllocationPlanAction(
   maxClassSize: number = 25
 ) {
   try {
+    const auth = await requireAdmissionStaff();
+    if (!auth.ok) return { success: false, error: auth.error };
     const levels = await getLevels();
     const plans = buildBalancedClassPlans(candidates, levels, schoolCode, minClassSize, maxClassSize);
     return { success: true, plans };
@@ -218,8 +236,10 @@ export async function commitAdmissionBatchAction(
 ) {
   try {
     const session = await getSession();
-    const auth = checkAuth(session, "Vui lòng đăng nhập!");
+    const auth = await requireAdmissionStaff();
     if (!auth.ok) return { success: false, error: auth.error };
+    const schoolScope = await assertSchoolAccess(auth.session, schoolId);
+    if (!schoolScope.ok) return { success: false, error: schoolScope.error };
 
     const res = await commitAdmissionAllocationService(
       schoolId,

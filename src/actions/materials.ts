@@ -2,7 +2,16 @@
 
 import { isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { checkAuth, checkNotStudent } from "@/lib/permissions";
+import { checkAuth, checkNotStudent, checkRole } from "@/lib/permissions";
+import {
+  assertFolderAccess,
+  assertFolderScopeAccess,
+  assertMaterialAccess,
+} from "@/services/access-scope.service";
+
+// Vai trò được ghi học liệu (Trợ giảng chỉ xem). Phạm vi lớp / kho chung kiểm tra riêng ở từng action.
+const MATERIAL_EDITOR_ROLES = ["ADMIN", "SCHOOL_MANAGER", "TEACHER"] as const;
+const MATERIAL_EDIT_MSG = "Bạn không có quyền chỉnh sửa học liệu!";
 import { revalidatePath } from "next/cache";
 import {
   getMaterialFoldersService,
@@ -35,11 +44,17 @@ export async function getMaterialFoldersAction(params: {
   ieltsLevelId?: string;
   parentId?: string | null;
 }): Promise<{ success: boolean; error?: string; folders: any[] }> {
-  if (await isDbAlive()) {
-    const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
-    if (!auth.ok) {
-      return { success: false, error: auth.error, folders: [] };
-    }
+  // AUTHZ-25: phải thuộc phạm vi của lớp / trình độ / thư mục đang xem
+  const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error, folders: [] };
+  }
+  if (!params.classId && !params.ieltsLevelId && !params.parentId && auth.session.role !== "ADMIN") {
+    return { success: false, error: "Thiếu thông tin lớp hoặc trình độ cần xem!", folders: [] };
+  }
+  const scope = await assertFolderScopeAccess(auth.session, params, "VIEW");
+  if (!scope.ok) {
+    return { success: false, error: scope.error, folders: [] };
   }
   return getMaterialFoldersService(params);
 }
@@ -54,10 +69,12 @@ export async function createMaterialFolderAction(data: {
   ieltsLevelId?: string;
   parentId?: string | null;
 }): Promise<{ success: boolean; error?: string; folder?: any }> {
-  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG);
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
+  const scope = await assertFolderScopeAccess(auth.session, data, "EDIT");
+  if (!scope.ok) return { success: false, error: scope.error };
   const res = await createMaterialFolderService(auth.session, data);
   if (res.success) safeRevalidate();
   return res;
@@ -69,10 +86,12 @@ export async function createMaterialFolderAction(data: {
 export async function deleteMaterialFolderAction(
   folderId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG);
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
+  const scope = await assertFolderAccess(auth.session, folderId, "EDIT");
+  if (!scope.ok) return { success: false, error: scope.error };
   const res = await deleteMaterialFolderService(folderId);
   if (res.success) safeRevalidate();
   return res;
@@ -84,11 +103,13 @@ export async function deleteMaterialFolderAction(
 export async function getLearningMaterialsAction(
   folderId: string
 ): Promise<{ success: boolean; error?: string; materials: any[] }> {
-  if (await isDbAlive()) {
-    const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
-    if (!auth.ok) {
-      return { success: false, error: auth.error, materials: [] };
-    }
+  const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error, materials: [] };
+  }
+  const scope = await assertFolderAccess(auth.session, folderId, "VIEW");
+  if (!scope.ok) {
+    return { success: false, error: scope.error, materials: [] };
   }
   return getLearningMaterialsService(folderId);
 }
@@ -105,13 +126,12 @@ export async function uploadLearningMaterialAction(data: {
   fileUrl: string;
   mimeType?: string;
 }): Promise<{ success: boolean; error?: string; material?: any }> {
-  const auth = checkAuth(
-    await getSession(),
-    "Vui lòng đăng nhập để tải lên tài liệu!"
-  );
+  const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG, "Vui lòng đăng nhập để tải lên tài liệu!");
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
+  const scope = await assertFolderAccess(auth.session, data.folderId, "EDIT");
+  if (!scope.ok) return { success: false, error: scope.error };
   const res = await uploadLearningMaterialService(auth.session, data);
   if (res.success) safeRevalidate();
   return res;
@@ -123,10 +143,12 @@ export async function uploadLearningMaterialAction(data: {
 export async function deleteLearningMaterialAction(
   materialId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG);
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
+  const scope = await assertMaterialAccess(auth.session, materialId, "EDIT");
+  if (!scope.ok) return { success: false, error: scope.error };
   const res = await deleteLearningMaterialService(materialId);
   if (res.success) safeRevalidate();
   return res;
@@ -146,13 +168,12 @@ export async function uploadMultipleLearningMaterialsAction(data: {
     mimeType?: string;
   }>;
 }): Promise<{ success: boolean; error?: string; count?: number }> {
-  const auth = checkAuth(
-    await getSession(),
-    "Vui lòng đăng nhập để tải lên tài liệu!"
-  );
+  const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG, "Vui lòng đăng nhập để tải lên tài liệu!");
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
+  const scope = await assertFolderAccess(auth.session, data.folderId, "EDIT");
+  if (!scope.ok) return { success: false, error: scope.error };
   const res = await uploadMultipleLearningMaterialsService(auth.session, data);
   if (res.success) safeRevalidate();
   return res;
@@ -166,10 +187,12 @@ export async function updateLearningMaterialAction(data: {
   title: string;
   fileType?: "PDF" | "AUDIO" | "DOCUMENT" | "VIDEO" | "OTHER";
 }): Promise<{ success: boolean; error?: string }> {
-  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG);
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
+  const scope = await assertMaterialAccess(auth.session, data.materialId, "EDIT");
+  if (!scope.ok) return { success: false, error: scope.error };
   const res = await updateLearningMaterialService(data);
   if (res.success) safeRevalidate();
   return res;
@@ -181,6 +204,10 @@ export async function updateLearningMaterialAction(data: {
 export async function incrementMaterialDownloadCountAction(
   materialId: string
 ): Promise<{ success: boolean }> {
+  const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
+  if (!auth.ok) return { success: false };
+  const scope = await assertMaterialAccess(auth.session, materialId, "VIEW");
+  if (!scope.ok) return { success: false };
   return incrementMaterialDownloadCountService(materialId);
 }
 
@@ -209,9 +236,10 @@ export async function distributeLearningMaterialsAction(data: {
   materialCount?: number;
   totalDistributed?: number;
 }> {
-  const auth = checkNotStudent(
+  const auth = checkRole(
     await getSession(),
-    "Học viên không có quyền phân phối học liệu vào các lớp học!",
+    MATERIAL_EDITOR_ROLES,
+    "Chỉ Quản trị viên, Quản nhiệm và Giáo viên mới có quyền phân phối học liệu!",
     "Vui lòng đăng nhập để thực hiện phân phối học liệu!"
   );
   if (!auth.ok) {
@@ -264,13 +292,27 @@ export async function uploadCoursebookPackageAction(data: {
   count?: number;
   classNames?: string[];
 }> {
-  const auth = checkNotStudent(
+  const auth = checkRole(
     await getSession(),
-    "Học viên không có quyền tải gói sách giáo khoa!",
+    MATERIAL_EDITOR_ROLES,
+    "Chỉ Quản trị viên, Quản nhiệm và Giáo viên mới có quyền tải gói sách giáo khoa!",
     "Vui lòng đăng nhập để tải gói sách giáo khoa!"
   );
   if (!auth.ok) {
     return { success: false, error: auth.error };
+  }
+  // AUTHZ-25: phạm vi đích của gói sách
+  const targets: Array<{ classId?: string; ieltsLevelId?: string; parentId?: string | null }> = [];
+  if (data.targetType === "CLASS") targets.push({ classId: data.classId, parentId: data.parentId });
+  else if (data.targetType === "LEVEL") targets.push({ ieltsLevelId: data.ieltsLevelId || "level", parentId: data.parentId });
+  else for (const cid of data.targetClassIds || []) targets.push({ classId: cid });
+  if (data.targetType === "LEVEL" && auth.session.role !== "ADMIN") {
+    return { success: false, error: "Chỉ Quản trị viên được tải lên kho học liệu chung!" };
+  }
+  for (const t of targets) {
+    if (data.targetType === "LEVEL") break;
+    const scope = await assertFolderScopeAccess(auth.session, t, "EDIT");
+    if (!scope.ok) return { success: false, error: scope.error };
   }
   const res = await uploadCoursebookPackageService(auth.session, data);
   if (res.success) safeRevalidate();
@@ -285,6 +327,8 @@ export async function getLevelRepositoryFoldersAction(): Promise<{
   error?: string;
   folders: any[];
 }> {
+  const auth = checkNotStudent(await getSession(), "Học viên không có quyền xem kho học liệu chung!");
+  if (!auth.ok) return { success: false, error: auth.error, folders: [] };
   return getLevelRepositoryFoldersService();
 }
 
@@ -300,5 +344,9 @@ export async function getMaterialsSummaryAction(): Promise<{
   formattedStorageSize: string;
   totalDownloads: number;
 }> {
+  const auth = checkNotStudent(await getSession(), "Học viên không có quyền xem thống kê học liệu!");
+  if (!auth.ok) {
+    return { success: false, totalClasses: 0, totalFolders: 0, totalStorageBytes: 0, formattedStorageSize: "0 B", totalDownloads: 0 };
+  }
   return getMaterialsSummaryService();
 }

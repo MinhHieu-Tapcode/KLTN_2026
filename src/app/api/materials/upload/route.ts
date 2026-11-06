@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs";
 import * as path from "path";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -47,8 +48,27 @@ function sanitizeFileName(name: string): string {
   return cleaned || "material_file";
 }
 
+// AUTHZ-07: danh sách đuôi file được phép (cấm html, htm, svg, js, xml...)
+const STAFF_ALLOWED_EXT = new Set([
+  "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv",
+  "mp3", "wav", "m4a", "aac", "ogg", "flac", "webm", "mp4",
+  "png", "jpg", "jpeg", "gif", "webp",
+]);
+const STUDENT_ALLOWED_EXT = new Set(["webm", "wav", "mp3", "m4a", "ogg"]);
+const STAFF_MAX_BYTES = 50 * 1024 * 1024;
+const STUDENT_MAX_BYTES = 10 * 1024 * 1024;
+
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Vui lòng đăng nhập để tải tệp lên!" },
+        { status: 401 }
+      );
+    }
+    const isStudentUser = session.role === "STUDENT";
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -56,6 +76,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Không tìm thấy tệp tin tải lên!" },
         { status: 400 }
+      );
+    }
+
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const allowed = isStudentUser ? STUDENT_ALLOWED_EXT : STAFF_ALLOWED_EXT;
+    if (!file.name.includes(".") || !allowed.has(ext)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: isStudentUser
+            ? "Học viên chỉ được tải lên tệp ghi âm (webm, wav, mp3, m4a, ogg)!"
+            : "Định dạng tệp không được hỗ trợ!",
+        },
+        { status: isStudentUser && STAFF_ALLOWED_EXT.has(ext) ? 403 : 400 }
+      );
+    }
+    if (file.size > (isStudentUser ? STUDENT_MAX_BYTES : STAFF_MAX_BYTES)) {
+      return NextResponse.json(
+        { success: false, error: "Tệp vượt quá dung lượng cho phép!" },
+        { status: 413 }
       );
     }
 

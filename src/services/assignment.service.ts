@@ -1764,9 +1764,37 @@ export async function submitAssignmentService(
       });
 
       if (assignment) {
-        const targetClassId = data.classId || assignment.classId;
+        // AUTHZ-26: lớp nộp bài được xác định từ ghi danh + liên kết giao bài, KHÔNG tin classId từ client
+        const hasLinks = assignment.assignedClasses.length > 0;
+        const candidateClassIds = hasLinks
+          ? assignment.assignedClasses.map((ac) => ac.classId)
+          : [assignment.classId];
+        const myEnrollments = await prisma.classEnrollment.findMany({
+          where: {
+            studentId: studentInfo.userId,
+            classId: { in: candidateClassIds },
+            status: { notIn: ["DROPPED", "TRANSFERRED"] },
+          },
+          select: { classId: true },
+        });
+        const enrolledIds = new Set(myEnrollments.map((e) => e.classId));
+        if (data.classId && !enrolledIds.has(data.classId)) {
+          return { success: false, error: "Bạn không thuộc lớp được giao bài tập này!" };
+        }
+        const targetClassId = data.classId || candidateClassIds.find((cid) => enrolledIds.has(cid));
+        if (!targetClassId) {
+          return { success: false, error: "Bạn không thuộc lớp được giao bài tập này!" };
+        }
         const classLink = assignment.assignedClasses.find((ac) => ac.classId === targetClassId);
+        if (hasLinks && !classLink) {
+          return { success: false, error: "Bài tập không còn được giao cho lớp của bạn!" };
+        }
+        const effectiveStartDate = classLink?.startDate || null;
         const effectiveDueDate = classLink?.dueDate || assignment.dueDate;
+
+        if (effectiveStartDate && effectiveStartDate > now) {
+          return { success: false, error: "Bài tập chưa đến thời gian mở, bạn chưa thể nộp bài!" };
+        }
 
         // BR-05 & BR-06: Chặn nộp bài sau dueDate của lớp
         if (effectiveDueDate && effectiveDueDate < now) {
@@ -2474,7 +2502,10 @@ export async function verifyAssignmentCreationPermission(
       }
     } catch (err: any) {
       console.warn("[verifyAssignmentCreationPermission] Lỗi kiểm tra CSDL:", err?.message);
+      return { ok: false, error: "Không thể xác minh quyền, vui lòng thử lại!" };
     }
+  } else if (process.env.DEMO_MODE !== "1") {
+    return { ok: false, error: "Hệ thống đang bảo trì CSDL, không thể xác minh quyền!" };
   }
   return { ok: true };
 }
@@ -2515,7 +2546,8 @@ export async function verifyAssignmentDeletionPermission(
         },
       });
 
-      if (assignment) {
+      if (!assignment) return { ok: false, error: "Không tìm thấy bài tập!" };
+      {
         const isCreator = assignment.createdById === userId;
         const isAssigned =
           assignment.class?.assignments?.some((ca) => ca.userId === userId) ||
@@ -2532,10 +2564,16 @@ export async function verifyAssignmentDeletionPermission(
       }
     } catch (err: any) {
       console.warn("[verifyAssignmentDeletionPermission] Lỗi kiểm tra CSDL:", err?.message);
+      return { ok: false, error: "Không thể xác minh quyền, vui lòng thử lại!" };
     }
+  } else if (process.env.DEMO_MODE !== "1") {
+    return { ok: false, error: "Hệ thống đang bảo trì CSDL, không thể xác minh quyền!" };
   }
   return { ok: true };
 }
+
+/** Kiểm tra người tạo hoặc GV phụ trách lớp được giao (dùng cho sửa / xóa / chấm lại bài tập) */
+export const verifyAssignmentOwnership = verifyAssignmentDeletionPermission;
 
 /**
  * Kiểm tra quyền chấm bài tập
@@ -2578,7 +2616,8 @@ export async function verifySubmissionGradingPermission(
         },
       });
 
-      if (sub?.assignment) {
+      if (!sub?.assignment) return { ok: false, error: "Không tìm thấy bài nộp!" };
+      {
         const isCreator = sub.assignment.createdById === userId;
         const isAssigned =
           sub.assignment.class?.assignments?.some((ca) => ca.userId === userId) ||
@@ -2595,7 +2634,10 @@ export async function verifySubmissionGradingPermission(
       }
     } catch (err: any) {
       console.warn("[verifySubmissionGradingPermission] Lỗi kiểm tra CSDL:", err?.message);
+      return { ok: false, error: "Không thể xác minh quyền, vui lòng thử lại!" };
     }
+  } else if (process.env.DEMO_MODE !== "1") {
+    return { ok: false, error: "Hệ thống đang bảo trì CSDL, không thể xác minh quyền!" };
   }
   return { ok: true };
 }

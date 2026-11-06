@@ -22,6 +22,7 @@ export function UserDialog({
   classes,
   users = [],
   ieltsLevels = [],
+  currentUser,
   onAddClassShortcut,
   defaultMode = "manual",
   onAddSchoolShortcut,
@@ -33,11 +34,15 @@ export function UserDialog({
   classes: any[];
   users?: any[];
   ieltsLevels?: any[];
+  currentUser?: any;
   onAddClassShortcut: () => void;
   defaultMode?: "manual" | "excel";
   onAddSchoolShortcut?: () => void;
   onCreatedSuccess: (acc: any) => void;
 }) {
+  const availableRoles = currentUser?.role === "SCHOOL_MANAGER"
+    ? ROLE_OPTIONS.filter((r) => r.code === "STUDENT" || r.code === "TEACHER")
+    : ROLE_OPTIONS;
   const [modalMode, setModalMode] = useState<"manual" | "excel">(defaultMode || "manual");
 
   useEffect(() => {
@@ -108,7 +113,7 @@ export function UserDialog({
                 </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                {ROLE_OPTIONS.map((r) => (
+                {availableRoles.map((r) => (
                   <button
                     key={r.code}
                     type="button"

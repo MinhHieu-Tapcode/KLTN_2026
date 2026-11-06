@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { RoleCode } from "@prisma/client";
-import { hasFeatureAccess, isAdmin } from "@/lib/permissions";
+import { checkAuth, hasFeatureAccess, isAdmin } from "@/lib/permissions";
 import { getSession } from "@/lib/auth";
 import {
   getSystemPermissionsService,
@@ -23,6 +23,9 @@ async function verifySettingsAccess() {
 }
 
 export async function getSystemPermissionsAction() {
+  // AUTHZ-13: chỉ cần đăng nhập (dùng để vẽ menu cho mọi vai trò)
+  const auth = checkAuth(await getSession());
+  if (!auth.ok) return [];
   return await getSystemPermissionsService();
 }
 

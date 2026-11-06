@@ -18,6 +18,6 @@ export async function getRecentActivitiesAction(): Promise<{
     return { success: false, activities: [], error: auth.error };
   }
 
-  const activities = await getRecentActivitiesService();
+  const activities = await getRecentActivitiesService({ userId: auth.session.userId, role: auth.session.role });
   return { success: true, activities };
 }

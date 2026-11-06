@@ -1,8 +1,21 @@
 "use server";
 
+import { stripSensitive } from "@/lib/sanitize";
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
-import { isAdmin, isSchoolManager } from "@/lib/permissions";
+import { checkRole, isAdmin, isSchoolManager, ROLE_GROUPS } from "@/lib/permissions";
+import { assertSchoolAccess } from "@/services/access-scope.service";
+import { requireFeature } from "@/services/feature-access.service";
+
+async function requireSchoolStaff() {
+  const auth = checkRole(await getSession(), ROLE_GROUPS.ADMIN_AND_MANAGER, "Bạn không có quyền truy cập dữ liệu trường học!");
+  if (!auth.ok) return auth;
+  return requireFeature(auth.session, "VIEW_SCHOOLS", "Quyền quản lý trường học đã bị tắt đối với vai trò của bạn!");
+}
+
+async function requireSchoolAdmin() {
+  return checkRole(await getSession(), ROLE_GROUPS.ADMIN_ONLY, "Chỉ Quản trị viên mới có quyền thực hiện thao tác này!");
+}
 import {
   generateSchoolCode,
   getSchoolsService,
@@ -29,6 +42,8 @@ function safeRevalidate(path: string) {
 export { generateSchoolCode };
 
 export async function getNextSchoolCodeAction(name: string) {
+  const auth = await requireSchoolAdmin();
+  if (!auth.ok) return { success: false, code: "", error: auth.error };
   if (!name || !name.trim()) return { success: true, code: "SCH_SIM" };
   const code = await generateSchoolCode(name.trim());
   return { success: true, code };
@@ -38,22 +53,31 @@ export async function getSchoolsAction(
   searchKeyword: string = "",
   statusFilter: "ACTIVE" | "INACTIVE" | "ALL" = "ACTIVE"
 ) {
-  const session = await getSession();
-  const managerId = isSchoolManager(session) ? session?.userId : undefined;
+  // AUTHZ-12: Admin xem tất cả, Quản nhiệm xem trường mình, vai trò khác không xem danh sách trường
+  const auth = await requireSchoolStaff();
+  if (!auth.ok) return [];
+  const session = auth.session;
+  const managerId = isSchoolManager(session) ? session.userId : undefined;
 
-  return await getSchoolsService({
+  return stripSensitive(await getSchoolsService({
     searchKeyword,
     statusFilter,
     managerId,
-  });
+  }));
 }
 
 export async function getSchoolDetailAction(schoolId: string) {
-  return await getSchoolDetailService(schoolId);
+  const auth = await requireSchoolStaff();
+  if (!auth.ok) return null;
+  const scope = await assertSchoolAccess(auth.session, schoolId);
+  if (!scope.ok) return null;
+  return stripSensitive(await getSchoolDetailService(schoolId));
 }
 
 export async function getSchoolManagersAction() {
-  return await getSchoolManagersService();
+  const auth = await requireSchoolAdmin();
+  if (!auth.ok) return [];
+  return stripSensitive(await getSchoolManagersService());
 }
 
 export async function createSchoolAction(data: CreateSchoolData) {
@@ -70,12 +94,21 @@ export async function createSchoolAction(data: CreateSchoolData) {
 }
 
 export async function updateSchoolAction(id: string, data: UpdateSchoolData) {
-  const session = await getSession();
-  if (!session || (!isAdmin(session) && !isSchoolManager(session))) {
-    return { success: false, error: "Bạn không có quyền cập nhật thông tin trường học!" };
+  const staff = await requireSchoolStaff();
+  if (!staff.ok) {
+    return { success: false, error: staff.error };
   }
+  const session = staff.session;
 
-  const res = await updateSchoolService(id, data);
+  // AUTHZ-14: Quản nhiệm chỉ sửa trường mình và không được đổi Quản nhiệm phụ trách
+  let safeData = data;
+  if (isSchoolManager(session)) {
+    const scope = await assertSchoolAccess(session, id);
+    if (!scope.ok) return { success: false, error: scope.error };
+    const { managerId: _ignored, ...rest } = data;
+    safeData = rest;
+  }
+  const res = await updateSchoolService(id, safeData);
   if (res.success) {
     safeRevalidate("/schools");
   }
@@ -125,6 +158,8 @@ export async function checkSchoolManagerScheduleConflictAction(
   targetSchoolId: string,
   managerId: string
 ) {
+  const auth = await requireSchoolAdmin();
+  if (!auth.ok) return { hasConflict: false, error: auth.error } as any;
   return await checkSchoolManagerScheduleConflictService(targetSchoolId, managerId);
 }
 

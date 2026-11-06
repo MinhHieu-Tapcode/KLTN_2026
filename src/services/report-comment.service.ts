@@ -326,7 +326,10 @@ export async function markReportCommentReadService(
     await prisma.reportComment.updateMany({
       where: {
         id: commentId,
-        OR: [{ studentId }, { scope: "CLASS" }],
+        OR: [
+          { studentId },
+          { scope: "CLASS", class: { enrollments: { some: { studentId } } } },
+        ],
       },
       data: { isReadByStudent: true },
     });

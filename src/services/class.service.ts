@@ -5,7 +5,7 @@ import { ClassStatus, StaffClassRole } from "@prisma/client";
 import { areSchedulesConflicting, validateScheduleString } from "@/lib/schedule";
 import { logSystemWarning } from "@/lib/telemetry";
 
-const DEMO_CLASSES_VERSION = "v2026-15-users-classes-v2";
+const DEMO_CLASSES_VERSION = "v2026-15-users-classes-v3-no-ta";
 
 const globalClassesStore = globalThis as unknown as {
   demoClasses?: any[];
@@ -48,17 +48,6 @@ if (!globalClassesStore.demoClasses || globalClassesStore.demoClassesVersion !==
             username: "teacher1",
             email: "gv.nguyenvan@simpace.vn",
             profile: { fullName: "ThS. Nguyễn Văn A" },
-          },
-        },
-        {
-          id: "as-ta-1",
-          userId: "ta-1",
-          roleInClass: "TEACHING_ASSISTANT",
-          staff: {
-            id: "ta-1",
-            username: "ta_mai",
-            email: "ta.mai@simpace.vn",
-            profile: { fullName: "Vũ Phương Mai" },
           },
         },
       ],
@@ -195,17 +184,6 @@ if (!globalClassesStore.demoClasses || globalClassesStore.demoClassesVersion !==
             username: "teacher1",
             email: "gv.nguyenvan@simpace.vn",
             profile: { fullName: "ThS. Nguyễn Văn A" },
-          },
-        },
-        {
-          id: "as-ta-2",
-          userId: "ta-1",
-          roleInClass: "TEACHING_ASSISTANT",
-          staff: {
-            id: "ta-1",
-            username: "ta_mai",
-            email: "ta.mai@simpace.vn",
-            profile: { fullName: "Vũ Phương Mai" },
           },
         },
       ],

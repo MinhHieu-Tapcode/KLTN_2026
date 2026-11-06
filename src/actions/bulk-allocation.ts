@@ -1,6 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getSession } from "@/lib/auth";
+import { checkRole, ROLE_GROUPS } from "@/lib/permissions";
+import { requireFeature } from "@/services/feature-access.service";
+import { assertSchoolAccess } from "@/services/access-scope.service";
 import {
   type ValidatedStudentRow,
   type InvalidStudentRow,
@@ -26,6 +30,19 @@ export type {
   BulkAllocationSuggestion,
 };
 
+// AUTHZ-06: chỉ Admin / Quản nhiệm được dùng chức năng phân lớp hàng loạt
+async function requireBulkAllocator() {
+  const auth = checkRole(
+    await getSession(),
+    ROLE_GROUPS.ADMIN_AND_MANAGER,
+    "Chỉ Quản trị viên hoặc Quản nhiệm trường mới có quyền phân lớp hàng loạt!"
+  );
+  if (!auth.ok) throw new Error(auth.error);
+  const feature = await requireFeature(auth.session, "IMPORT_EXCEL");
+  if (!feature.ok) throw new Error(feature.error);
+  return auth.session;
+}
+
 function safeRevalidate(path: string) {
   try {
     revalidatePath(path);
@@ -43,6 +60,7 @@ export async function parseAndValidateBulkStudentsAction(fileBase64: string): Pr
   error?: string;
 }> {
   try {
+    await requireBulkAllocator();
     return await parseAndValidateBulkStudentsService(fileBase64);
   } catch (error: any) {
     return { success: false, error: error.message || "Lỗi khi xử lý tệp học sinh!" };
@@ -60,6 +78,7 @@ export async function distributeStudentsBalanced(
   levelId: string,
   schoolCode: string = "TD"
 ): Promise<ProposedClass[]> {
+  await requireBulkAllocator();
   return distributeStudentsBalancedService(
     students,
     classCount,
@@ -83,6 +102,7 @@ export async function generateBulkClassSuggestionAction(
   error?: string;
 }> {
   try {
+    await requireBulkAllocator();
     return await generateBulkClassSuggestionService(validRows, schoolId, classCountOverrides);
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể tạo phương án đề xuất phân lớp!" };
@@ -104,6 +124,7 @@ export async function rebalanceOnStudentTransferAction(
   error?: string;
 }> {
   try {
+    await requireBulkAllocator();
     return await rebalanceOnStudentTransferService(currentPlan, studentEmail, targetClassTempId);
   } catch (error: any) {
     return { success: false, error: error.message || "Lỗi khi chuyển lớp!" };
@@ -124,6 +145,7 @@ export async function rebalanceOnClassCountChangeAction(
   error?: string;
 }> {
   try {
+    await requireBulkAllocator();
     return await rebalanceOnClassCountChangeService(currentPlan, newClassCount, schoolCode);
   } catch (error: any) {
     return { success: false, error: error.message || "Lỗi khi điều chỉnh số lớp!" };
@@ -144,6 +166,7 @@ export async function rebalanceByCapacityAction(
   error?: string;
 }> {
   try {
+    await requireBulkAllocator();
     return await rebalanceByCapacityService(currentPlans, maxCapacity, schoolCode);
   } catch (error: any) {
     return { success: false, error: error.message || "Lỗi khi chia lại lớp theo sĩ số!" };
@@ -164,6 +187,7 @@ export async function removeClassAndRebalanceAction(
   error?: string;
 }> {
   try {
+    await requireBulkAllocator();
     return await removeClassAndRebalanceService(currentPlan, classTempIdToRemove, schoolCode);
   } catch (error: any) {
     return { success: false, error: error.message || "Lỗi khi xóa lớp và chia lại!" };
@@ -184,6 +208,7 @@ export async function updateClassCapacitiesAndRebalanceAction(
   error?: string;
 }> {
   try {
+    await requireBulkAllocator();
     return await updateClassCapacitiesAndRebalanceService(
       currentPlans,
       classSettings,
@@ -210,6 +235,9 @@ export async function commitBulkAllocationAction(
   error?: string;
 }> {
   try {
+    const bulkSession = await requireBulkAllocator();
+    const schoolScope = await assertSchoolAccess(bulkSession, schoolId);
+    if (!schoolScope.ok) return { success: false, error: schoolScope.error };
     const res = await commitBulkAllocationService(plans, schoolId, fileName);
     if (res.success) {
       safeRevalidate("/users");

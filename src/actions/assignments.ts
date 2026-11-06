@@ -1,8 +1,10 @@
 "use server";
 
+import { stripSensitive } from "@/lib/sanitize";
 import { isDbAlive } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { checkAuth, checkRole, isStudent, ROLE_GROUPS } from "@/lib/permissions";
+import { assertAssignmentAccess, assertClassAccess } from "@/services/access-scope.service";
 import { revalidatePath } from "next/cache";
 import {
   createAssignmentService,
@@ -16,6 +18,7 @@ import {
   submitAssignmentService,
   verifyAssignmentCreationPermission,
   verifyAssignmentDeletionPermission,
+  verifyAssignmentOwnership,
   verifySubmissionGradingPermission,
 } from "@/services/assignment.service";
 import { parseIeltsExamContent } from "@/services/ielts-parser.service";
@@ -34,16 +37,26 @@ function safeRevalidate(path: string = "/") {
 export async function getClassAssignmentsAction(
   classId: string
 ): Promise<{ success: boolean; assignments: any[]; error?: string }> {
-  if (!(await isDbAlive())) {
-    const session = await getSession();
-    return getClassAssignmentsService(classId, session?.userId);
-  }
   try {
     const auth = checkAuth(await getSession(), "Bạn chưa đăng nhập!");
     if (!auth.ok) {
       return { success: false, error: auth.error, assignments: [] };
     }
-    return await getClassAssignmentsService(classId, auth.session.userId);
+    // AUTHZ-28: phải thuộc phạm vi của lớp
+    const scope = await assertClassAccess(auth.session, classId, "VIEW");
+    if (!scope.ok) {
+      return { success: false, error: scope.error, assignments: [] };
+    }
+    const res = await getClassAssignmentsService(classId, auth.session.userId);
+    if (isStudent(auth.session) && Array.isArray(res?.assignments)) {
+      // Học sinh không được xem thống kê toàn lớp (số bài chờ chấm, số bài bị gắn cờ gian lận)
+      res.assignments = res.assignments.map((a: any) => ({
+        ...a,
+        pendingGradingCount: 0,
+        flaggedCount: 0,
+      }));
+    }
+    return res;
   } catch (err: any) {
     console.error("[getClassAssignmentsAction] Lỗi:", err);
     return {
@@ -67,13 +80,22 @@ export async function getAssignmentDetailAction(
       return { success: false, error: auth.error };
     }
 
+    // AUTHZ-27: phải thuộc phạm vi của bài tập
+    const scope = await assertAssignmentAccess(auth.session, assignmentId, "VIEW");
+    if (!scope.ok) {
+      return { success: false, error: scope.error };
+    }
+
     const studentId = auth.session.userId;
+    // Chỉ Admin, GV, TA, Quản nhiệm trong phạm vi mới thấy đáp án; học sinh theo cấu hình answerVisibility
     const hideAnswers = auth.session.role === "STUDENT";
 
     // [C5] Học sinh chỉ thấy đáp án khi đủ điều kiện theo cấu hình lúc giao bài
-    return await getAssignmentDetailService(assignmentId, studentId, {
-      hideAnswersUnlessAllowed: hideAnswers,
-    });
+    return stripSensitive(
+      await getAssignmentDetailService(assignmentId, studentId, {
+        hideAnswersUnlessAllowed: hideAnswers,
+      })
+    );
   } catch (err: any) {
     console.error("[getAssignmentDetailAction] Lỗi:", err);
     return { success: false, error: err.message || "Không thể tải chi tiết bài tập!" };
@@ -246,6 +268,20 @@ export async function updateAssignmentAction(
       return { success: false, error: auth.error };
     }
 
+    // AUTHZ-20: phải là người tạo hoặc GV phụ trách lớp được giao
+    const ownership = await verifyAssignmentOwnership(
+      assignmentId,
+      auth.session.userId,
+      auth.session.role
+    );
+    if (!ownership.ok) {
+      return { success: false, error: ownership.error };
+    }
+    if (data.classId && auth.session.role !== "ADMIN") {
+      const classScope = await assertClassAccess(auth.session, data.classId, "TEACH");
+      if (!classScope.ok) return { success: false, error: classScope.error };
+    }
+
     const res = await updateAssignmentService(assignmentId, data);
     safeRevalidate();
     return res;
@@ -276,6 +312,16 @@ export async function regradeAssignmentSubmissionsAction(
     );
     if (!auth.ok) {
       return { success: false, regradedCount: 0, error: auth.error };
+    }
+
+    // AUTHZ-21
+    const ownership = await verifyAssignmentOwnership(
+      assignmentId,
+      auth.session.userId,
+      auth.session.role
+    );
+    if (!ownership.ok) {
+      return { success: false, regradedCount: 0, error: ownership.error };
     }
 
     const res = await regradeAssignmentSubmissionsService(assignmentId, classId);
@@ -427,7 +473,13 @@ export async function submitAssignmentAction(data: {
 }> {
   try {
     const session = await getSession();
-    const auth = checkAuth(session, "Vui lòng đăng nhập để nộp bài!");
+    // AUTHZ-26: chỉ học viên mới được nộp bài
+    const auth = checkRole(
+      session,
+      ["STUDENT"],
+      "Chỉ học viên mới có quyền nộp bài!",
+      "Vui lòng đăng nhập để nộp bài!"
+    );
     if (!auth.ok) {
       return { success: false, error: auth.error };
     }
@@ -466,10 +518,10 @@ export async function getSubmissionsForAssignmentAction(
       };
     }
 
-    return await getSubmissionsForAssignmentService(assignmentId, {
+    return stripSensitive(await getSubmissionsForAssignmentService(assignmentId, {
       userId: auth.session.userId,
       role: auth.session.role,
-    });
+    }));
   } catch (err: any) {
     console.error("[getSubmissionsForAssignmentAction] Lỗi:", err);
     return {
@@ -540,9 +592,18 @@ export async function transcribeSpeakingAnswerAction(params: {
   error?: string;
 }> {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để tạo bản ghi chữ!");
+    // AUTHZ-29: chỉ nhân sự dùng khi chấm bài; chỉ chấp nhận tệp nằm trong /uploads/
+    const auth = checkRole(
+      await getSession(),
+      ROLE_GROUPS.STAFF_AND_ADMIN,
+      "Chỉ Giáo viên, Trợ giảng và Quản trị viên mới được tạo bản ghi chữ!",
+      "Vui lòng đăng nhập để tạo bản ghi chữ!"
+    );
     if (!auth.ok) {
       return { success: false, error: auth.error };
+    }
+    if (params.audioUrl && !params.audioUrl.startsWith("/uploads/")) {
+      return { success: false, error: "Đường dẫn tệp âm thanh không hợp lệ!" };
     }
 
     return await transcribeSpeakingAudioService(params);

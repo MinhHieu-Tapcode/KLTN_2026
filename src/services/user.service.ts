@@ -1,3 +1,4 @@
+import { generateTempPassword } from "@/lib/temp-password";
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/auth";
@@ -1169,7 +1170,7 @@ export async function createUserService(data: {
       };
     }
 
-    const defaultPassword = "Simpace@2026";
+    const defaultPassword = generateTempPassword();
     const passwordHash = await hashPassword(defaultPassword);
 
     const username = await generateUserCodeService(data.roleCode);
@@ -2030,7 +2031,7 @@ export async function commitImportUsersService(
       ? adminUser.id
       : (await prisma.user.findFirst())?.id || "";
 
-    const defaultPassword = "Simpace@2026";
+    const defaultPassword = generateTempPassword();
     const passwordHash = await hashPassword(defaultPassword);
 
     let currentStudentCount = await prisma.user.count({
