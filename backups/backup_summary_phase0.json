@@ -1,0 +1,254 @@
+{
+  "backupMetadata": {
+    "projectName": "SIMPACE LMS",
+    "phase": "Phase 0 - Foundation, Environment Setup & Data Safety",
+    "timestamp": "2026-11-06T15:07:10.631Z",
+    "completedAt": "2026-11-06T15:07:14.804Z",
+    "durationMs": 4173,
+    "databaseUrlSanitized": "postgresql://postgres:******@localhost:5432/simpace_lms",
+    "dbReachable": false,
+    "overallStatus": "FAILED_DB_UNREACHABLE",
+    "totalTables": 23,
+    "totalRecordsExported": 0,
+    "backupSchemaPath": "backups/schema_backup_phase0.prisma",
+    "backupDataDirectory": "backups/data_backup_phase0"
+  },
+  "diagnostics": {
+    "errorCode": "P1001",
+    "errorMessage": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`.",
+    "technicalCause": "Không có tiến trình PostgreSQL nào lắng nghe trên cổng 5432/5433 tại localhost. Docker service đang ở trạng thái Stopped.",
+    "recommendation": "Hệ thống hiện đang hoạt động ở chế độ In-Memory Mock Store do DB chưa được khởi động. Cần khởi động dịch vụ PostgreSQL hoặc cung cấp chuỗi kết nối Supabase Staging/Cloud để đồng bộ dữ liệu thực tế."
+  },
+  "tables": [
+    {
+      "modelName": "Role",
+      "tableName": "roles",
+      "delegateName": "role",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\roles.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "User",
+      "tableName": "users",
+      "delegateName": "user",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\users.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "UserProfile",
+      "tableName": "user_profiles",
+      "delegateName": "userProfile",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\user_profiles.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "PasswordResetToken",
+      "tableName": "password_reset_tokens",
+      "delegateName": "passwordResetToken",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\password_reset_tokens.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "School",
+      "tableName": "schools",
+      "delegateName": "school",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\schools.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "Class",
+      "tableName": "classes",
+      "delegateName": "class",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\classes.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "ClassAssignment",
+      "tableName": "class_assignments",
+      "delegateName": "classAssignment",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\class_assignments.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "ClassEnrollment",
+      "tableName": "class_enrollments",
+      "delegateName": "classEnrollment",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\class_enrollments.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "ImportLog",
+      "tableName": "import_logs",
+      "delegateName": "importLog",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\import_logs.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "SystemPermission",
+      "tableName": "system_permissions",
+      "delegateName": "systemPermission",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\system_permissions.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "IeltsLevel",
+      "tableName": "ielts_levels",
+      "delegateName": "ieltsLevel",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\ielts_levels.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "MaterialFolder",
+      "tableName": "material_folders",
+      "delegateName": "materialFolder",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\material_folders.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "LearningMaterial",
+      "tableName": "learning_materials",
+      "delegateName": "learningMaterial",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\learning_materials.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "Assignment",
+      "tableName": "assignments",
+      "delegateName": "assignment",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\assignments.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "AssignmentClass",
+      "tableName": "assignment_classes",
+      "delegateName": "assignmentClass",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\assignment_classes.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "AssignmentQuestion",
+      "tableName": "assignment_questions",
+      "delegateName": "assignmentQuestion",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\assignment_questions.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "QuestionOption",
+      "tableName": "question_options",
+      "delegateName": "questionOption",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\question_options.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "AssignmentSubmission",
+      "tableName": "assignment_submissions",
+      "delegateName": "assignmentSubmission",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\assignment_submissions.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "SubmissionAnswer",
+      "tableName": "submission_answers",
+      "delegateName": "submissionAnswer",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\submission_answers.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "SubmissionCriteriaScore",
+      "tableName": "submission_criteria_scores",
+      "delegateName": "submissionCriteriaScore",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\submission_criteria_scores.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "ReportComment",
+      "tableName": "report_comments",
+      "delegateName": "reportComment",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\report_comments.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "Notification",
+      "tableName": "notifications",
+      "delegateName": "notification",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\notifications.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    },
+    {
+      "modelName": "OutTabEvent",
+      "tableName": "out_tab_events",
+      "delegateName": "outTabEvent",
+      "recordCount": 0,
+      "filePath": "backups\\data_backup_phase0\\out_tab_events.json",
+      "fileSizeBytes": 2,
+      "status": "DB_UNREACHABLE",
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    }
+  ]
+}
