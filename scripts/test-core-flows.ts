@@ -124,8 +124,8 @@ async function main() {
     fullName: `Học viên ${idx + 1}`,
     email: `hv${idx + 1}@simpace.edu.vn`,
     ieltsScore: 5.5,
-    levelId: "lvl-medium",
-    levelCode: "MEDIUM",
+    levelId: "lvl-intermediate",
+    levelCode: "INTERMEDIATE",
     levelName: "Trung bình",
   }));
 
@@ -133,30 +133,30 @@ async function main() {
     const classes = await distributeStudentsBalanced(
       mockStudents,
       3,
-      "MEDIUM",
+      "INTERMEDIATE",
       "Trung bình",
-      "lvl-medium",
+      "lvl-intermediate",
       "TD"
     );
     assert.equal(classes.length, 3);
     const counts = classes.map((c) => c.students.length);
     assert.deepEqual(counts, [11, 10, 10]);
-    assert.equal(classes[0].code, "IELTS_MEDIUM_TD_01");
-    assert.equal(classes[2].code, "IELTS_MEDIUM_TD_03");
+    assert.equal(classes[0].code, "IELTS_INTERMEDIATE_TD_01");
+    assert.equal(classes[2].code, "IELTS_INTERMEDIATE_TD_03");
   });
 
   await runTest("Thay đổi số lớp từ 3 sang 4 lớp -> Tự động cân bằng lại 31 học sinh thành [8, 8, 8, 7]", async () => {
     const initialClasses = await distributeStudentsBalanced(
       mockStudents,
       3,
-      "MEDIUM",
+      "INTERMEDIATE",
       "Trung bình",
-      "lvl-medium",
+      "lvl-intermediate",
       "TD"
     );
     const plan: LevelAllocationPlan = {
-      levelId: "lvl-medium",
-      levelCode: "MEDIUM",
+      levelId: "lvl-intermediate",
+      levelCode: "INTERMEDIATE",
       levelName: "Trung bình",
       studentCount: 31,
       classCount: 3,
@@ -175,8 +175,8 @@ async function main() {
 
   await runTest("Ca biên: Nhập số lớp không hợp lệ (<= 0) -> Trả về lỗi tiếng Việt rõ ràng", async () => {
     const plan: LevelAllocationPlan = {
-      levelId: "lvl-medium",
-      levelCode: "MEDIUM",
+      levelId: "lvl-intermediate",
+      levelCode: "INTERMEDIATE",
       levelName: "Trung bình",
       studentCount: 0,
       classCount: 1,
@@ -191,14 +191,14 @@ async function main() {
     const initialClasses = await distributeStudentsBalanced(
       mockStudents,
       2,
-      "MEDIUM",
+      "INTERMEDIATE",
       "Trung bình",
-      "lvl-medium",
+      "lvl-intermediate",
       "TD"
     );
     const plan: LevelAllocationPlan = {
-      levelId: "lvl-medium",
-      levelCode: "MEDIUM",
+      levelId: "lvl-intermediate",
+      levelCode: "INTERMEDIATE",
       levelName: "Trung bình",
       studentCount: 31,
       classCount: 2,

@@ -26,7 +26,7 @@ function safeRevalidate(path: string = "/") {
 
 const DEFAULT_IELTS_LEVELS: IeltsLevelRule[] = [
   { id: "lvl-basic", code: "BASIC", name: "Cơ bản (Band 3.5 - 4.5)", minScore: 3.5, maxScore: 4.5 },
-  { id: "lvl-medium", code: "MEDIUM", name: "Trung bình (Band 4.5 - 6.5)", minScore: 4.5, maxScore: 6.5 },
+  { id: "lvl-intermediate", code: "INTERMEDIATE", name: "Trung bình (Band 4.5 - 6.5)", minScore: 4.5, maxScore: 6.5 },
   { id: "lvl-advanced", code: "ADVANCED", name: "Nâng cao (Band 6.5 - 9.0)", minScore: 6.5, maxScore: 9.0 },
 ];
 

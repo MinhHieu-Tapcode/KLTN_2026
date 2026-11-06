@@ -3,6 +3,7 @@ import type { SessionPayload } from "@/lib/auth";
 import { isSchoolManager, isStudent, isTeacherOrTA } from "@/lib/permissions";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
 import { areSchedulesConflicting, validateScheduleString } from "@/lib/schedule";
+import { logSystemWarning } from "@/lib/telemetry";
 
 const globalClassesStore = globalThis as unknown as {
   demoClasses?: any[];
@@ -429,14 +430,16 @@ export async function getClassDetailService(id: string) {
         },
       });
       if (res) return res as any;
+      const foundDemo = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
+      return (foundDemo as any) || null;
     } catch (err: any) {
-      console.warn("[getClassDetailService] DB offline fallback:", err?.message);
+      logSystemWarning("class.service", "getClassDetailService", "Lỗi DB khi lấy chi tiết lớp", err);
     }
   }
 
+  logSystemWarning("class.service", "getClassDetailService", "DB offline, tìm lớp trong demoClasses");
   const found = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
-  if (found) return found as any;
-  return (globalClassesStore.demoClasses || [])[0] as any;
+  return (found as any) || null;
 }
 
 export async function createClassService(data: {
@@ -703,43 +706,8 @@ export async function createClassService(data: {
 
     return { success: true, class: resultClass };
   } catch (error: any) {
-    console.warn("[createClassService] Lỗi DB, fallback sang bộ nhớ tạm:", error?.message);
-    try {
-      const fallbackCode = data.code?.trim().toUpperCase() || `IELTS_NEW_${Date.now().toString().slice(-4)}`;
-      const schoolObj = ((globalThis as any).demoSchools || []).find((s: any) => s.id === data.schoolId) || {
-        id: data.schoolId,
-        name: "Trường đối tác",
-        code: "SCH",
-      };
-      const demoClass: any = {
-        id: `demo-class-${Date.now()}`,
-        code: fallbackCode,
-        name: data.name.trim(),
-        schoolId: data.schoolId,
-        program: data.program || "IELTS",
-        level: data.level || null,
-        capacity: data.capacity || 30,
-        startDate: data.startDate || null,
-        endDate: data.endDate || null,
-        description: data.schedule || null,
-        status: "ACTIVE",
-        isActive: true,
-        school: schoolObj,
-        assignments: (data.teacherIds || (data.teacherId ? [data.teacherId] : [])).map((tid) => ({
-          id: `as-${Date.now()}-${tid}`,
-          userId: tid,
-          roleInClass: "TEACHER",
-          staff: { id: tid, profile: { fullName: "Giáo viên giảng dạy" } },
-        })),
-        enrollments: [],
-        _count: { enrollments: 0, materialFolders: 0 },
-      };
-      if (!globalClassesStore.demoClasses) globalClassesStore.demoClasses = [];
-      globalClassesStore.demoClasses.unshift(demoClass);
-      return { success: true, class: demoClass };
-    } catch {
-      return { success: false, error: error.message || "Không thể tạo lớp học!" };
-    }
+    logSystemWarning("class.service", "createClassService", "Lỗi CSDL khi tạo lớp học", error);
+    return { success: false, error: error?.message || "Không thể tạo lớp học!" };
   }
 }
 

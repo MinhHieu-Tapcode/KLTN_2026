@@ -21,6 +21,7 @@ import {
 import { resolveIeltsQuestionType } from "./assignment-mutation.service";
 import { canStudentViewAnswers } from "@/lib/assignment-config";
 import { createNotifications } from "./notification.service";
+import { logSystemWarning } from "@/lib/telemetry";
 
 const DEMO_STORE_VERSION = "v2026-reports-v3";
 
@@ -1218,10 +1219,6 @@ function formatDemoAssignmentDetail(
   }
 
   if (!found) {
-    found = (globalAssignmentsStore.demoAssignments || [])[0];
-  }
-
-  if (!found) {
     return { success: false, error: "Bài tập không tồn tại hoặc đã bị xóa!" };
   }
 
@@ -1602,13 +1599,12 @@ function submitToDemoStore(
   isCheatingFlagged?: boolean;
   error?: string;
 } {
-  const assign =
-    (globalAssignmentsStore.demoAssignments || []).find(
-      (a: any) => a.id === data.assignmentId
-    ) || (globalAssignmentsStore.demoAssignments || [])[0];
+  const assign = (globalAssignmentsStore.demoAssignments || []).find(
+    (a: any) => a.id === data.assignmentId
+  );
 
   if (!assign) {
-    return { success: false, error: "Bài tập không tồn tại!" };
+    return { success: false, error: "Bài tập không tồn tại hoặc đã bị xóa!" };
   }
 
   const classLink = (assign.assignedClasses || []).find(
@@ -1763,36 +1759,29 @@ export async function submitAssignmentService(
         let totalScore = 0;
         let maxScore = 0;
 
-        const answersToCreate = data.answers.map((ans) => {
-          const q = assignment.questions.find((quest) => quest.id === ans.questionId);
-          if (!q) {
+        const validQuestionsMap = new Map(assignment.questions.map((quest) => [quest.id, quest]));
+        const answersToCreate = data.answers
+          .filter((ans) => validQuestionsMap.has(ans.questionId))
+          .map((ans) => {
+            const q = validQuestionsMap.get(ans.questionId)!;
+            maxScore += q.points;
+            let isCorrect: boolean | null = null;
+            let awardedPoints = 0;
+
+            if (isObjectiveType(q.type)) {
+              isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
+              awardedPoints = isCorrect ? q.points : 0;
+              totalScore += awardedPoints;
+            }
+
             return {
               questionId: ans.questionId,
               studentAnswer: ans.studentAnswer || null,
               audioUrl: ans.audioUrl || null,
-              isCorrect: null,
-              awardedPoints: 0,
+              isCorrect,
+              awardedPoints,
             };
-          }
-
-          maxScore += q.points;
-          let isCorrect: boolean | null = null;
-          let awardedPoints = 0;
-
-          if (isObjectiveType(q.type)) {
-            isCorrect = isAnswerCorrect(q.correctAnswer, ans.studentAnswer);
-            awardedPoints = isCorrect ? q.points : 0;
-            totalScore += awardedPoints;
-          }
-
-          return {
-            questionId: ans.questionId,
-            studentAnswer: ans.studentAnswer || null,
-            audioUrl: ans.audioUrl || null,
-            isCorrect,
-            awardedPoints,
-          };
-        });
+          });
 
         const previousSubmissionsCount = await prisma.assignmentSubmission.count({
           where: {
@@ -1880,22 +1869,80 @@ export async function submitAssignmentService(
         };
       }
     } catch (dbErr: any) {
-      console.warn("[submitAssignmentService] Lỗi Prisma nộp bài, chuyển tiếp fallback sang Demo Store:", dbErr?.message);
+      logSystemWarning("assignment.service", "submitAssignmentService", "Lỗi CSDL khi nộp bài", dbErr);
+      return { success: false, error: dbErr?.message || "Lỗi CSDL khi nộp bài tập!" };
     }
   }
 
-  // 2. Fallback nộp vào Demo Store
-  return submitToDemoStore(data, studentInfo, now);
+  // 2. Fallback nộp vào Demo Store (khi DB offline hoặc bài tập demo)
+  const isDemoAssignment = (globalAssignmentsStore.demoAssignments || []).some((a) => a.id === data.assignmentId);
+  if (!(await isDbAlive()) || isDemoAssignment) {
+    logSystemWarning("assignment.service", "submitAssignmentService", "DB offline hoặc bài tập demo, nộp vào Demo Store");
+    return submitToDemoStore(data, studentInfo, now);
+  }
+
+  return { success: false, error: "Bài tập không tồn tại hoặc đã bị xóa!" };
 }
 
 function getSubmissionsFromDemoStore(
   assignmentId: string,
   requestUser?: { userId: string; role: string }
 ) {
-  const assign =
-    (globalAssignmentsStore.demoAssignments || []).find(
-      (a: any) => a.id === assignmentId
-    ) || (globalAssignmentsStore.demoAssignments || [])[0];
+  const assign = (globalAssignmentsStore.demoAssignments || []).find(
+    (a: any) => a.id === assignmentId
+  );
+
+  if (!assign) {
+    return { success: false, error: "Bài tập không tồn tại!", submissions: [] };
+  }
+
+  // Phân quyền tương tự nhánh Prisma
+  if (requestUser) {
+    if (requestUser.role === "STUDENT") {
+      // Học sinh chỉ xem bài của mình (lọc ở dưới)
+    } else if (
+      requestUser.role === "TEACHER" ||
+      requestUser.role === "TEACHING_ASSISTANT"
+    ) {
+      const isCreator = assign.createdById === requestUser.userId;
+      const isAssigned =
+        assign.teacherId === requestUser.userId ||
+        assign.classStaffIds?.includes(requestUser.userId) ||
+        assign.class?.assignments?.some((ca: any) => ca.userId === requestUser.userId) ||
+        assign.assignedClasses?.some((ac: any) =>
+          ac.class?.assignments?.some((ca: any) => ca.userId === requestUser.userId) ||
+          ac.staffIds?.includes(requestUser.userId)
+        );
+
+      if (!isCreator && !isAssigned && assign.createdById && assign.createdById !== requestUser.userId) {
+        return {
+          success: false,
+          error: "Bạn không được phân công phụ trách lớp học của bài tập này!",
+          submissions: [],
+        };
+      }
+    } else if (requestUser.role === "SCHOOL_MANAGER") {
+      const isManagerOfSchool =
+        assign.schoolManagerId === requestUser.userId ||
+        assign.school?.managerId === requestUser.userId ||
+        assign.class?.school?.managerId === requestUser.userId ||
+        assign.assignedClasses?.some(
+          (ac: any) => ac.class?.school?.managerId === requestUser.userId
+        );
+
+      if (!isManagerOfSchool && (assign.schoolManagerId || assign.school?.managerId || assign.class?.school?.managerId)) {
+        return {
+          success: false,
+          error: "Bạn không có quyền quản lý trường học của bài tập này!",
+          submissions: [],
+        };
+      }
+    } else if (requestUser.role === "ADMIN") {
+      // ADMIN: Được phép xem tất cả
+    } else {
+      return { success: false, error: "Bạn không có quyền truy cập!", submissions: [] };
+    }
+  }
 
   const questionsMap = new Map<string, any>();
   (assign?.questions || []).forEach((q: any) => {

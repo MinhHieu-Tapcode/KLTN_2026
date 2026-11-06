@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { RoleCode, Gender, StaffClassRole } from "@prisma/client";
 import { sendAccountCreatedEmail } from "@/lib/mail";
 import { resolveRealClassId, resolveRealSchoolId } from "./class.service";
+import { logSystemWarning } from "@/lib/telemetry";
 
 const globalUsersStore = globalThis as unknown as {
   demoUsers?: any[];
@@ -68,7 +69,7 @@ if (!globalUsersStore.demoUsers) {
         fullName: "Nguyễn Văn An",
         phoneNumber: "0934567890",
         entryIeltsScore: 6.0,
-        ieltsLevel: { id: "lvl-medium", name: "Trung bình", code: "MEDIUM" },
+        ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
       },
       isActive: true,
       classAssignments: [],
@@ -95,7 +96,7 @@ if (!globalUsersStore.demoUsers) {
         fullName: "Trần Thị Lan",
         phoneNumber: "0912345671",
         entryIeltsScore: 5.5,
-        ieltsLevel: { id: "lvl-medium", name: "Trung bình", code: "MEDIUM" },
+        ieltsLevel: { id: "lvl-intermediate", name: "Trung bình", code: "INTERMEDIATE" },
       },
       isActive: true,
       classAssignments: [],
@@ -203,6 +204,16 @@ export async function getUsersService(
       "Trợ giảng": "TEACHING_ASSISTANT",
       "Học sinh": "STUDENT",
     };
+    if (isSchoolManager(session)) {
+      list = list.filter((u) => {
+        const r = u.role?.code;
+        return r === "TEACHER" || r === "TEACHING_ASSISTANT" || r === "STUDENT";
+      });
+      if (roleFilter === "Quản trị viên" || roleFilter === "Quản nhiệm") {
+        return [];
+      }
+    }
+
     if (roleFilter !== "Tất cả" && roleMap[roleFilter]) {
       const targetRole = roleMap[roleFilter];
       list = list.filter((u) => u.role?.code === targetRole);
@@ -329,34 +340,33 @@ export async function getUsersService(
         orderBy: { createdAt: "desc" },
       });
 
-      if (usersDb && usersDb.length > 0) {
+      return (usersDb || []).map((u) => {
         // [C1 & C3] Chuẩn hóa tên lớp học trong enrollment để không bao giờ bị dính nhầm họ tên học sinh
-        return usersDb.map((u) => {
-          const sName = u.profile?.fullName?.trim() || "";
-          if (u.classEnrollments?.length) {
-            u.classEnrollments = u.classEnrollments.map((en: any) => {
-              if (en.class) {
-                const cName = en.class.name?.trim();
-                if (!cName || (sName && cName.toLowerCase() === sName.toLowerCase())) {
-                  en.class.name =
-                    en.class.code === "IELTS_TD_01"
-                      ? "IELTS Bứt Phá - 10A1"
-                      : en.class.code === "IELTS_TD_02"
-                      ? "IELTS Khởi Động - 10A2"
-                      : en.class.code || "Lớp học";
-                }
+        const sName = u.profile?.fullName?.trim() || "";
+        if (u.classEnrollments?.length) {
+          u.classEnrollments = u.classEnrollments.map((en: any) => {
+            if (en.class) {
+              const cName = en.class.name?.trim();
+              if (!cName || (sName && cName.toLowerCase() === sName.toLowerCase())) {
+                en.class.name =
+                  en.class.code === "IELTS_TD_01"
+                    ? "IELTS Bứt Phá - 10A1"
+                    : en.class.code === "IELTS_TD_02"
+                    ? "IELTS Khởi Động - 10A2"
+                    : en.class.code || "Lớp học";
               }
-              return en;
-            });
-          }
-          return u;
-        });
-      }
+            }
+            return en;
+          });
+        }
+        return u;
+      });
     } catch (err: any) {
-      console.warn("[getUsersService] DB error fallback:", err?.message);
+      logSystemWarning("user.service", "getUsersService", "Lỗi CSDL khi lấy danh sách người dùng, fallback sang bộ nhớ", err);
     }
   }
 
+  logSystemWarning("user.service", "getUsersService", "DB offline, trả về danh sách bộ nhớ getMemoryUsers");
   return getMemoryUsers();
 }
 
@@ -943,11 +953,13 @@ export async function updateUserService(
         data.roleCode === "TEACHING_ASSISTANT"
       ) {
         await prisma.classAssignment.deleteMany({ where: { userId: id } });
-        for (const classId of data.classIds) {
-          if (!classId) continue;
+        for (const rawClassId of data.classIds) {
+          if (!rawClassId) continue;
+          const realClassId = await resolveRealClassId(rawClassId);
+          if (!realClassId) continue;
           await prisma.classAssignment.create({
             data: {
-              classId,
+              classId: realClassId,
               userId: id,
               roleInClass: data.roleCode as StaffClassRole,
             },
@@ -955,11 +967,13 @@ export async function updateUserService(
         }
       } else if (data.roleCode === "STUDENT") {
         await prisma.classEnrollment.deleteMany({ where: { studentId: id } });
-        for (const classId of data.classIds) {
-          if (!classId) continue;
+        for (const rawClassId of data.classIds) {
+          if (!rawClassId) continue;
+          const realClassId = await resolveRealClassId(rawClassId);
+          if (!realClassId) continue;
           await prisma.classEnrollment.create({
             data: {
-              classId,
+              classId: realClassId,
               studentId: id,
               status: "STUDYING",
             },

@@ -46,7 +46,7 @@ export function safeParseGender(val?: any): 'MALE' | 'FEMALE' | 'OTHER' | null {
 
 const DEFAULT_IELTS_LEVELS = [
   { id: "lvl-basic", code: "BASIC", name: "Cơ bản", minScore: 3.5, maxScore: 4.5, targetClassCount: 1, sortOrder: 1, isActive: true },
-  { id: "lvl-medium", code: "MEDIUM", name: "Trung bình", minScore: 4.5, maxScore: 6.5, targetClassCount: 2, sortOrder: 2, isActive: true },
+  { id: "lvl-intermediate", code: "INTERMEDIATE", name: "Trung bình", minScore: 4.5, maxScore: 6.5, targetClassCount: 2, sortOrder: 2, isActive: true },
   { id: "lvl-advanced", code: "ADVANCED", name: "Nâng cao", minScore: 6.5, maxScore: 9.0, targetClassCount: 3, sortOrder: 3, isActive: true },
 ];
 

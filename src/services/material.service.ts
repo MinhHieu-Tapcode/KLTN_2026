@@ -3,6 +3,7 @@ import { MaterialType } from "@prisma/client";
 import { createNotifications } from "./notification.service";
 import type { SessionPayload } from "@/lib/auth";
 import { isAdmin, isSchoolManager, isTeacherOrTA } from "@/lib/permissions";
+import { logSystemWarning } from "@/lib/telemetry";
 
 const globalMaterialsStore = globalThis as unknown as {
   demoFolders?: any[];
@@ -310,33 +311,32 @@ export async function getMaterialFoldersService(params: {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
       });
 
-      if (folders && folders.length > 0) {
-        const authorMap = await buildUserAuthorMap(folders.map((f) => f.createdById));
+      const authorMap = folders.length > 0 ? await buildUserAuthorMap(folders.map((f) => f.createdById)) : {};
 
-        const formatted = folders.map((f) => ({
-          id: f.id,
-          name: f.name,
-          description: f.description,
-          classId: f.classId,
-          ieltsLevelId: f.ieltsLevelId,
-          parentId: f.parentId,
-          createdById: f.createdById,
-          authorName: authorMap[f.createdById] || (f.classId ? "Giáo viên" : "Quản trị viên"),
-          isInherited: !f.classId && !!f.ieltsLevelId,
-          levelName: f.ieltsLevel?.name || null,
-          fileCount: f.materials.length,
-          subFolderCount: f.subFolders.length,
-          createdAt: f.createdAt.toISOString(),
-          updatedAt: f.updatedAt.toISOString(),
-        }));
+      const formatted = folders.map((f) => ({
+        id: f.id,
+        name: f.name,
+        description: f.description,
+        classId: f.classId,
+        ieltsLevelId: f.ieltsLevelId,
+        parentId: f.parentId,
+        createdById: f.createdById,
+        authorName: authorMap[f.createdById] || (f.classId ? "Giáo viên" : "Quản trị viên"),
+        isInherited: !f.classId && !!f.ieltsLevelId,
+        levelName: f.ieltsLevel?.name || null,
+        fileCount: f.materials.length,
+        subFolderCount: f.subFolders.length,
+        createdAt: f.createdAt.toISOString(),
+        updatedAt: f.updatedAt.toISOString(),
+      }));
 
-        return { success: true, folders: formatted };
-      }
+      return { success: true, folders: formatted };
     } catch (err: any) {
-      console.warn("[getMaterialFoldersService] DB error fallback:", err?.message);
+      logSystemWarning("material.service", "getMaterialFoldersService", "Lỗi DB khi lấy thư mục tài liệu, fallback demo", err);
     }
   }
 
+  logSystemWarning("material.service", "getMaterialFoldersService", "DB offline, trả về memoryFolders");
   const memoryFolders = filterMemoryFolders(params);
   return { success: true, folders: memoryFolders };
 }
@@ -448,32 +448,31 @@ export async function getLearningMaterialsService(
         orderBy: { createdAt: "desc" },
       });
 
-      if (materials && materials.length > 0) {
-        const authorMap = await buildUserAuthorMap(materials.map((m) => m.uploadedById));
+      const authorMap = materials.length > 0 ? await buildUserAuthorMap(materials.map((m) => m.uploadedById)) : {};
 
-        return {
-          success: true,
-          materials: materials.map((m) => ({
-            id: m.id,
-            folderId: m.folderId,
-            title: m.title,
-            fileName: m.fileName,
-            fileUrl: m.fileUrl,
-            fileSize: m.fileSize,
-            fileType: m.fileType,
-            mimeType: m.mimeType,
-            downloadCount: m.downloadCount,
-            uploadedById: m.uploadedById,
-            authorName: authorMap[m.uploadedById] || "Giáo viên",
-            createdAt: m.createdAt.toISOString(),
-          })),
-        };
-      }
+      return {
+        success: true,
+        materials: materials.map((m) => ({
+          id: m.id,
+          folderId: m.folderId,
+          title: m.title,
+          fileName: m.fileName,
+          fileUrl: m.fileUrl,
+          fileSize: m.fileSize,
+          fileType: m.fileType,
+          mimeType: m.mimeType,
+          downloadCount: m.downloadCount,
+          uploadedById: m.uploadedById,
+          authorName: authorMap[m.uploadedById] || "Giáo viên",
+          createdAt: m.createdAt.toISOString(),
+        })),
+      };
     } catch (err: any) {
-      console.warn("[getLearningMaterialsService] DB error fallback:", err?.message);
+      logSystemWarning("material.service", "getLearningMaterialsService", "Lỗi DB khi lấy tài liệu học tập, fallback demo", err);
     }
   }
 
+  logSystemWarning("material.service", "getLearningMaterialsService", "DB offline, trả về demoMaterials");
   const demoMaterials = (globalMaterialsStore.demoMaterials || []).filter(
     (m) => m.isActive && (!folderId || m.folderId === folderId)
   );
