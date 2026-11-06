@@ -69,3 +69,12 @@ Trước khi báo hoàn thành hoặc dừng lượt phản hồi, AI **BẮT BU
 - `PROJECT_STRUCTURE.md`: bản đồ thư mục.
 - `PROJECT_BLUEPRINT.md`: ý tưởng và định hướng tổng thể.
 - `docs/flows/<module>.md`: luồng nghiệp vụ, ca biên, ma trận quyền từng module (sẽ bổ sung dần).
+
+- `docs/rules/UML_DRAWIO_RULES.md`: quy chuẩn thiết kế và sinh mã Sơ đồ tuần tự (Sequence Diagram) chuẩn Draw.io XML (<mxGraphModel>) theo mô hình BCE và tách bảng CSDL thực tế.
+
+## 7. Quy chuẩn thiết kế Sơ đồ tuần tự (Sequence Diagram Draw.io)
+Mọi yêu cầu vẽ hoặc chỉnh sửa biểu đồ tuần tự UML phải tuân thủ nghiêm ngặt `docs/rules/UML_DRAWIO_RULES.md`:
+1. Mô hình BCE 4 tầng: 1 Actor -> 1 UI -> 1 Action -> 1 Service -> N Entity (Tách từng Bảng CSDL trong `schema.prisma`, tuyệt đối không dùng 1 cột :Database chung chung).
+2. Tên đối tượng: Giữ tên Code tiếng Anh, chú thích vai trò tiếng Việt (VD: `:ManualAssignmentModal (Giao diện)`, `:User (Bảng CSDL Tài khoản)`, `:Assignment (Bảng CSDL Bài tập)`). Dùng cụm "Bảng CSDL" để rõ nghĩa, tránh nhầm với Actor con người.
+3. Thông điệp phản hồi dùng ngôn ngữ tự nhiên dễ hiểu, không dùng chuỗi JSON { success: true }.
+4. Xuất mã Draw.io chuẩn XML <mxGraphModel> với tọa độ thẳng hàng tuyệt đối.

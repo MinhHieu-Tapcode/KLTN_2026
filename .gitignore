@@ -51,3 +51,7 @@ scratch/
 # Temporary screenshots & root excel samples
 screenshot*.png
 /SIMPACE_*.xlsx
+
+# AI Agent Workspaces
+.agents/
+.gemini/

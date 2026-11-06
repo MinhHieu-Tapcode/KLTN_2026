@@ -1,0 +1,212 @@
+<mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="title_node" value="HÌNH: BIỂU ĐỒ TUẦN TỰ QUY TRÌNH QUÊN MẬT KHẨU" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Times New Roman;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="120" y="15" width="560" height="25" as="geometry" />
+    </mxCell>
+    <mxCell id="u_actor" value=": Người dùng" style="shape=umlActor;verticalLabelPosition=top;verticalAlign=bottom;html=1;outlineConnect=0;fillColor=#FFFFFF;strokeColor=#000000;fontFamily=Times New Roman;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="34" y="65" width="32" height="55" as="geometry" />
+    </mxCell>
+    <mxCell id="u_line" value="" style="edgeStyle=none;dashed=1;html=1;strokeColor=#000000;strokeWidth=1;endArrow=none;rounded=0;" edge="1" parent="1" source="u_actor">
+      <mxGeometry relative="1" as="geometry"><mxPoint x="50" y="755" as="targetPoint" /></mxGeometry>
+    </mxCell>
+    <mxCell id="ui" value="&lt;b&gt;:LoginView&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;(Giao diện UI)&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.5;fontFamily=Times New Roman;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="110" y="65" width="125" height="690" as="geometry" />
+    </mxCell>
+    <mxCell id="act" value="&lt;b&gt;:forgotPasswordAction&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;(Server Action)&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.5;fontFamily=Times New Roman;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="260" y="65" width="135" height="690" as="geometry" />
+    </mxCell>
+    <mxCell id="svc" value="&lt;b&gt;:authService&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;(Service Tầng nghiệp vụ)&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.5;fontFamily=Times New Roman;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="420" y="65" width="140" height="690" as="geometry" />
+    </mxCell>
+    <mxCell id="db" value="&lt;b&gt;:Database&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;(PostgreSQL / Prisma)&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.5;fontFamily=Times New Roman;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="585" y="65" width="115" height="690" as="geometry" />
+    </mxCell>
+    <mxCell id="mail" value="&lt;b&gt;:MailService&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;(External Service)&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.5;fontFamily=Times New Roman;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="715" y="65" width="95" height="690" as="geometry" />
+    </mxCell>
+    <mxCell id="p1" value="GIAI ĐOẠN 1: YÊU CẦU CẤP MÃ OTP QUA EMAIL" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=85;fillColor=none;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;fontStyle=1;align=left;spacingLeft=5;" vertex="1" parent="1">
+      <mxGeometry x="35" y="110" width="755" height="290" as="geometry" />
+    </mxCell>
+    <mxCell id="alt_email" value="alt
+[Email không tồn tại]" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=85;fillColor=none;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;fontStyle=1;align=left;spacingLeft=5;" vertex="1" parent="1">
+      <mxGeometry x="45" y="215" width="735" height="65" as="geometry" />
+    </mxCell>
+    <mxCell id="p2" value="GIAI ĐOẠN 2: XÁC THỰC OTP &amp; ĐẶT LẠI MẬT KHẨU MỚI" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=85;fillColor=none;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;fontStyle=1;align=left;spacingLeft=5;" vertex="1" parent="1">
+      <mxGeometry x="35" y="410" width="755" height="350" as="geometry" />
+    </mxCell>
+    <mxCell id="alt_otp" value="alt
+[OTP sai / Hết hạn]" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=85;fillColor=none;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;fontStyle=1;align=left;spacingLeft=5;" vertex="1" parent="1">
+      <mxGeometry x="45" y="520" width="735" height="65" as="geometry" />
+    </mxCell>
+    <mxCell id="n_otp" value="Validate Email hợp lệ" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#FFFFFF;strokeColor=#000000;fontFamily=Times New Roman;fontSize=10;align=left;spacing=4;" vertex="1" parent="1">
+      <mxGeometry x="335" y="160" width="120" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="n_pwd" value="Validate OTP (6 số) &amp;
+Độ dài mật khẩu (&gt;=6)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#FFFFFF;strokeColor=#000000;fontFamily=Times New Roman;fontSize=10;align=left;spacing=4;" vertex="1" parent="1">
+      <mxGeometry x="335" y="455" width="125" height="35" as="geometry" />
+    </mxCell>
+    <mxCell id="f1" value="1. Bấm &quot;Quên MK?&quot; &amp; Nhập Email" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="50" y="135" as="sourcePoint" />
+        <mxPoint x="172" y="135" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f2" value="2. Gửi yêu cầu cấp lại mã (email)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="172" y="160" as="sourcePoint" />
+        <mxPoint x="327" y="160" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f3" value="3. createPasswordResetOtp(email)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="327" y="185" as="sourcePoint" />
+        <mxPoint x="490" y="185" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f4" value="4. findUserByEmail(email)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="205" as="sourcePoint" />
+        <mxPoint x="642" y="205" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f5a" value="5a. return null (Email không tồn tại)" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="642" y="230" as="sourcePoint" />
+        <mxPoint x="490" y="230" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f6a" value="6a. return { success: false, error: &quot;Email không tồn tại!&quot; }" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="255" as="sourcePoint" />
+        <mxPoint x="172" y="255" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f7a" value="7a. Báo lỗi trên giao diện" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="172" y="275" as="sourcePoint" />
+        <mxPoint x="50" y="275" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f5b" value="5b. [else] Lưu OTP vào bảng PasswordResetToken (hạn 15p)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="300" as="sourcePoint" />
+        <mxPoint x="642" y="300" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f6b" value="6b. sendOtpEmail(to: email, otp)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="325" as="sourcePoint" />
+        <mxPoint x="762" y="325" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f7b" value="7b. Gửi email thành công" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="762" y="350" as="sourcePoint" />
+        <mxPoint x="490" y="350" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f8b" value="8b. return { success: true } -&gt; Chuyển sang Bước 2" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="375" as="sourcePoint" />
+        <mxPoint x="172" y="375" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f9" value="9. Nhập OTP, Mật khẩu mới &amp; bấm Xác nhận" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="50" y="435" as="sourcePoint" />
+        <mxPoint x="172" y="435" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f10" value="10. Gửi dữ liệu đổi mật khẩu (email, otp, newPassword)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="172" y="460" as="sourcePoint" />
+        <mxPoint x="327" y="460" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f11" value="11. verifyAndResetPassword(...)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="327" y="485" as="sourcePoint" />
+        <mxPoint x="490" y="485" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f12" value="12. findValidResetToken(token, email)" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="510" as="sourcePoint" />
+        <mxPoint x="642" y="510" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f13a" value="13a. return { success: false, error: &quot;Mã OTP không đúng hoặc hết hạn!&quot; }" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="642" y="535" as="sourcePoint" />
+        <mxPoint x="490" y="535" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f14a" value="14a. return { success: false, error }" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="555" as="sourcePoint" />
+        <mxPoint x="172" y="555" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f15a" value="15a. Báo lỗi và cho nhập lại" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="172" y="575" as="sourcePoint" />
+        <mxPoint x="50" y="575" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f13b" value="13b. [else] hashPassword(newPassword) [Bcrypt]" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="615" as="sourcePoint" />
+        <mxPoint x="525" y="615" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f13b_ret" value="" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="525" y="635" as="sourcePoint" />
+        <mxPoint x="490" y="635" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f14b" value="14b. updateUserPassword() &amp; markOtpUsed()" style="edgeStyle=none;html=1;endArrow=block;endFill=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="660" as="sourcePoint" />
+        <mxPoint x="642" y="660" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f15b" value="15b. return { success: true }" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="490" y="690" as="sourcePoint" />
+        <mxPoint x="172" y="690" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="f16b" value="16b. Thông báo đổi mật khẩu thành công -&gt; Quay lại Đăng nhập" style="edgeStyle=none;html=1;endArrow=open;endFill=0;dashed=1;rounded=0;strokeColor=#000000;strokeWidth=1.2;fontFamily=Times New Roman;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+      <mxGeometry x="0" y="-11" relative="1" as="geometry">
+        <mxPoint x="172" y="720" as="sourcePoint" />
+        <mxPoint x="50" y="720" as="targetPoint" />
+        <mxPoint as="offset" y="-11" />
+      </mxGeometry>
+    </mxCell>
+  </root>
+</mxGraphModel>
