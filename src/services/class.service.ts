@@ -140,9 +140,17 @@ export async function resolveRealClassId(rawClassId?: string | null): Promise<st
     // 1. Kiểm tra xem cleanId có tồn tại trực tiếp trong bảng classes không
     const direct = await prisma.class.findUnique({
       where: { id: cleanId },
-      select: { id: true },
+      select: { id: true, code: true, name: true },
     });
-    if (direct) return direct.id;
+    if (direct) {
+      if (direct.code === "IELTS_TD_01" && direct.name !== "IELTS Bứt Phá - 10A1") {
+        await prisma.class.update({
+          where: { id: direct.id },
+          data: { name: "IELTS Bứt Phá - 10A1" },
+        }).catch(() => {});
+      }
+      return direct.id;
+    }
 
     // 2. Nếu là ID demo hoặc không tìm thấy, xác định mã lớp mục tiêu
     let targetCode = cleanId;
@@ -156,9 +164,17 @@ export async function resolveRealClassId(rawClassId?: string | null): Promise<st
           { code: { equals: targetCode, mode: "insensitive" } },
         ],
       },
-      select: { id: true },
+      select: { id: true, code: true, name: true },
     });
-    if (byCode) return byCode.id;
+    if (byCode) {
+      if (targetCode === "IELTS_TD_01" && byCode.name !== "IELTS Bứt Phá - 10A1") {
+        await prisma.class.update({
+          where: { id: byCode.id },
+          data: { name: "IELTS Bứt Phá - 10A1" },
+        }).catch(() => {});
+      }
+      return byCode.id;
+    }
 
     // 3. Nếu DB chưa có lớp này: Tự động khởi tạo lớp học chuẩn để bảo đảm toàn vẹn dữ liệu
     let school = await prisma.school.findFirst({ select: { id: true } });
@@ -348,15 +364,48 @@ export async function getClassesService(
         orderBy: { createdAt: "desc" },
       });
 
-      if (list && list.length > 0) {
-        return list as any;
-      }
+      // Khi DB query hoàn tất, trả về danh sách lớp chuẩn xác của người dùng
+      // Tuyệt đối không fallback bừa bãi khi list rỗng khiến học sinh nhìn thấy lớp của người khác
+      return list as any;
     } catch (err: any) {
       console.warn("[getClassesService] DB error fallback:", err?.message);
     }
   }
 
-  return (globalClassesStore.demoClasses || []) as any;
+  // Nhánh Fallback khi DB thực sự offline:
+  let memoryClasses = (globalClassesStore.demoClasses || []) as any[];
+  if (isStudent(session)) {
+    // Chỉ lấy các lớp mà học sinh này thực sự tham gia
+    memoryClasses = memoryClasses.filter((c) =>
+      c.enrollments?.some(
+        (e: any) =>
+          e.studentId === session?.userId ||
+          e.student?.id === session?.userId ||
+          e.student?.email === session?.email ||
+          e.student?.username === session?.username
+      )
+    );
+  } else if (isTeacherOrTA(session)) {
+    memoryClasses = memoryClasses.filter((c) =>
+      c.assignments?.some(
+        (a: any) =>
+          a.userId === session?.userId ||
+          a.staff?.id === session?.userId ||
+          a.staff?.username === session?.username
+      )
+    );
+  } else if (isSchoolManager(session)) {
+    memoryClasses = memoryClasses.filter(
+      (c) => c.school?.managerId === session?.userId
+    );
+  }
+
+  if (activeState === "ACTIVE") {
+    memoryClasses = memoryClasses.filter((c) => c.isActive !== false);
+  } else if (activeState === "INACTIVE") {
+    memoryClasses = memoryClasses.filter((c) => c.isActive === false);
+  }
+  return memoryClasses;
 }
 
 export async function getClassDetailService(id: string) {

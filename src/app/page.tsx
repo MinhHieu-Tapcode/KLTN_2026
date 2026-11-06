@@ -108,7 +108,10 @@ export default async function HomePage({
 
   // Cung cấp dữ liệu mẫu dự phòng khi cơ sở dữ liệu chưa sẵn sàng
   if (!classes || classes.length === 0) {
-    classes = [
+    if (session?.role === "STUDENT") {
+      classes = [];
+    } else {
+      classes = [
       {
         id: "demo-class-1",
         code: "IELTS_TD_01",
@@ -166,6 +169,7 @@ export default async function HomePage({
         enrollments: [],
       },
     ];
+    }
   }
 
   if (!schools || schools.length === 0) {

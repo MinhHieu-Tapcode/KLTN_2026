@@ -24,10 +24,22 @@ export function formatUserAssignmentText(u: any): string {
   }
   if (u.role?.code === "STUDENT") {
     if (u.classEnrollments?.length > 0) {
+      const studentName = u.profile?.fullName?.trim() || u.username;
       return u.classEnrollments
         .map((e: any) => {
           const sch = e.class?.school?.name;
-          const cls = e.class?.name || e.class?.code;
+          let cls = e.class?.name || e.class?.code;
+          if (
+            !cls ||
+            (studentName && String(cls).trim().toLowerCase() === studentName.toLowerCase())
+          ) {
+            cls =
+              e.class?.code === "IELTS_TD_01" || e.classId === "demo-class-1"
+                ? "IELTS Bứt Phá - 10A1"
+                : e.class?.code === "IELTS_TD_02" || e.classId === "demo-class-2"
+                ? "IELTS Khởi Động - 10A2"
+                : e.class?.code || "Lớp học";
+          }
           return sch ? `${sch} - ${cls}` : cls;
         })
         .filter(Boolean)

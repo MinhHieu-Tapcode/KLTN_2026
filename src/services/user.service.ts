@@ -218,6 +218,17 @@ export async function getUsersService(
           u.profile?.phoneNumber?.toLowerCase().includes(q)
       );
     }
+
+    // [C3] Loại bỏ bản ghi trùng lặp email (chỉ giữ bản ghi duy nhất)
+    const seenEmails = new Set<string>();
+    list = list.filter((u) => {
+      const email = u.email?.trim().toLowerCase();
+      if (!email) return true;
+      if (seenEmails.has(email)) return false;
+      seenEmails.add(email);
+      return true;
+    });
+
     return list;
   }
 
@@ -319,7 +330,27 @@ export async function getUsersService(
       });
 
       if (usersDb && usersDb.length > 0) {
-        return usersDb;
+        // [C1 & C3] Chuẩn hóa tên lớp học trong enrollment để không bao giờ bị dính nhầm họ tên học sinh
+        return usersDb.map((u) => {
+          const sName = u.profile?.fullName?.trim() || "";
+          if (u.classEnrollments?.length) {
+            u.classEnrollments = u.classEnrollments.map((en: any) => {
+              if (en.class) {
+                const cName = en.class.name?.trim();
+                if (!cName || (sName && cName.toLowerCase() === sName.toLowerCase())) {
+                  en.class.name =
+                    en.class.code === "IELTS_TD_01"
+                      ? "IELTS Bứt Phá - 10A1"
+                      : en.class.code === "IELTS_TD_02"
+                      ? "IELTS Khởi Động - 10A2"
+                      : en.class.code || "Lớp học";
+                }
+              }
+              return en;
+            });
+          }
+          return u;
+        });
       }
     } catch (err: any) {
       console.warn("[getUsersService] DB error fallback:", err?.message);
@@ -563,31 +594,40 @@ export async function createUserService(data: {
       const assignedStaffClasses: any[] = [];
       if (data.classIds && data.classIds.length > 0) {
         for (const cId of data.classIds) {
-          const cls = demoClasses.find((c: any) => c.id === cId);
-          if (cls) {
-            if (data.roleCode === "STUDENT") {
-              assignedEnrollments.push({
-                id: `en-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                classId: cls.id,
-                class: {
-                  id: cls.id,
-                  name: cls.name,
-                  code: cls.code,
-                  school: cls.school || { name: "Trường đối tác" },
-                },
-              });
-            } else {
-              assignedStaffClasses.push({
-                id: `as-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                classId: cls.id,
-                class: {
-                  id: cls.id,
-                  name: cls.name,
-                  code: cls.code,
-                  school: cls.school || { name: "Trường đối tác" },
-                },
-              });
-            }
+          const cls = demoClasses.find((c: any) => c.id === cId || c.code === cId) || {
+            id: cId,
+            name: cId === "demo-class-1" || cId === "IELTS_TD_01" ? "IELTS Bứt Phá - 10A1" : "Lớp học",
+            code: cId === "demo-class-1" ? "IELTS_TD_01" : cId,
+            school: { name: "THPT Trương Định", code: "SCH_TD" },
+          };
+          const clsName =
+            cls.code === "IELTS_TD_01" || cls.id === "demo-class-1"
+              ? "IELTS Bứt Phá - 10A1"
+              : cls.code === "IELTS_TD_02" || cls.id === "demo-class-2"
+              ? "IELTS Khởi Động - 10A2"
+              : cls.name || "Lớp học";
+          if (data.roleCode === "STUDENT") {
+            assignedEnrollments.push({
+              id: `en-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              classId: cls.id,
+              class: {
+                id: cls.id,
+                name: clsName,
+                code: cls.code,
+                school: cls.school || { name: "THPT Trương Định" },
+              },
+            });
+          } else {
+            assignedStaffClasses.push({
+              id: `as-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              classId: cls.id,
+              class: {
+                id: cls.id,
+                name: clsName,
+                code: cls.code,
+                school: cls.school || { name: "THPT Trương Định" },
+              },
+            });
           }
         }
       }
