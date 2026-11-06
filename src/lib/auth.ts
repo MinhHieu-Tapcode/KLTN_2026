@@ -54,23 +54,9 @@ export async function getSession(): Promise<SessionPayload | null> {
       const verified = await verifySessionToken(token);
       if (verified) return verified;
     }
-    // Chế độ demo khi DB offline hoặc chưa đăng nhập
-    return {
-      userId: "teacher-1",
-      username: "gv.nguyenvan",
-      email: "gv.nguyenvan@simpace.vn",
-      role: "TEACHER",
-      fullName: "ThS. Nguyễn Văn A",
-    };
+    return null;
   } catch {
-    // Ngoài HTTP context (scripts, background tasks, testing)
-    return {
-      userId: "teacher-1",
-      username: "gv.nguyenvan",
-      email: "gv.nguyenvan@simpace.vn",
-      role: "TEACHER",
-      fullName: "ThS. Nguyễn Văn A",
-    };
+    return null;
   }
 }
 

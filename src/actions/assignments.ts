@@ -14,6 +14,9 @@ import {
   getSubmissionsForAssignmentService,
   gradeSubmissionService,
   submitAssignmentService,
+  verifyAssignmentCreationPermission,
+  verifyAssignmentDeletionPermission,
+  verifySubmissionGradingPermission,
 } from "@/services/assignment.service";
 import { parseIeltsExamContent } from "@/services/ielts-parser.service";
 import { transcribeSpeakingAudioService } from "@/services/speaking-transcript.service";
@@ -59,8 +62,13 @@ export async function getAssignmentDetailAction(
 ): Promise<{ success: boolean; assignment?: any; error?: string }> {
   try {
     const session = await getSession();
-    const studentId = session?.userId || "demo-student-1";
-    const hideAnswers = session?.role === "STUDENT";
+    const auth = checkAuth(session, "Vui lòng đăng nhập để xem chi tiết bài tập!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
+    }
+
+    const studentId = auth.session.userId;
+    const hideAnswers = auth.session.role === "STUDENT";
 
     // [C5] Học sinh chỉ thấy đáp án khi đủ điều kiện theo cấu hình lúc giao bài
     return await getAssignmentDetailService(assignmentId, studentId, {
@@ -113,7 +121,11 @@ export async function createAssignmentAction(data: {
   }>;
 }): Promise<{ success: boolean; assignmentId?: string; error?: string }> {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+    const auth = checkRole(
+      await getSession(),
+      ROLE_GROUPS.EXAM_CREATORS,
+      "Chỉ Giáo viên và Quản trị viên mới có quyền tạo bài tập!"
+    );
     if (!auth.ok) {
       return { success: false, error: auth.error };
     }
@@ -127,6 +139,15 @@ export async function createAssignmentAction(data: {
     );
     if (targetClassList.length === 0) {
       return { success: false, error: "Vui lòng chọn ít nhất 1 lớp học giao bài!" };
+    }
+
+    const permCheck = await verifyAssignmentCreationPermission(
+      auth.session.userId,
+      auth.session.role,
+      targetClassList
+    );
+    if (!permCheck.ok) {
+      return { success: false, error: permCheck.error };
     }
 
     const isListening = data.skill === "LISTENING" || data.skill === "ALL_SKILLS";
@@ -158,9 +179,22 @@ export async function deleteAssignmentAction(
   classId?: string,
   deleteFromAll?: boolean
 ): Promise<{ success: boolean; deletedFromAll?: boolean; error?: string }> {
-  const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để thực hiện!");
+  const auth = checkRole(
+    await getSession(),
+    ROLE_GROUPS.EXAM_CREATORS,
+    "Bạn không có quyền xóa bài tập!"
+  );
   if (!auth.ok) {
     return { success: false, error: auth.error };
+  }
+
+  const permCheck = await verifyAssignmentDeletionPermission(
+    assignmentId,
+    auth.session.userId,
+    auth.session.role
+  );
+  if (!permCheck.ok) {
+    return { success: false, error: permCheck.error };
   }
 
   try {
@@ -393,10 +427,15 @@ export async function submitAssignmentAction(data: {
 }> {
   try {
     const session = await getSession();
+    const auth = checkAuth(session, "Vui lòng đăng nhập để nộp bài!");
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
+    }
+
     const studentInfo = {
-      userId: session?.userId || "demo-student-1",
-      fullName: session?.fullName || "Học viên Demo",
-      email: session?.email || "demo@simpace.vn",
+      userId: auth.session.userId,
+      fullName: auth.session.fullName,
+      email: auth.session.email,
     };
 
     const res = await submitAssignmentService(data, studentInfo);
@@ -417,7 +456,20 @@ export async function getSubmissionsForAssignmentAction(
   assignmentId: string
 ): Promise<{ success: boolean; submissions: any[]; error?: string }> {
   try {
-    return await getSubmissionsForAssignmentService(assignmentId);
+    const session = await getSession();
+    const auth = checkAuth(session, "Vui lòng đăng nhập để xem danh sách bài nộp!");
+    if (!auth.ok) {
+      return {
+        success: false,
+        error: auth.error,
+        submissions: [],
+      };
+    }
+
+    return await getSubmissionsForAssignmentService(assignmentId, {
+      userId: auth.session.userId,
+      role: auth.session.role,
+    });
   } catch (err: any) {
     console.error("[getSubmissionsForAssignmentAction] Lỗi:", err);
     return {
@@ -448,9 +500,22 @@ export async function gradeSubmissionAction(data: {
   teacherFeedback?: string;
 }): Promise<{ success: boolean; totalScore?: number | null; status?: string; error?: string }> {
   try {
-    const auth = checkAuth(await getSession(), "Vui lòng đăng nhập để chấm bài!");
+    const auth = checkRole(
+      await getSession(),
+      ROLE_GROUPS.STAFF_AND_ADMIN,
+      "Chỉ Giáo viên, Trợ giảng và Quản trị viên mới có quyền chấm bài!"
+    );
     if (!auth.ok) {
       return { success: false, error: auth.error };
+    }
+
+    const permCheck = await verifySubmissionGradingPermission(
+      data.submissionId,
+      auth.session.userId,
+      auth.session.role
+    );
+    if (!permCheck.ok) {
+      return { success: false, error: permCheck.error };
     }
 
     const res = await gradeSubmissionService(data, auth.session.userId);

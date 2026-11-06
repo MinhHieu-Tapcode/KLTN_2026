@@ -1888,7 +1888,10 @@ export async function submitAssignmentService(
   return submitToDemoStore(data, studentInfo, now);
 }
 
-function getSubmissionsFromDemoStore(assignmentId: string) {
+function getSubmissionsFromDemoStore(
+  assignmentId: string,
+  requestUser?: { userId: string; role: string }
+) {
   const assign =
     (globalAssignmentsStore.demoAssignments || []).find(
       (a: any) => a.id === assignmentId
@@ -1899,7 +1902,12 @@ function getSubmissionsFromDemoStore(assignmentId: string) {
     questionsMap.set(q.id, q);
   });
 
-  const enrichedSubmissions = (assign?.submissions || []).map((s: any) => ({
+  let rawSubmissions = assign?.submissions || [];
+  if (requestUser?.role === "STUDENT") {
+    rawSubmissions = rawSubmissions.filter((s: any) => s.studentId === requestUser.userId);
+  }
+
+  const enrichedSubmissions = rawSubmissions.map((s: any) => ({
     ...s,
     teacherFeedback: s.teacherFeedback ?? s.feedback ?? "",
     answers: (s.answers || []).map((a: any, idx: number) => {
@@ -1932,11 +1940,113 @@ function getSubmissionsFromDemoStore(assignmentId: string) {
   };
 }
 
-export async function getSubmissionsForAssignmentService(assignmentId: string) {
+export async function getSubmissionsForAssignmentService(
+  assignmentId: string,
+  requestUser?: { userId: string; role: string }
+) {
   if (await isDbAlive()) {
     try {
+      const whereCondition: any = { assignmentId };
+
+      if (requestUser) {
+        if (requestUser.role === "STUDENT") {
+          // Học viên chỉ được xem bài làm của chính mình
+          whereCondition.studentId = requestUser.userId;
+        } else if (
+          requestUser.role === "TEACHER" ||
+          requestUser.role === "TEACHING_ASSISTANT"
+        ) {
+          // GV / TA: Chỉ được xem bài nộp của lớp mình được phân công phụ trách hoặc bài tập do mình tạo
+          const assignment = await prisma.assignment.findUnique({
+            where: { id: assignmentId },
+            select: {
+              id: true,
+              createdById: true,
+              classId: true,
+              class: {
+                select: {
+                  assignments: { select: { userId: true } },
+                },
+              },
+              assignedClasses: {
+                select: {
+                  classId: true,
+                  class: {
+                    select: {
+                      assignments: { select: { userId: true } },
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          if (!assignment) {
+            return { success: false, error: "Bài tập không tồn tại!", submissions: [] };
+          }
+
+          const isCreator = assignment.createdById === requestUser.userId;
+          const isAssigned =
+            assignment.class?.assignments?.some((ca) => ca.userId === requestUser.userId) ||
+            assignment.assignedClasses?.some((ac) =>
+              ac.class?.assignments?.some((ca) => ca.userId === requestUser.userId)
+            );
+
+          if (!isCreator && !isAssigned) {
+            return {
+              success: false,
+              error: "Bạn không được phân công phụ trách lớp học của bài tập này!",
+              submissions: [],
+            };
+          }
+        } else if (requestUser.role === "SCHOOL_MANAGER") {
+          // Quản nhiệm: Chỉ xem bài tập thuộc trường mình quản lý
+          const assignment = await prisma.assignment.findUnique({
+            where: { id: assignmentId },
+            select: {
+              class: {
+                select: {
+                  school: { select: { managerId: true } },
+                },
+              },
+              assignedClasses: {
+                select: {
+                  class: {
+                    select: {
+                      school: { select: { managerId: true } },
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          if (!assignment) {
+            return { success: false, error: "Bài tập không tồn tại!", submissions: [] };
+          }
+
+          const isManagerOfSchool =
+            assignment.class?.school?.managerId === requestUser.userId ||
+            assignment.assignedClasses?.some(
+              (ac) => ac.class?.school?.managerId === requestUser.userId
+            );
+
+          if (!isManagerOfSchool) {
+            return {
+              success: false,
+              error: "Bạn không có quyền quản lý trường học của bài tập này!",
+              submissions: [],
+            };
+          }
+        } else if (requestUser.role === "ADMIN") {
+          // ADMIN: Xem tất cả bài nộp
+        } else {
+          return { success: false, error: "Bạn không có quyền truy cập!", submissions: [] };
+        }
+      }
+
       const submissions = await prisma.assignmentSubmission.findMany({
-        where: { assignmentId },
+        where: whereCondition,
         include: {
           student: {
             select: {
@@ -2006,7 +2116,7 @@ export async function getSubmissionsForAssignmentService(assignmentId: string) {
     }
   }
 
-  return getSubmissionsFromDemoStore(assignmentId);
+  return getSubmissionsFromDemoStore(assignmentId, requestUser);
 }
 
 function gradeSubmissionInDemoStore(
@@ -2264,3 +2374,162 @@ export async function gradeSubmissionService(
   // 2. Fallback chấm điểm trong Demo Store
   return gradeSubmissionInDemoStore(data, gradedById);
 }
+
+/**
+ * Kiểm tra quyền tạo bài tập và phân công cho lớp học
+ */
+export async function verifyAssignmentCreationPermission(
+  userId: string,
+  userRole: string,
+  targetClassIds: string[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (userRole === "ADMIN") return { ok: true };
+  if (userRole !== "TEACHER") {
+    return { ok: false, error: "Chỉ Giáo viên và Quản trị viên mới có quyền tạo bài tập!" };
+  }
+
+  if (await isDbAlive()) {
+    try {
+      const userClasses = await prisma.classAssignment.findMany({
+        where: {
+          userId,
+          classId: { in: targetClassIds },
+        },
+        select: { classId: true },
+      });
+      const assignedClassIds = new Set(userClasses.map((ca) => ca.classId));
+      const unauthorizedClasses = targetClassIds.filter((cid) => !assignedClassIds.has(cid));
+      if (unauthorizedClasses.length > 0) {
+        return {
+          ok: false,
+          error: "Bạn chỉ có thể giao bài tập cho các lớp học mà mình được phân công giảng dạy!",
+        };
+      }
+    } catch (err: any) {
+      console.warn("[verifyAssignmentCreationPermission] Lỗi kiểm tra CSDL:", err?.message);
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Kiểm tra quyền xóa bài tập
+ */
+export async function verifyAssignmentDeletionPermission(
+  assignmentId: string,
+  userId: string,
+  userRole: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (userRole === "ADMIN") return { ok: true };
+  if (userRole !== "TEACHER") {
+    return { ok: false, error: "Bạn không có quyền xóa bài tập!" };
+  }
+
+  if (await isDbAlive()) {
+    try {
+      const assignment = await prisma.assignment.findUnique({
+        where: { id: assignmentId },
+        select: {
+          createdById: true,
+          class: {
+            select: {
+              assignments: { select: { userId: true } },
+            },
+          },
+          assignedClasses: {
+            select: {
+              class: {
+                select: {
+                  assignments: { select: { userId: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (assignment) {
+        const isCreator = assignment.createdById === userId;
+        const isAssigned =
+          assignment.class?.assignments?.some((ca) => ca.userId === userId) ||
+          assignment.assignedClasses?.some((ac) =>
+            ac.class?.assignments?.some((ca) => ca.userId === userId)
+          );
+
+        if (!isCreator && !isAssigned) {
+          return {
+            ok: false,
+            error: "Bạn không có quyền xóa bài tập này do không phải người tạo hoặc giáo viên phụ trách lớp!",
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn("[verifyAssignmentDeletionPermission] Lỗi kiểm tra CSDL:", err?.message);
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Kiểm tra quyền chấm bài tập
+ */
+export async function verifySubmissionGradingPermission(
+  submissionId: string,
+  userId: string,
+  userRole: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (userRole === "ADMIN") return { ok: true };
+  if (userRole !== "TEACHER" && userRole !== "TEACHING_ASSISTANT") {
+    return { ok: false, error: "Chỉ Giáo viên và Trợ giảng mới có quyền chấm bài!" };
+  }
+
+  if (await isDbAlive()) {
+    try {
+      const sub = await prisma.assignmentSubmission.findUnique({
+        where: { id: submissionId },
+        select: {
+          classId: true,
+          assignment: {
+            select: {
+              createdById: true,
+              class: {
+                select: {
+                  assignments: { select: { userId: true } },
+                },
+              },
+              assignedClasses: {
+                select: {
+                  class: {
+                    select: {
+                      assignments: { select: { userId: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (sub?.assignment) {
+        const isCreator = sub.assignment.createdById === userId;
+        const isAssigned =
+          sub.assignment.class?.assignments?.some((ca) => ca.userId === userId) ||
+          sub.assignment.assignedClasses?.some((ac) =>
+            ac.class?.assignments?.some((ca) => ca.userId === userId)
+          );
+
+        if (!isCreator && !isAssigned) {
+          return {
+            ok: false,
+            error: "Bạn không được phân công phụ trách lớp học của bài nộp này để chấm điểm!",
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn("[verifySubmissionGradingPermission] Lỗi kiểm tra CSDL:", err?.message);
+    }
+  }
+  return { ok: true };
+}
+

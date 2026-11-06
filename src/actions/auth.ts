@@ -1,16 +1,24 @@
 "use server";
 
-import { prisma, isDbAlive } from "@/lib/prisma";
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
 import {
-  hashPassword,
-  verifyPassword,
   createSessionToken,
   setSessionCookie,
   clearSessionCookie,
   getSession,
 } from "@/lib/auth";
-import { sendOtpEmail } from "@/lib/mail";
-import { revalidatePath } from "next/cache";
+import { checkAuth } from "@/lib/permissions";
+import {
+  authenticateUserService,
+  requestActivationOtpService,
+  activateWithOtpService,
+  activateAndChangePasswordService,
+  requestPasswordResetOtpService,
+  resetPasswordWithOtpService,
+  changePasswordService,
+  ensureDefaultAdminService,
+} from "@/services/auth.service";
 
 function safeRevalidate(path: string) {
   try {
@@ -18,112 +26,78 @@ function safeRevalidate(path: string) {
   } catch {}
 }
 
-function getDemoUserPayload(identifier: string, password: string): {
-  userId: string;
-  username: string;
-  email: string;
-  role: "ADMIN" | "SCHOOL_MANAGER" | "TEACHER" | "STUDENT";
-  fullName: string;
-} | null {
-  if (password !== "simpace2026") return null;
-  const clean = identifier.trim().toLowerCase();
+const loginSchema = z.object({
+  identifier: z.string().trim().min(1, "Vui lòng nhập đầy đủ thông tin đăng nhập!"),
+  password: z.string().min(1, "Vui lòng nhập mật khẩu!"),
+});
 
-  if (clean === "admin@simpace.vn" || clean === "admin") {
+const activateWithOtpSchema = z
+  .object({
+    userId: z.string().min(1, "Mã người dùng không hợp lệ!"),
+    otp: z.string().trim().min(1, "Vui lòng nhập mã OTP!"),
+    newPassword: z.string().min(6, "Mật khẩu mới phải có tối thiểu 6 ký tự!"),
+    confirmPassword: z.string().min(1, "Vui lòng xác nhận mật khẩu!"),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Mật khẩu mới và xác nhận mật khẩu không khớp!",
+    path: ["confirmPassword"],
+  });
+
+const activateAndChangePasswordSchema = z
+  .object({
+    userId: z.string().min(1, "Mã người dùng không hợp lệ!"),
+    oldPassword: z.string().min(1, "Vui lòng nhập mật khẩu hiện tại!"),
+    newPassword: z.string().min(6, "Mật khẩu mới phải có tối thiểu 6 ký tự!"),
+    confirmPassword: z.string().min(1, "Vui lòng xác nhận mật khẩu!"),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Mật khẩu mới và xác nhận mật khẩu không khớp!",
+    path: ["confirmPassword"],
+  });
+
+const changePasswordSchema = z.object({
+  userId: z.string().min(1, "Mã người dùng không hợp lệ!"),
+  currentPassword: z.string().min(1, "Vui lòng nhập đầy đủ mật khẩu hiện tại!"),
+  newPassword: z.string().min(6, "Mật khẩu mới phải có tối thiểu 6 ký tự!"),
+});
+
+export async function loginAction(formData: FormData) {
+  const parsed = loginSchema.safeParse({
+    identifier: formData.get("identifier"),
+    password: formData.get("password"),
+  });
+
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message || "Dữ liệu không hợp lệ!" };
+  }
+
+  const { identifier, password } = parsed.data;
+  const result = await authenticateUserService(identifier, password);
+
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+
+  const user = result.user;
+
+  if (user.mustChangePassword) {
     return {
-      userId: "admin-demo-id",
-      username: "admin",
-      email: "admin@simpace.vn",
-      role: "ADMIN",
-      fullName: "Quản trị viên Hệ thống",
+      success: true,
+      mustChangePassword: true,
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      fullName: user.profile?.fullName || user.username,
+      role: user.role.code,
     };
   }
 
-  if (
-    clean === "manager@simpace.vn" ||
-    clean === "manager" ||
-    clean === "quan_nhiem" ||
-    clean === "sm@simpace.vn"
-  ) {
-    return {
-      userId: "demo-manager-1",
-      username: "manager_quan",
-      email: "manager@simpace.vn",
-      role: "SCHOOL_MANAGER",
-      fullName: "ThS. Hoàng Văn Quản",
-    };
-  }
-
-  if (
-    clean === "teacher@simpace.vn" ||
-    clean === "teacher" ||
-    clean === "teacher_huong"
-  ) {
-    return {
-      userId: "teacher-1",
-      username: "teacher_huong",
-      email: "teacher@simpace.vn",
-      role: "TEACHER",
-      fullName: "Cô Nguyễn Thu Hường",
-    };
-  }
-
-  if (
-    clean === "student@simpace.vn" ||
-    clean === "student" ||
-    clean === "student_an" ||
-    clean === "hv1001"
-  ) {
-    return {
-      userId: "demo-student-1",
-      username: "student_an",
-      email: "student@simpace.vn",
-      role: "STUDENT",
-      fullName: "Nguyễn Văn An",
-    };
-  }
-
-  if (
-    clean === "hv001@simpace.vn" ||
-    clean === "lan.tran@gmail.com" ||
-    clean === "hv001" ||
-    clean === "hv1002"
-  ) {
-    return {
-      userId: "st-1",
-      username: "HV1002",
-      email: "hv001@simpace.vn",
-      role: "STUDENT",
-      fullName: "Trần Thị Lan",
-    };
-  }
-
-  if (
-    clean === "hv002@simpace.vn" ||
-    clean === "long.le@gmail.com" ||
-    clean === "hv002" ||
-    clean === "hv1003"
-  ) {
-    return {
-      userId: "st-2",
-      username: "HV1003",
-      email: "hv002@simpace.vn",
-      role: "STUDENT",
-      fullName: "Lê Hoàng Long",
-    };
-  }
-
-  return null;
-}
-
-async function buildDemoLoginResponse(
-  demoPayload: NonNullable<ReturnType<typeof getDemoUserPayload>>
-) {
   const token = await createSessionToken({
-    userId: demoPayload.userId,
-    username: demoPayload.username,
-    email: demoPayload.email,
-    role: demoPayload.role,
-    fullName: demoPayload.fullName,
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role.code,
+    fullName: user.profile?.fullName || user.username,
     mustChangePassword: false,
   });
 
@@ -132,318 +106,101 @@ async function buildDemoLoginResponse(
   return {
     success: true,
     mustChangePassword: false,
-    role: demoPayload.role,
+    role: user.role.code,
     user: {
-      id: demoPayload.userId,
-      userId: demoPayload.userId,
-      username: demoPayload.username,
-      fullName: demoPayload.fullName,
-      email: demoPayload.email,
-      role: demoPayload.role,
+      id: user.id,
+      userId: user.id,
+      username: user.username,
+      fullName: user.profile?.fullName || user.username,
+      email: user.email,
+      role: user.role.code,
     },
   };
 }
 
-export async function loginAction(formData: FormData) {
-  const identifier = formData.get("identifier")?.toString().trim();
-  const password = formData.get("password")?.toString();
-
-  if (!identifier || !password) {
-    return { success: false, error: "Vui lòng nhập đầy đủ thông tin đăng nhập!" };
-  }
-
-  // Nếu DB offline hoặc chưa cấu hình URL, xử lý đăng nhập demo siêu tốc (< 1ms) không để treo TCP socket
-  if (!(await isDbAlive())) {
-    const demo = getDemoUserPayload(identifier, password);
-    if (demo) {
-      return await buildDemoLoginResponse(demo);
-    }
-
-    return {
-      success: false,
-      error:
-        "Đăng nhập thất bại! Vui lòng dùng: admin@simpace.vn (hoặc teacher@simpace.vn / student@simpace.vn / manager@simpace.vn) - MK: simpace2026",
-    };
-  }
-
-  try {
-    // Tìm người dùng theo Email HOẶC Username/Mã học viên
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: { equals: identifier, mode: "insensitive" } },
-          { username: { equals: identifier, mode: "insensitive" } },
-        ],
-      },
-      include: {
-        role: true,
-        profile: true,
-      },
-    });
-
-    if (!user) {
-      const demo = getDemoUserPayload(identifier, password);
-      if (demo) {
-        return await buildDemoLoginResponse(demo);
-      }
-      return { success: false, error: "Tài khoản hoặc mật khẩu không chính xác!" };
-    }
-
-    if (!user.isActive) {
-      return { success: false, error: "Tài khoản này đã bị khóa. Vui lòng liên hệ quản trị viên!" };
-    }
-
-    const isPasswordValid = await verifyPassword(password, user.passwordHash);
-    if (!isPasswordValid) {
-      if (password === "simpace2026" && user.username === "admin") {
-        // pass
-      } else {
-        return { success: false, error: "Tài khoản hoặc mật khẩu không chính xác!" };
-      }
-    }
-
-    try {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      });
-    } catch {}
-
-    if (user.mustChangePassword) {
-      return {
-        success: true,
-        mustChangePassword: true,
-        userId: user.id,
-        username: user.username,
-        email: user.email,
-        fullName: user.profile?.fullName || user.username,
-        role: user.role.code,
-      };
-    }
-
-    const token = await createSessionToken({
-      userId: user.id,
-      username: user.username,
-      email: user.email,
-      role: user.role.code,
-      fullName: user.profile?.fullName || user.username,
-      mustChangePassword: false,
-    });
-
-    await setSessionCookie(token);
-
-    return {
-      success: true,
-      mustChangePassword: false,
-      role: user.role.code,
-      user: {
-        id: user.id,
-        userId: user.id,
-        username: user.username,
-        fullName: user.profile?.fullName || user.username,
-        email: user.email,
-        role: user.role.code,
-      },
-    };
-  } catch (err: any) {
-    console.warn("[loginAction] Database notice:", err?.message);
-    const demo = getDemoUserPayload(identifier, password);
-    if (demo) {
-      return await buildDemoLoginResponse(demo);
-    }
-
-    return {
-      success: false,
-      error:
-        "Đăng nhập thất bại! Vui lòng sử dụng tài khoản mẫu: admin@simpace.vn (hoặc teacher@simpace.vn / student@simpace.vn / manager@simpace.vn) - MK: simpace2026",
-    };
-  }
-}
-
-// Luồng Kích hoạt tài khoản: Yêu cầu OTP gửi về email
 export async function requestActivationOtpAction(userId: string) {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { profile: true },
-    });
-
-    if (!user) {
-      return { success: false, error: "Người dùng không tồn tại!" };
-    }
-
-    // Dọn dẹp token đã hết hạn hoặc đã sử dụng
-    await prisma.passwordResetToken.deleteMany({
-      where: {
-        userId: user.id,
-        OR: [{ expiresAt: { lt: new Date() } }, { usedAt: { not: null } }],
-      },
-    });
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
-
-    await prisma.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        token: otp,
-        expiresAt,
-      },
-    });
-
-    const mailResult = await sendOtpEmail({
-      to: user.email,
-      fullName: user.profile?.fullName || user.username,
-      otp,
-      type: "activation",
-    });
-
-    return {
-      success: true,
-      email: user.email,
-      mailResult,
-    };
-  } catch (error: any) {
-    return { success: false, error: error.message || "Lỗi khi gửi mã OTP kích hoạt!" };
+  if (!userId) {
+    return { success: false, error: "Mã người dùng không hợp lệ!" };
   }
+  return await requestActivationOtpService(userId);
 }
 
-// Luồng Kích hoạt tài khoản: Xác nhận OTP + đổi mật khẩu mới + tự động đăng nhập vào trang chủ
 export async function activateWithOtpAction(params: {
   userId: string;
   otp: string;
   newPassword: string;
   confirmPassword: string;
 }) {
-  try {
-    const { userId, otp, newPassword, confirmPassword } = params;
-
-    if (!userId || !otp || !newPassword || !confirmPassword) {
-      return { success: false, error: "Vui lòng nhập đầy đủ mã OTP và mật khẩu mới!" };
-    }
-
-    if (newPassword !== confirmPassword) {
-      return { success: false, error: "Mật khẩu mới và xác nhận mật khẩu không khớp!" };
-    }
-
-    if (newPassword.length < 6) {
-      return { success: false, error: "Mật khẩu mới phải có tối thiểu 6 ký tự!" };
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { role: true, profile: true },
-    });
-
-    if (!user) {
-      return { success: false, error: "Người dùng không tồn tại!" };
-    }
-
-    const validToken = await prisma.passwordResetToken.findFirst({
-      where: {
-        userId: user.id,
-        token: otp.trim(),
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    if (!validToken) {
-      return { success: false, error: "Mã OTP không chính xác hoặc đã hết hạn (15 phút)!" };
-    }
-
-    const newHash = await hashPassword(newPassword);
-
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        passwordHash: newHash,
-        mustChangePassword: false,
-      },
-      include: { role: true, profile: true },
-    });
-
-    await prisma.passwordResetToken.deleteMany({
-      where: { userId },
-    });
-
-    const token = await createSessionToken({
-      userId: updatedUser.id,
-      username: updatedUser.username,
-      email: updatedUser.email,
-      role: updatedUser.role.code,
-      fullName: updatedUser.profile?.fullName || updatedUser.username,
-      mustChangePassword: false,
-    });
-
-    await setSessionCookie(token);
-    safeRevalidate("/");
-
-    return {
-      success: true,
-      user: {
-        id: updatedUser.id,
-        userId: updatedUser.id,
-        username: updatedUser.username,
-        fullName: updatedUser.profile?.fullName || updatedUser.username,
-        email: updatedUser.email,
-        role: updatedUser.role.code,
-      },
-    };
-  } catch (error: any) {
-    return { success: false, error: error.message || "Không thể kích hoạt tài khoản!" };
+  const parsed = activateWithOtpSchema.safeParse(params);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message || "Dữ liệu không hợp lệ!" };
   }
+
+  const result = await activateWithOtpService({
+    userId: parsed.data.userId,
+    otp: parsed.data.otp,
+    newPassword: parsed.data.newPassword,
+  });
+
+  if (!result.success || !result.user) {
+    return { success: false, error: result.error || "Không thể kích hoạt tài khoản!" };
+  }
+
+  const user = result.user;
+  const token = await createSessionToken({
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role.code,
+    fullName: user.profile?.fullName || user.username,
+    mustChangePassword: false,
+  });
+
+  await setSessionCookie(token);
+  safeRevalidate("/");
+
+  return {
+    success: true,
+    user: {
+      id: user.id,
+      userId: user.id,
+      username: user.username,
+      fullName: user.profile?.fullName || user.username,
+      email: user.email,
+      role: user.role.code,
+    },
+  };
 }
 
 export async function activateAndChangePasswordAction(formData: FormData) {
-  const userId = formData.get("userId")?.toString();
-  const oldPassword = formData.get("oldPassword")?.toString();
-  const newPassword = formData.get("newPassword")?.toString();
-  const confirmPassword = formData.get("confirmPassword")?.toString();
-
-  if (!userId || !oldPassword || !newPassword || !confirmPassword) {
-    return { success: false, error: "Vui lòng điền đầy đủ các trường thông tin!" };
-  }
-
-  if (newPassword !== confirmPassword) {
-    return { success: false, error: "Mật khẩu mới và xác nhận mật khẩu không khớp!" };
-  }
-
-  if (newPassword.length < 6) {
-    return { success: false, error: "Mật khẩu mới phải có tối thiểu 6 ký tự!" };
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { role: true, profile: true },
+  const parsed = activateAndChangePasswordSchema.safeParse({
+    userId: formData.get("userId"),
+    oldPassword: formData.get("oldPassword"),
+    newPassword: formData.get("newPassword"),
+    confirmPassword: formData.get("confirmPassword"),
   });
 
-  if (!user) {
-    return { success: false, error: "Người dùng không tồn tại!" };
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message || "Dữ liệu không hợp lệ!" };
   }
 
-  const isOldMatch = await verifyPassword(oldPassword, user.passwordHash);
-  if (!isOldMatch) {
-    return { success: false, error: "Mật khẩu hiện tại (tạm thời) không chính xác!" };
+  const result = await activateAndChangePasswordService(
+    parsed.data.userId,
+    parsed.data.oldPassword,
+    parsed.data.newPassword
+  );
+
+  if (!result.success || !result.user) {
+    return { success: false, error: result.error || "Không thể kích hoạt tài khoản!" };
   }
 
-  const newHash = await hashPassword(newPassword);
-
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      passwordHash: newHash,
-      mustChangePassword: false,
-    },
-    include: { role: true, profile: true },
-  });
-
+  const user = result.user;
   const token = await createSessionToken({
-    userId: updatedUser.id,
-    username: updatedUser.username,
-    email: updatedUser.email,
-    role: updatedUser.role.code,
-    fullName: updatedUser.profile?.fullName || updatedUser.username,
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role.code,
+    fullName: user.profile?.fullName || user.username,
     mustChangePassword: false,
   });
 
@@ -453,99 +210,25 @@ export async function activateAndChangePasswordAction(formData: FormData) {
   return { success: true };
 }
 
-// Luồng Quên mật khẩu: Yêu cầu OTP
 export async function requestPasswordResetOtpAction(email: string) {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
-      include: { profile: true },
-    });
-
-    if (!user) {
-      return { success: false, error: "Không tìm thấy tài khoản với email này!" };
-    }
-
-    // Sinh mã OTP 6 chữ số ngẫu nhiên
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
-
-    // Vô hiệu hóa các OTP cũ
-    await prisma.passwordResetToken.deleteMany({
-      where: { userId: user.id },
-    });
-
-    await prisma.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        token: otp,
-        expiresAt,
-      },
-    });
-
-    const mailResult = await sendOtpEmail({
-      to: user.email,
-      fullName: user.profile?.fullName || user.username,
-      otp,
-      type: "reset",
-    });
-
-    return {
-      success: true,
-      mailResult,
-    };
-  } catch (error: any) {
-    return { success: false, error: error.message || "Lỗi khi tạo mã khôi phục!" };
+  if (!email || !email.trim()) {
+    return { success: false, error: "Vui lòng nhập email!" };
   }
+  return await requestPasswordResetOtpService(email);
 }
 
-// Luồng Quên mật khẩu: Xác nhận OTP và đặt mật khẩu mới
 export async function resetPasswordWithOtpAction(
   email: string,
   otp: string,
   newPassword: string
 ) {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
-    });
-
-    if (!user) {
-      return { success: false, error: "Người dùng không tồn tại!" };
-    }
-
-    const resetToken = await prisma.passwordResetToken.findFirst({
-      where: {
-        userId: user.id,
-        token: otp.trim(),
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    if (!resetToken) {
-      return { success: false, error: "Mã OTP không đúng hoặc đã hết hạn!" };
-    }
-
-    if (newPassword.length < 6) {
-      return { success: false, error: "Mật khẩu mới phải có tối thiểu 6 ký tự!" };
-    }
-
-    const newHash = await hashPassword(newPassword);
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash: newHash, mustChangePassword: false },
-    });
-
-    await prisma.passwordResetToken.update({
-      where: { id: resetToken.id },
-      data: { usedAt: new Date() },
-    });
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message || "Không thể đặt lại mật khẩu!" };
+  if (!email || !otp || !newPassword) {
+    return { success: false, error: "Vui lòng nhập đầy đủ email, mã OTP và mật khẩu mới!" };
   }
+  if (newPassword.length < 6) {
+    return { success: false, error: "Mật khẩu mới phải có tối thiểu 6 ký tự!" };
+  }
+  return await resetPasswordWithOtpService(email, otp, newPassword);
 }
 
 export async function logoutAction() {
@@ -558,68 +241,29 @@ export async function changePasswordAction(
   currentPassword: string,
   newPassword: string
 ) {
-  try {
-    if (!currentPassword || !newPassword) {
-      return { success: false, error: "Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới!" };
-    }
-
-    if (newPassword.length < 6) {
-      return { success: false, error: "Mật khẩu mới phải có tối thiểu 6 ký tự!" };
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      return { success: false, error: "Không tìm thấy người dùng!" };
-    }
-
-    const isValid = await verifyPassword(currentPassword, user.passwordHash);
-    if (!isValid) {
-      return { success: false, error: "Mật khẩu hiện tại không chính xác!" };
-    }
-
-    const newHash = await hashPassword(newPassword);
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        passwordHash: newHash,
-        mustChangePassword: false,
-      },
-    });
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message || "Không thể đổi mật khẩu!" };
+  const session = await getSession();
+  const auth = checkAuth(session, "Vui lòng đăng nhập để đổi mật khẩu!");
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
+
+  // Phân quyền: Chỉ được đổi mật khẩu của chính mình trừ khi là Quản trị viên (ADMIN)
+  if (auth.session.userId !== userId && auth.session.role !== "ADMIN") {
+    return { success: false, error: "Bạn không có quyền đổi mật khẩu của tài khoản khác!" };
+  }
+
+  const parsed = changePasswordSchema.safeParse({ userId, currentPassword, newPassword });
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message || "Dữ liệu không hợp lệ!" };
+  }
+
+  return await changePasswordService(
+    parsed.data.userId,
+    parsed.data.currentPassword,
+    parsed.data.newPassword
+  );
 }
 
 export async function ensureDefaultAdminAction() {
-  const adminCount = await prisma.user.count();
-  if (adminCount === 0) {
-    const adminRole = await prisma.role.findUnique({
-      where: { code: "ADMIN" },
-    });
-
-    if (adminRole) {
-      const defaultHash = await hashPassword("simpace2026");
-      await prisma.user.create({
-        data: {
-          username: "admin",
-          email: "admin@simpace.vn",
-          passwordHash: defaultHash,
-          roleId: adminRole.id,
-          mustChangePassword: false,
-          profile: {
-            create: {
-              fullName: "Quản trị viên Hệ thống",
-              phoneNumber: "0987654321",
-            },
-          },
-        },
-      });
-      console.log("✔ Đã tự động tạo tài khoản Admin mặc định: admin@simpace.vn / simpace2026");
-    }
-  }
+  await ensureDefaultAdminService();
 }

@@ -21,7 +21,7 @@ export function filterAccessibleClasses(classes: any[], currentUser: any): any[]
       );
     }
 
-    if (currentUser.role === "TEACHER") {
+    if (currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT") {
       return c.assignments?.some(
         (a: any) =>
           a.userId === currentUid ||
