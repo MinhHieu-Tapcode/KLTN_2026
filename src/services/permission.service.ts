@@ -52,7 +52,27 @@ export async function getSystemPermissionsService(): Promise<SystemPermissionIte
       });
     }
 
-    return perms as SystemPermissionItem[];
+    // Đồng bộ các quyền mới trong DEFAULT_PERMISSIONS (như VIEW_REPORTS cho STUDENT) nếu DB cũ chưa có
+    const existingMap = new Map(perms.map((p) => [p.featureKey, p]));
+    for (const def of DEFAULT_PERMISSIONS) {
+      const ex = existingMap.get(def.featureKey);
+      if (!ex) {
+        existingMap.set(def.featureKey, {
+          id: `perm-${def.featureKey}`,
+          featureKey: def.featureKey,
+          name: def.name,
+          category: def.category || "Hệ thống",
+          allowedRoles: def.allowedRoles as RoleCode[],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as any);
+      } else if (def.featureKey === "VIEW_REPORTS" || def.featureKey === "VIEW_CLASSES" || def.featureKey === "VIEW_DASHBOARD") {
+        const mergedRoles = Array.from(new Set([...(ex.allowedRoles || []), ...(def.allowedRoles as RoleCode[])]));
+        ex.allowedRoles = mergedRoles;
+      }
+    }
+
+    return Array.from(existingMap.values()) as SystemPermissionItem[];
   } catch (err: any) {
     logSystemWarning("permission.service", "getSystemPermissionsService", "Lỗi DB khi lấy danh sách quyền, fallback default", err);
     return DEFAULT_PERMISSIONS.map((p, idx) => ({
@@ -80,7 +100,14 @@ export async function getPermissionAllowedRolesService(featureKey: string): Prom
     const perm = await prisma.systemPermission.findUnique({
       where: { featureKey },
     });
-    return perm ? (perm.allowedRoles as RoleCode[]) : undefined;
+    const foundDefault = DEFAULT_PERMISSIONS.find((p) => p.featureKey === featureKey);
+    if (!perm) {
+      return foundDefault ? (foundDefault.allowedRoles as RoleCode[]) : undefined;
+    }
+    if (foundDefault && (featureKey === "VIEW_REPORTS" || featureKey === "VIEW_CLASSES" || featureKey === "VIEW_DASHBOARD")) {
+      return Array.from(new Set([...(perm.allowedRoles as RoleCode[]), ...(foundDefault.allowedRoles as RoleCode[])]));
+    }
+    return perm.allowedRoles as RoleCode[];
   } catch (err: any) {
     logSystemWarning("permission.service", "getPermissionAllowedRolesService", "Lỗi DB khi lấy allowedRoles, fallback default", err);
     const found = DEFAULT_PERMISSIONS.find((p) => p.featureKey === featureKey);

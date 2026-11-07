@@ -52,7 +52,12 @@ export async function isDbAlive(): Promise<boolean> {
     return false;
   }
 
-  // Kiểm tra nhanh socket (cache 15s) ở cả Local và Vercel để phát hiện chính xác DB sống hay offline
+  // Nếu DATABASE_URL trỏ tới Cloud DB (Supabase/Neon...), không mở raw TCP socket đồng loạt khi Promise.all
+  if (!isLocal) {
+    return true;
+  }
+
+  // Ở Localhost: Kiểm tra nhanh socket (300ms, cache 15s) để phát hiện Postgres bật hay tắt
   const now = Date.now();
   if (
     globalForPrisma.isDbReachable !== undefined &&
@@ -62,10 +67,9 @@ export async function isDbAlive(): Promise<boolean> {
     return globalForPrisma.isDbReachable;
   }
 
-  const timeoutMs = isLocal ? 300 : 1200;
   const isSocketOpen = await new Promise<boolean>((resolve) => {
     try {
-      const socket = net.createConnection({ host, port, timeout: timeoutMs });
+      const socket = net.createConnection({ host, port, timeout: 300 });
       socket.unref();
       socket.once("connect", () => {
         socket.destroy();

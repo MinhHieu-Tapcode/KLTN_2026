@@ -1104,6 +1104,8 @@ export async function createUserService(data: {
         id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         username,
         email: cleanEmail,
+        passwordHash: BCRYPT_SIMPACE_2026,
+        mustChangePassword: false,
         role: {
           code: data.roleCode,
           name: roleMap[data.roleCode] || data.roleCode,
@@ -1125,6 +1127,40 @@ export async function createUserService(data: {
         classEnrollments: assignedEnrollments,
         managedSchools,
       };
+
+      // Đồng bộ 2 chiều sang globalStore.demoClasses để khi học sinh/giáo viên đăng nhập thấy ngay lớp của mình
+      if (data.classIds && data.classIds.length > 0 && Array.isArray(demoClasses)) {
+        for (const cId of data.classIds) {
+          const targetCls = demoClasses.find((c: any) => c.id === cId || c.code === cId);
+          if (targetCls) {
+            if (data.roleCode === "STUDENT") {
+              targetCls.enrollments = targetCls.enrollments || [];
+              if (!targetCls.enrollments.some((e: any) => e.studentId === newUser.id)) {
+                targetCls.enrollments.push({
+                  id: `en-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  studentId: newUser.id,
+                  status: "STUDYING",
+                  student: newUser,
+                });
+                targetCls._count = {
+                  ...(targetCls._count || {}),
+                  enrollments: targetCls.enrollments.length,
+                };
+              }
+            } else if (data.roleCode === "TEACHER" || data.roleCode === "TEACHING_ASSISTANT") {
+              targetCls.assignments = targetCls.assignments || [];
+              if (!targetCls.assignments.some((a: any) => a.userId === newUser.id)) {
+                targetCls.assignments.push({
+                  id: `as-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  userId: newUser.id,
+                  roleInClass: data.roleCode,
+                  staff: newUser,
+                });
+              }
+            }
+          }
+        }
+      }
 
       globalStore.demoUsers.unshift(newUser);
 
@@ -1320,6 +1356,104 @@ export async function updateUserService(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (data.newPassword && data.newPassword.trim()) {
+      return {
+        success: false,
+        error:
+          "Quy định bảo mật: Quản trị viên không được phép đổi mật khẩu của tài khoản khác! Người dùng phải tự đổi mật khẩu qua trang Cá nhân hoặc kích hoạt lại qua Email.",
+      };
+    }
+
+    if (!(await isDbAlive())) {
+      const globalStore = globalThis as any;
+      const demoUsers: any[] = globalStore.demoUsers || [];
+      const demoClasses: any[] = globalStore.demoClasses || [];
+      const targetUser = demoUsers.find((u: any) => u.id === id);
+      if (!targetUser) {
+        return { success: false, error: "Người dùng không tồn tại!" };
+      }
+
+      if (data.email && data.email.trim()) {
+        const cleanEmail = data.email.trim().toLowerCase();
+        if (!RFC5322_EMAIL_REGEX.test(cleanEmail)) {
+          return {
+            success: false,
+            error: "Email không đúng định dạng chuẩn có tên miền (VD: name@simpace.edu.vn)!",
+          };
+        }
+        const dup = demoUsers.find(
+          (u: any) => u.id !== id && u.email?.toLowerCase() === cleanEmail
+        );
+        if (dup) {
+          return {
+            success: false,
+            error: `Email '${cleanEmail}' đã được sử dụng bởi người dùng khác!`,
+          };
+        }
+        targetUser.email = cleanEmail;
+      }
+
+      targetUser.profile = {
+        ...(targetUser.profile || {}),
+        fullName: data.fullName ?? targetUser.profile?.fullName,
+        phoneNumber: data.phoneNumber !== undefined ? data.phoneNumber || null : targetUser.profile?.phoneNumber,
+        address: data.address !== undefined ? data.address || null : targetUser.profile?.address,
+        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : targetUser.profile?.dateOfBirth,
+        gender: data.gender !== undefined ? data.gender || null : targetUser.profile?.gender,
+      };
+
+      const effectiveRole = data.roleCode || targetUser.role?.code;
+      if (data.classIds !== undefined) {
+        const classIdSet = new Set(data.classIds.filter(Boolean));
+        if (effectiveRole === "STUDENT") {
+          targetUser.classEnrollments = [];
+          for (const cls of demoClasses) {
+            cls.enrollments = (cls.enrollments || []).filter(
+              (e: any) => e.studentId !== id && e.student?.id !== id
+            );
+            if (classIdSet.has(cls.id) || classIdSet.has(cls.code)) {
+              const enId = `en-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+              targetUser.classEnrollments.push({
+                id: enId,
+                classId: cls.id,
+                class: { id: cls.id, code: cls.code, name: cls.name, school: cls.school },
+              });
+              cls.enrollments.push({
+                id: enId,
+                studentId: id,
+                status: "STUDYING",
+                student: targetUser,
+              });
+            }
+            cls._count = { ...(cls._count || {}), enrollments: cls.enrollments.length };
+          }
+        } else if (effectiveRole === "TEACHER" || effectiveRole === "TEACHING_ASSISTANT") {
+          targetUser.classAssignments = [];
+          for (const cls of demoClasses) {
+            cls.assignments = (cls.assignments || []).filter(
+              (a: any) => a.userId !== id && a.staff?.id !== id
+            );
+            if (classIdSet.has(cls.id) || classIdSet.has(cls.code)) {
+              const asId = `as-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+              targetUser.classAssignments.push({
+                id: asId,
+                classId: cls.id,
+                class: { id: cls.id, code: cls.code, name: cls.name, school: cls.school },
+              });
+              cls.assignments.push({
+                id: asId,
+                userId: id,
+                roleInClass: effectiveRole,
+                staff: targetUser,
+              });
+            }
+          }
+        }
+      }
+
+      return { success: true };
+    }
+
     const updateUserData: any = {};
 
     if (data.email && data.email.trim()) {

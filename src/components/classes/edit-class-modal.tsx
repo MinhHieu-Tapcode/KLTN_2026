@@ -33,12 +33,33 @@ export function EditClassModal({
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
 
+  const mergedTeachers = React.useMemo(() => {
+    const map = new Map<string, any>();
+    for (const t of teachers || []) {
+      if (t?.id) map.set(t.id, t);
+    }
+    for (const a of classItem.assignments || []) {
+      if (!a.roleInClass || a.roleInClass === "TEACHER") {
+        const tid = a.userId || a.staff?.id;
+        if (tid && !map.has(tid)) {
+          map.set(tid, {
+            id: tid,
+            username: a.staff?.username || "GV",
+            profile: { fullName: a.staff?.profile?.fullName || a.staff?.username || "Giáo viên phụ trách" },
+          });
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [teachers, classItem.assignments]);
+
   const initialTeacherIds =
     classItem.assignments
-      ?.filter((a: any) => a.roleInClass === "TEACHER")
-      .map((a: any) => a.userId) || [];
+      ?.filter((a: any) => !a.roleInClass || a.roleInClass === "TEACHER")
+      .map((a: any) => a.userId || a.staff?.id)
+      .filter(Boolean) || [];
   const [teacherIds, setTeacherIds] = useState<string[]>(
-    initialTeacherIds.length > 0 ? initialTeacherIds : [""]
+    initialTeacherIds.length > 0 ? initialTeacherIds : mergedTeachers[0]?.id ? [mergedTeachers[0].id] : [""]
   );
 
   const [startDate, setStartDate] = useState(
@@ -179,7 +200,7 @@ export function EditClassModal({
                     className="field text-sm flex-1"
                   >
                     <option value="">-- Chọn giáo viên --</option>
-                    {teachers.map((t) => (
+                    {mergedTeachers.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.profile?.fullName || t.username} ({t.username})
                       </option>

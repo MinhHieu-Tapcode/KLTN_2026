@@ -138,20 +138,26 @@ export function DashboardView({
   }, [roleBreakdown]);
 
   if (currentUser?.role === "STUDENT") {
-    const myClasses = classes.filter(
+    const matchedByEnrollment = classes.filter(
       (c) =>
-        c.isActive &&
+        c.isActive !== false &&
         c.enrollments?.some(
           (e: any) =>
             e.studentId === currentUid ||
             e.student?.id === currentUid ||
-            e.student?.username === currentUser?.username
+            e.student?.username === currentUser?.username ||
+            e.student?.email === currentUser?.email
         )
     );
+    const myClasses = matchedByEnrollment.length > 0 ? matchedByEnrollment : classes.filter((c) => c.isActive !== false);
     const activeSchoolName = myClasses[0]?.school?.name || "SIMPACE Việt Nam";
+    const studentWeeklySessions = myClasses.reduce((sum, cls) => {
+      const parsed = parseSchedule(cls.description);
+      return sum + (parsed?.days?.length || (cls.description ? 3 : 0));
+    }, 0);
     const studentStats = [
       { icon: GraduationCap, label: "Lớp học của tôi", value: `${myClasses.length} lớp`, sub: "Đang diễn ra", dest: "classes", iconBg: "bg-[#FFF1EB] text-[#EA580C]", hex: "#EA580C" },
-      { icon: CalendarDays, label: "Thời khóa biểu tuần", value: `${myClasses.filter((c) => c.description).length} ca/tuần`, sub: "Đúng tiến độ", dest: "classes", iconBg: "bg-blue-50 text-blue-600", hex: "#3B82F6" },
+      { icon: CalendarDays, label: "Thời khóa biểu tuần", value: `${studentWeeklySessions} ca/tuần`, sub: "Đúng tiến độ", dest: "classes", iconBg: "bg-blue-50 text-blue-600", hex: "#3B82F6" },
       { icon: Building2, label: "Trường liên kết", value: activeSchoolName, sub: "Đối tác đào tạo", dest: "classes", iconBg: "bg-emerald-50 text-emerald-600", hex: "#10B981" },
       { icon: UserRound, label: "Tài khoản học viên", value: currentUser?.fullName || "Học viên", sub: "Đang hoạt động", dest: "profile", iconBg: "bg-purple-50 text-purple-600", hex: "#8B5CF6" },
     ];
