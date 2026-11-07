@@ -3,8 +3,10 @@ import {
   extractAndCleanDocument,
 } from "@/lib/exam-parser/extract-text";
 import { parseExamTextWithGroq } from "@/lib/exam-parser/groq-parser";
-import { ParsedExamResult, ParsedQuestion } from "@/lib/exam-parser/types";
+import { CoverageGap, ParsedExamResult, ParsedQuestion } from "@/lib/exam-parser/types";
 import { checkExamInvariants } from "./ielts-invariants.service";
+import { formatCoverageGap } from "@/lib/exam-parser/exam-skeleton";
+import { validateQuestion } from "@/lib/exam-parser/question-validator";
 import { extractDiagramQuestionsWithGemini } from "@/lib/exam-parser/gemini-vision-parser";
 import { cleanPromptRedundantNumbers } from "@/lib/exam-parser/clean-prompt";
 
@@ -35,6 +37,7 @@ export async function parseIeltsExamContent(
   } = input;
 
   let cleanedText = "";
+  let lowTextPageWarning = "";
 
   // 1. Nếu có tệp .pdf hoặc .docx tải lên: trích xuất và dọn rác văn bản thật
   if (file && file.size > 0) {
@@ -54,6 +57,9 @@ export async function parseIeltsExamContent(
       }
     } else {
       cleanedText = extracted.data.cleanedText;
+      if (extracted.data.lowTextPages && extracted.data.lowTextPages.length > 0) {
+        lowTextPageWarning = `Trang ${extracted.data.lowTextPages.join(", ")} của PDF gần như không có chữ (có thể là ảnh/bản scan) nên nội dung các trang này chưa được bóc tách.`;
+      }
     }
   } else if (pdfTextRaw && pdfTextRaw.trim().length > 0) {
     cleanedText = cleanAndReflowPages([pdfTextRaw.trim()]);
@@ -72,12 +78,18 @@ export async function parseIeltsExamContent(
     cleanedText,
   });
 
-  // 2.1. GIẢI CỨU SƠ ĐỒ / FLOWCHART / DIAGRAM BẰNG GEMINI VISION
-  // Nếu phát hiện câu hỏi có dạng sơ đồ mà nội dung bị khuyết hoặc thiếu số câu,
-  // hệ thống sẽ tự động gửi tệp PDF cho Gemini Vision "nhìn bằng mắt" để lấy trọn vẹn chữ và các khối hộp
+  if (lowTextPageWarning) {
+    parsedExam.warnings = [...(parsedExam.warnings || []), lowTextPageWarning];
+  }
+
+  // 2.1. ĐỌC NỘI DUNG NẰM TRONG ẢNH (bảng, sơ đồ, flowchart) BẰNG GEMINI VISION
+  // Kích hoạt khi: (a) Skeleton báo nhóm câu hỏi còn thiếu nội dung, (b) có từ khoá sơ đồ, (c) prompt đáng ngờ,
+  // hoặc (d) số câu bị nhảy cóc. Trước đây chỉ (b)-(d) nên bảng nằm trong ảnh không bao giờ được đọc.
   const isPdfFile =
     Boolean(file && (file as any).size > 0) &&
     (!file?.name || file.name.toLowerCase().endsWith(".pdf") || (file.type && file.type.includes("pdf")) || !file.name.endsWith(".docx"));
+
+  const gaps: CoverageGap[] = parsedExam.coverageGaps || [];
 
   if (isPdfFile && file) {
     const hasFlowchartKeyword = /flow\s*chart|diagram|process|map\s+labelling|envisioning|complete\s+the\s+flow/i.test(cleanedText);
@@ -94,72 +106,35 @@ export async function parseIeltsExamContent(
       audioUrl: parsedExam.audioUrl || audioUrl,
       sections: parsedExam.sections,
     });
-    const missingNums = (tempInvariants.missingNumbers || []) as number[];
+    const invariantMissing = (tempInvariants.missingNumbers || []) as number[];
+    const gapNumbers = gaps.flatMap((g) => g.missingNumbers);
+    const missingNums = Array.from(new Set([...gapNumbers, ...invariantMissing])).sort((a, b) => a - b);
 
-    if (hasFlowchartKeyword || hasSuspectPrompt || missingNums.length > 0) {
+    if (gaps.length > 0 && !(process.env.GEMINI_API_KEY || "").trim()) {
+      parsedExam.warnings = [
+        ...(parsedExam.warnings || []),
+        "Chưa cấu hình GEMINI_API_KEY nên chưa đọc được nội dung câu hỏi nằm trong ảnh/bảng của PDF. Hãy đặt biến môi trường GEMINI_API_KEY hoặc nhập tay các câu còn thiếu.",
+      ];
+    } else if (gaps.length > 0 || hasFlowchartKeyword || hasSuspectPrompt || missingNums.length > 0) {
       try {
-        console.log("[parseIeltsExamContent] Kích hoạt nhánh Gemini Vision để giải cứu sơ đồ hình ảnh...");
+        console.log("[parseIeltsExamContent] Kích hoạt Gemini Vision để đọc nội dung trong ảnh...");
         const arrayBuf = await file.arrayBuffer();
-        const { questions: visionQuestions, flowchart: visionFlowchart, table: visionTable } =
-          await extractDiagramQuestionsWithGemini(arrayBuf, {
-            missingNumbers: missingNums,
-            hintContext: cleanedText.slice(0, 1000),
-            partTitle: title,
-          });
-
-        if (visionFlowchart) {
-          parsedExam.flowcharts = [visionFlowchart];
-        }
-
-        if (visionTable) {
-          parsedExam.tables = [visionTable];
-        }
-
-        if (visionQuestions.length > 0) {
-          const visionMap = new Map<number, ParsedQuestion>();
-          visionQuestions.forEach((vq) => visionMap.set(vq.questionNumber, vq));
-
-          // Hợp nhất vào parsedExam.questions
-          const mergedQuestions: ParsedQuestion[] = [];
-          const existingNums = new Set((parsedExam.questions || []).map((q) => q.questionNumber));
-
-          for (const q of parsedExam.questions || []) {
-            if (visionMap.has(q.questionNumber)) {
-              // Thay thế câu bị bịa bằng câu chính xác đọc từ mắt của Gemini
-              const vq = visionMap.get(q.questionNumber)!;
-              mergedQuestions.push({
-                ...q,
-                ...vq,
-                passageText: q.passageText,
-                flowchartGroupTitle: visionFlowchart?.title || q.flowchartGroupTitle,
-              });
-              visionMap.delete(q.questionNumber);
-            } else {
-              mergedQuestions.push(q);
-            }
-          }
-
-          // Bổ sung các câu từ vision còn thiếu vào đúng vị trí
-          for (const [vNum, vq] of Array.from(visionMap.entries())) {
-            if (!existingNums.has(vNum)) {
-              mergedQuestions.push({
-                ...vq,
-                flowchartGroupTitle: visionFlowchart?.title,
-              });
-            }
-          }
-
-          // Sắp xếp lại theo thứ tự questionNumber
-          mergedQuestions.sort((a, b) => a.questionNumber - b.questionNumber);
-          parsedExam.questions = mergedQuestions;
-
-          // Cập nhật lại trong sections nếu có
-          if (parsedExam.sections && parsedExam.sections.length > 0) {
-            parsedExam.sections[0].questions = mergedQuestions;
-          }
-        }
+        const groupHints = gaps
+          .map((g) => `Questions ${g.startNum}-${g.endNum} (${g.kind}, thiếu câu ${g.missingNumbers.join(", ")})`)
+          .join("; ");
+        const vision = await extractDiagramQuestionsWithGemini(arrayBuf, {
+          missingNumbers: missingNums,
+          groupHints: groupHints || undefined,
+          hintContext: cleanedText.slice(0, 1000),
+          partTitle: title,
+        });
+        mergeVisionResult(parsedExam, vision, gaps);
       } catch (err: any) {
         console.warn("[parseIeltsExamContent] Gemini Vision Fallback gặp sự cố:", err.message);
+        parsedExam.warnings = [
+          ...(parsedExam.warnings || []),
+          `Gemini Vision gặp sự cố khi đọc ảnh: ${String(err.message).slice(0, 140)}`,
+        ];
       }
     }
   }
@@ -260,16 +235,118 @@ export async function parseIeltsExamContent(
     audioUrl: parsedExam.audioUrl,
     sections: parsedExam.sections,
   });
+  // Đưa cảnh báo của bộ bóc tách lên giao diện: modal chỉ hiển thị invariantsReport nên trước đây
+  // việc mất câu/loại câu lỗi hoàn toàn không đến được mắt giáo viên.
+  if (parsedExam.coverageIssues && parsedExam.coverageIssues.length > 0) {
+    invariantsReport.errors.push(...parsedExam.coverageIssues);
+    invariantsReport.isValid = false;
+  }
+  if (parsedExam.warnings && parsedExam.warnings.length > 0) {
+    invariantsReport.warnings.push(...parsedExam.warnings);
+  }
   parsedExam.invariantsReport = invariantsReport;
 
   return parsedExam;
+}
+
+/** Thay các bảng/sơ đồ trùng số câu, thêm bảng mới (không ghi đè toàn bộ như trước) */
+function upsertGroups<T extends { questionNumbers?: number[] }>(existing: T[] | undefined, incoming: T[]): T[] {
+  const kept = (existing || []).filter(
+    (e) => !incoming.some((n) => (n.questionNumbers || []).some((q) => (e.questionNumbers || []).includes(q)))
+  );
+  return [...kept, ...incoming];
+}
+
+/**
+ * Gộp kết quả Gemini Vision vào đề đã bóc.
+ * - Đề 1 section / không section: giữ cách cũ (thay câu cùng số, bổ sung câu thiếu).
+ * - Đề nhiều section: chỉ điền đúng các câu còn thiếu theo từng nhóm (gap) của từng section,
+ *   vì số câu trùng nhau giữa các kỹ năng nên không thể thay theo số câu toàn cục.
+ * Sau khi gộp, tính lại những câu còn thiếu để cảnh báo đúng.
+ */
+export function mergeVisionResult(parsedExam: ParsedExamResult, vision: any, gaps: CoverageGap[]): void {
+  const visionQuestions: ParsedQuestion[] = (vision?.questions || []).filter((vq: ParsedQuestion) => {
+    const v = validateQuestion(vq);
+    return !v.reasons.some((r) => r.includes("prompt_la_cau_chi_dan") || r.includes("prompt_placeholder"));
+  });
+  const visionTables = vision?.tables && vision.tables.length > 0 ? vision.tables : vision?.table ? [vision.table] : [];
+
+  if (vision?.flowchart) {
+    parsedExam.flowcharts = upsertGroups(parsedExam.flowcharts, [vision.flowchart]);
+  }
+  if (visionTables.length > 0) {
+    parsedExam.tables = upsertGroups(parsedExam.tables, visionTables);
+  }
+
+  const sections = parsedExam.sections || [];
+  const visionMap = new Map<number, ParsedQuestion>();
+  visionQuestions.forEach((vq) => visionMap.set(vq.questionNumber, vq));
+
+  if (sections.length > 1) {
+    // Một số câu chỉ được điền khi nó thuộc đúng MỘT nhóm thiếu, tránh nhầm giữa Reading 5 và Listening 5
+    const owners = new Map<number, number>();
+    gaps.forEach((g) => g.missingNumbers.forEach((n) => owners.set(n, (owners.get(n) || 0) + 1)));
+
+    for (const g of gaps) {
+      const sec = sections.find((x) => x.id === g.sectionKey);
+      if (!sec) continue;
+      for (const n of g.missingNumbers) {
+        const vq = visionMap.get(n);
+        if (!vq || (owners.get(n) || 0) > 1) continue;
+        if (sec.questions.some((q) => q.questionNumber === n)) continue;
+        sec.questions.push({ ...vq, sectionKey: sec.id, passageText: sec.passageText || vq.passageText });
+      }
+      sec.questions.sort((a, b) => a.questionNumber - b.questionNumber);
+    }
+    parsedExam.questions = sections
+      .flatMap((sec) => sec.questions)
+      .sort((a, b) => a.questionNumber - b.questionNumber);
+  } else if (visionQuestions.length > 0) {
+    const merged: ParsedQuestion[] = [];
+    const existingNums = new Set((parsedExam.questions || []).map((q) => q.questionNumber));
+    for (const q of parsedExam.questions || []) {
+      const vq = visionMap.get(q.questionNumber);
+      if (vq) {
+        merged.push({ ...q, ...vq, passageText: q.passageText, sectionKey: q.sectionKey, flowchartGroupTitle: vision?.flowchart?.title || q.flowchartGroupTitle });
+        visionMap.delete(q.questionNumber);
+      } else {
+        merged.push(q);
+      }
+    }
+    for (const [num, vq] of Array.from(visionMap.entries())) {
+      if (!existingNums.has(num)) merged.push({ ...vq, flowchartGroupTitle: vision?.flowchart?.title });
+    }
+    merged.sort((a, b) => a.questionNumber - b.questionNumber);
+    parsedExam.questions = merged;
+    if (sections.length === 1) sections[0].questions = merged;
+  }
+
+  // Tính lại những câu còn thiếu sau khi đọc ảnh
+  if (gaps.length > 0) {
+    const stillGaps: CoverageGap[] = [];
+    for (const g of gaps) {
+      const sec = sections.length > 1 ? sections.find((x) => x.id === g.sectionKey) : undefined;
+      const present = new Set((sec ? sec.questions : parsedExam.questions || []).map((q) => q.questionNumber));
+      const remaining = g.missingNumbers.filter((n) => !present.has(n));
+      if (remaining.length > 0) stillGaps.push({ ...g, missingNumbers: remaining });
+    }
+    parsedExam.coverageGaps = stillGaps.length > 0 ? stillGaps : undefined;
+    parsedExam.coverageIssues = stillGaps.length > 0 ? stillGaps.map(formatCoverageGap) : undefined;
+    const filled = gaps.reduce((a, g) => a + g.missingNumbers.length, 0) - stillGaps.reduce((a, g) => a + g.missingNumbers.length, 0);
+    if (filled > 0) {
+      parsedExam.warnings = [
+        ...(parsedExam.warnings || []),
+        `Đã đọc thêm ${filled} câu từ hình ảnh bằng Gemini Vision. Vui lòng đối chiếu lại với đề gốc trước khi giao bài.`,
+      ];
+    }
+  }
 }
 
 /**
  * Tự động đồng bộ đề bài câu hỏi từ các ô trong Bảng biểu Table Completion
  * Loại bỏ hoàn toàn các câu tự sinh cộc lốc kiểu "Complete the first blank in the table (row 1, column 1)"
  */
-function syncTableQuestions(parsedExam: ParsedExamResult): void {
+export function syncTableQuestions(parsedExam: ParsedExamResult): void {
   const tables = parsedExam.tables || [];
   if (tables.length === 0) return;
 
@@ -285,7 +362,7 @@ function syncTableQuestions(parsedExam: ParsedExamResult): void {
       if (!tbl || !Array.isArray(tbl.rows)) continue;
       const qNumStr = String(q.questionNumber);
       const regex = new RegExp(
-        `(?:\\(${qNumStr}\\)|\\b${qNumStr}\\b[\\.\\)]?)\\s*(?:_{2,}|\\.{3,})|(?:_{2,}|\\.{3,})\\s*(?:\\(${qNumStr}\\)|\\b${qNumStr}\\b[\\.\\)]?)`,
+        `\\(${qNumStr}\\)|\\[${qNumStr}\\]|(?:\\(${qNumStr}\\)|\\[${qNumStr}\\]|\\b${qNumStr}\\b[\\.\\)]?)\\s*(?:_{2,}|\\.{3,})|(?:_{2,}|\\.{3,})\\s*(?:\\(${qNumStr}\\)|\\[${qNumStr}\\]|\\b${qNumStr}\\b[\\.\\)]?)`,
         "i"
       );
 
@@ -298,6 +375,10 @@ function syncTableQuestions(parsedExam: ParsedExamResult): void {
             const cleanCell = cellText
               .replace(new RegExp(`\\(\\s*${qNumStr}\\s*\\)\\s*_{2,}`, "gi"), "_______")
               .replace(new RegExp(`_{2,}\\s*\\(\\s*${qNumStr}\\s*\\)`, "gi"), "_______")
+              .replace(new RegExp(`\\[\\s*${qNumStr}\\s*\\]\\s*_{2,}`, "gi"), "_______")
+              .replace(new RegExp(`_{2,}\\s*\\[\\s*${qNumStr}\\s*\\]`, "gi"), "_______")
+              .replace(new RegExp(`\\(\\s*${qNumStr}\\s*\\)`, "gi"), "_______")
+              .replace(new RegExp(`\\[\\s*${qNumStr}\\s*\\]`, "gi"), "_______")
               .replace(new RegExp(`\\b${qNumStr}\\b\\s*_{2,}`, "gi"), "_______")
               .replace(new RegExp(`_{2,}\\s*\\b${qNumStr}\\b`, "gi"), "_______")
               .replace(/\.{3,}/g, "_______")

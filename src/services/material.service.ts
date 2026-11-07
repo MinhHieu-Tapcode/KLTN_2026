@@ -2,7 +2,7 @@ import { prisma, isDbAlive } from "@/lib/prisma";
 import { MaterialType } from "@prisma/client";
 import { createNotifications } from "./notification.service";
 import type { SessionPayload } from "@/lib/auth";
-import { isAdmin, isSchoolManager, isTeacherOrTA } from "@/lib/permissions";
+import { isAdmin, isSchoolManager, isTeacher as checkIsTeacher } from "@/lib/permissions";
 import { logSystemWarning } from "@/lib/telemetry";
 
 const globalMaterialsStore = globalThis as unknown as {
@@ -405,14 +405,17 @@ export async function deleteMaterialFolderService(
 ): Promise<{ success: boolean; error?: string }> {
   if (!(await isDbAlive())) {
     if (globalMaterialsStore.demoFolders) {
-      globalMaterialsStore.demoFolders = globalMaterialsStore.demoFolders.filter(
-        (f) => f.id !== folderId
-      );
+      const folder = globalMaterialsStore.demoFolders.find((f) => f.id === folderId);
+      if (folder) {
+        folder.isActive = false;
+      }
     }
     if (globalMaterialsStore.demoMaterials) {
-      globalMaterialsStore.demoMaterials = globalMaterialsStore.demoMaterials.filter(
-        (m) => m.folderId !== folderId
-      );
+      for (const m of globalMaterialsStore.demoMaterials) {
+        if (m.folderId === folderId) {
+          m.isActive = false;
+        }
+      }
     }
     return { success: true };
   }
@@ -579,9 +582,10 @@ export async function deleteLearningMaterialService(
 ): Promise<{ success: boolean; error?: string }> {
   if (!(await isDbAlive())) {
     if (globalMaterialsStore.demoMaterials) {
-      globalMaterialsStore.demoMaterials = globalMaterialsStore.demoMaterials.filter(
-        (m) => m.id !== materialId
-      );
+      const target = globalMaterialsStore.demoMaterials.find((m) => m.id === materialId);
+      if (target) {
+        target.isActive = false;
+      }
     }
     return { success: true };
   }
@@ -756,8 +760,18 @@ export async function distributeLearningMaterialsService(
   materialCount?: number;
   totalDistributed?: number;
 }> {
-  const isTeacher = isTeacherOrTA(session);
+  const isTeacher = checkIsTeacher(session);
   const isManager = isSchoolManager(session);
+
+  if (data.distributionMode === "BY_LEVEL") {
+    if (!isAdmin(session)) {
+      return {
+        success: false,
+        error:
+          "Chỉ Quản trị viên hệ thống mới có quyền phân phối học liệu vào Kho chung cấp hệ thống theo trình độ!",
+      };
+    }
+  }
 
   if (!data.materials || data.materials.length === 0) {
     return {

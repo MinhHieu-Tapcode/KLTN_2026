@@ -1948,10 +1948,7 @@ function getSubmissionsFromDemoStore(
   if (requestUser) {
     if (requestUser.role === "STUDENT") {
       // Học sinh chỉ xem bài của mình (lọc ở dưới)
-    } else if (
-      requestUser.role === "TEACHER" ||
-      requestUser.role === "TEACHING_ASSISTANT"
-    ) {
+    } else if (requestUser.role === "TEACHER") {
       const isCreator = assign.createdById === requestUser.userId;
       const isAssigned =
         assign.teacherId === requestUser.userId ||
@@ -1962,7 +1959,7 @@ function getSubmissionsFromDemoStore(
           ac.staffIds?.includes(requestUser.userId)
         );
 
-      if (!isCreator && !isAssigned && assign.createdById && assign.createdById !== requestUser.userId) {
+      if (!isCreator && !isAssigned) {
         return {
           success: false,
           error: "Bạn không được phân công phụ trách lớp học của bài tập này!",
@@ -1978,7 +1975,7 @@ function getSubmissionsFromDemoStore(
           (ac: any) => ac.class?.school?.managerId === requestUser.userId
         );
 
-      if (!isManagerOfSchool && (assign.schoolManagerId || assign.school?.managerId || assign.class?.school?.managerId)) {
+      if (!isManagerOfSchool) {
         return {
           success: false,
           error: "Bạn không có quyền quản lý trường học của bài tập này!",

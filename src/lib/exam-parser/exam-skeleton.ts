@@ -1,4 +1,4 @@
-import { ExamSkeleton, GroupSkeleton, IeltsQuestionKind } from "./types";
+import { CoverageGap, ExamSkeleton, GroupSkeleton, IeltsQuestionKind } from "./types";
 
 /**
  * Regex phát hiện tiêu đề nhóm câu hỏi trong đề thi IELTS:
@@ -118,7 +118,15 @@ export function extractGroupSkeletonsFromText(
     // Dòng đầu tiên là tiêu đề nhóm (vd: "Questions 1-4"), các dòng sau là câu chỉ dẫn
     const lines = instructionBlock.split("\n").map((l) => l.trim()).filter(Boolean);
     const title = lines[0] || `Questions ${startNum}-${endNum}`;
-    const instruction = lines.slice(1, 4).join(" ");
+    // Câu chỉ dẫn dừng trước dòng câu hỏi đầu tiên (dòng đánh số, có chỗ trống hoặc dòng bảng). Trước đây lấy cứng
+    // 3 dòng sau tiêu đề nên khi chỉ dẫn ngắn, nó chứa luôn câu hỏi thật và bộ kiểm tra "trùng chỉ dẫn" loại nhầm.
+    const instructionLines: string[] = [];
+    for (const l of lines.slice(1, 6)) {
+      if (/^\(?\d{1,2}[.)]?\s+\S/.test(l) || /_{2,}|\.{4,}|…/.test(l) || l.startsWith("|")) break;
+      instructionLines.push(l);
+      if (instructionLines.length >= 3) break;
+    }
+    const instruction = instructionLines.join(" ");
 
     const kind = detectGroupKind(instructionBlock);
 
@@ -183,10 +191,14 @@ export function buildExamSkeleton(
 
   const allExpectedNumbers = Array.from(allExpectedNumbersSet).sort((a, b) => a - b);
 
+  // Đếm theo từng Part (không gộp bằng Set): Reading và Listening cùng đánh số 1-40 nên Set chung
+  // làm tổng kỳ vọng bị hụt một nửa.
+  const totalExpectedQuestions = allGroups.reduce((sum, g) => sum + g.expectedNumbers.length, 0);
+
   return {
     parts: skeletonParts,
     allGroups,
-    totalExpectedQuestions: allExpectedNumbers.length,
+    totalExpectedQuestions,
     allExpectedNumbers,
   };
 }
@@ -199,4 +211,54 @@ export function findGroupByQuestionNumber(
   qNum: number
 ): GroupSkeleton | undefined {
   return skeleton.allGroups.find((g) => g.expectedNumbers.includes(qNum));
+}
+
+
+export interface GroupCoverageIssue {
+  group: GroupSkeleton;
+  gap: CoverageGap;
+  missingNumbers: number[];
+  message: string;
+}
+
+/**
+ * Đối chiếu các câu đã bóc được với bộ khung (Skeleton) của một Part.
+ * Trả về từng nhóm còn thiếu câu, kèm thông điệp rõ ràng để hiển thị cho giáo viên.
+ * Hàm thuần, không đụng DB hay AI.
+ */
+export function checkGroupCoverage(
+  groups: GroupSkeleton[],
+  presentNumbers: number[],
+  partLabel = ""
+): GroupCoverageIssue[] {
+  const have = new Set(presentNumbers);
+  const issues: GroupCoverageIssue[] = [];
+  for (const g of groups) {
+    const missing = g.expectedNumbers.filter((n) => !have.has(n));
+    if (missing.length === 0) continue;
+    const gap: CoverageGap = {
+      partLabel,
+      kind: g.kind,
+      startNum: g.startNum,
+      endNum: g.endNum,
+      missingNumbers: missing,
+    };
+    issues.push({ group: g, gap, missingNumbers: missing, message: formatCoverageGap(gap) });
+  }
+  return issues;
+}
+
+/** Các dạng câu thường nằm trong ảnh/bảng của PDF nên văn bản không có nội dung */
+export const VISUAL_GROUP_KINDS = ["TABLE", "FLOWCHART", "MAP"];
+
+/** Thông điệp hiển thị cho giáo viên về một nhóm còn thiếu câu */
+export function formatCoverageGap(gap: CoverageGap): string {
+  const visualHint = VISUAL_GROUP_KINDS.includes(gap.kind)
+    ? " Dạng này thường nằm trong ẢNH/bảng của PDF nên văn bản không có."
+    : "";
+  const range = gap.startNum === gap.endNum ? `Question ${gap.startNum}` : `Questions ${gap.startNum}-${gap.endNum}`;
+  return (
+    `${gap.partLabel ? gap.partLabel + ": " : ""}${range} (${gap.kind}) chưa đọc được nội dung câu ${gap.missingNumbers.join(", ")}.` +
+    `${visualHint} Vui lòng kiểm tra lại hoặc nhập tay.`
+  );
 }

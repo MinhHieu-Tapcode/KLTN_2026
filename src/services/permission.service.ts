@@ -191,13 +191,19 @@ export async function createSystemPermissionService(data: CreatePermissionData) 
 }
 
 /**
- * Xóa một quyền tính năng
+ * Xóa một quyền tính năng (bảo vệ quyền cốt lõi và thu hồi vai trò thay vì xóa cứng)
  */
 export async function deleteSystemPermissionService(featureKey: string) {
   try {
+    const isCore = DEFAULT_PERMISSIONS.some((p) => p.featureKey === featureKey);
+    if (isCore) {
+      return { success: false, error: "Không thể xóa quyền cốt lõi của hệ thống!" };
+    }
+
     if (await isDbAlive()) {
-      await prisma.systemPermission.delete({
+      await prisma.systemPermission.update({
         where: { featureKey },
+        data: { allowedRoles: [] },
       });
       return { success: true };
     } else {

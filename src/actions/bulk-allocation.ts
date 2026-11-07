@@ -102,7 +102,13 @@ export async function generateBulkClassSuggestionAction(
   error?: string;
 }> {
   try {
-    await requireBulkAllocator();
+    const session = await requireBulkAllocator();
+    if (schoolId) {
+      const schoolScope = await assertSchoolAccess(session, schoolId);
+      if (!schoolScope.ok) {
+        return { success: false, error: schoolScope.error };
+      }
+    }
     return await generateBulkClassSuggestionService(validRows, schoolId, classCountOverrides);
   } catch (error: any) {
     return { success: false, error: error.message || "Không thể tạo phương án đề xuất phân lớp!" };

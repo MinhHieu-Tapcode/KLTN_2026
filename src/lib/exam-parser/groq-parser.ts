@@ -1,4 +1,5 @@
 import {
+  CoverageGap,
   GroqPartOutputSchema,
   GroupSkeleton,
   ParsedExamResult,
@@ -10,10 +11,12 @@ import { splitIntoExamParts } from "./extract-text";
 import { executeWithGroqKeyPool, getGroqKeyPool } from "./groq-key-pool";
 import {
   buildExamSkeleton,
+  checkGroupCoverage,
   extractGroupSkeletonsFromText,
   findGroupByQuestionNumber,
+  formatCoverageGap,
 } from "./exam-skeleton";
-import { validateQuestion } from "./question-validator";
+import { validateQuestion, BLANK_REGEX } from "./question-validator";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const ACTIVE_MODELS = [
@@ -154,6 +157,48 @@ function extractVerbatimPassage(
   return partContent;
 }
 
+const MAX_PARALLEL_PARTS = 3;
+const MAX_RATE_LIMIT_RETRIES = 2;
+const MAX_RATE_LIMIT_WAIT_MS = 20000;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Gọi Groq cho 1 Part, tự chờ rồi thử lại khi gặp giới hạn tốc độ (HTTP 429).
+ * Gói miễn phí giới hạn ~8.000 token/phút; thông báo lỗi có sẵn "try again in Xs".
+ */
+async function callGroqForPartWithRetry(
+  partContent: string,
+  defaultSkill: string,
+  preferredKeyIdx?: number
+): Promise<any> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await callGroqForPart(partContent, defaultSkill, preferredKeyIdx);
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (!msg.includes("429") || attempt >= MAX_RATE_LIMIT_RETRIES) throw err;
+      const m = /try again in ([\d.]+)\s*s/i.exec(msg);
+      const waitMs = Math.min(Math.ceil((m ? parseFloat(m[1]) : 5) * 1000) + 500, MAX_RATE_LIMIT_WAIT_MS);
+      await sleep(waitMs);
+    }
+  }
+}
+
+/** Chạy các tác vụ với tối đa `limit` tác vụ song song, giữ nguyên thứ tự kết quả. */
+async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 /**
  * Gọi Groq AI cho 1 phần đề thi qua Key Pool (xoay vòng + failover)
  */
@@ -240,6 +285,11 @@ ${textToSend}
               summaries: parsed.summaries,
             }
           : parsed;
+
+        // finish_reason = "length": AI bị ngắt do hết max_tokens, JSON đã được vá nên phần đuôi có thể mất
+        if (data?.choices?.[0]?.finish_reason === "length" && finalResult && typeof finalResult === "object") {
+          (finalResult as any)._truncated = true;
+        }
 
         const count = Array.isArray(finalResult?.questions) ? finalResult.questions.length : 0;
         // Kiểm tra đối chiếu số câu: Nếu văn bản gốc có 8+ câu đánh số mà AI trả về quá ít (<50%) -> ném lỗi để đổi key/model
@@ -576,17 +626,25 @@ export function fallbackRuleBasedParse(
       continue;
     }
 
-    // 1. Quét Table Completion: Bắt tất cả các ô chứa chỗ trống dạng "5. _____" hoặc "6. _____"
-    const tableMatches = Array.from(
-      line.matchAll(/(?:^|\||[:\s])(?:(?:\((\d{1,3})\)|\b(\d{1,3})[\.\)]?)\s*(?:_{2,}|\.{3,})|(?:_{2,}|\.{3,})\s*(?:\((\d{1,3})\)|\b(\d{1,3})[\.\)]?))/g)
-    );
+    // 1. Quét Table Completion: Bắt các ô chứa chỗ trống dạng "5. _____", "(1)", "[1]", "10." trong bảng
+    const isTableLine = line.includes("|");
+    const tableRegex = isTableLine
+      ? /(?:^|\||[:\s])(?:\((\d{1,3})\)|\[(\d{1,3})\]|\b(\d{1,3})[\.\)]\s*(?:_{2,}|\.{3,})?|(?:_{2,}|\.{3,})\s*(?:\((\d{1,3})\)|\[(\d{1,3})\]|\b(\d{1,3})[\.\)]?))/g
+      : /(?:^|[:\s])(?:(?:\((\d{1,3})\)|\[(\d{1,3})\]|\b(\d{1,3})[\.\)]?)\s*(?:_{2,}|\.{3,})|(?:_{2,}|\.{3,})\s*(?:\((\d{1,3})\)|\[(\d{1,3})\]|\b(\d{1,3})[\.\)]?))/g;
+    const tableMatches = Array.from(line.matchAll(tableRegex));
     if (tableMatches.length > 0) {
       for (const m of tableMatches) {
-        const qNumStr = m[1] || m[2] || m[3] || m[4];
+        const qNumStr = m.slice(1).find((val) => Boolean(val));
         if (qNumStr) {
           const qNum = parseInt(qNumStr, 10);
           if (qNum >= 1 && qNum <= 60 && !questions.some((q) => q.questionNumber === qNum)) {
-            const prompt = line.replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+            let prompt = line.replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+            if (!BLANK_REGEX.test(prompt)) {
+              prompt = prompt.replace(new RegExp(`\\b${qNum}[\\.\\)]?(?!\\d)`), `(${qNum}) _______`);
+              if (!BLANK_REGEX.test(prompt)) {
+                prompt = `${prompt} (${qNum}) _______`;
+              }
+            }
             const groupForQ = groups.find((g) => g.expectedNumbers.includes(qNum)) || currentGroup;
             const qObj = normalizeQuestion(
               {
@@ -809,76 +867,99 @@ export async function parseExamTextWithGroq(params: {
   // 1. Xây dựng bộ khung Skeleton toàn đề thi (Dual-Gate: Gate 1)
   const examSkeleton = buildExamSkeleton(cleanedText, rawParts);
 
+  const coverageGaps: CoverageGap[] = [];
+
   // 2. Bóc tách từng Part song song hoặc tuần tự
-  const partTasks = rawParts.map(async (part, idx) => {
+  const runPart = async (part: (typeof rawParts)[number], idx: number) => {
     const effectiveSkill: "READING" | "LISTENING" | "WRITING" | "SPEAKING" =
       skill === "ALL_SKILLS"
         ? part.detectedSkill || "READING"
         : (skill as any) || "READING";
 
     const partTitle = part.title || `${title} - Phần ${idx + 1}`;
+
+    // Giáo viên chọn Reading/Listening nhưng file có kèm đề Writing/Speaking: không nhét vào bài Reading/Listening
+    // (trước đây Writing Task 2 bị AI gán thành "câu 41" của Reading).
+    if (
+      (skill === "READING" || skill === "LISTENING") &&
+      (part.detectedSkill === "WRITING" || part.detectedSkill === "SPEAKING")
+    ) {
+      warnings.push(
+        `Phần ${idx + 1} (${partTitle.slice(0, 40)}) là đề ${part.detectedSkill} nên đã bỏ qua trong bài ${skill}. Chọn "Tất cả kỹ năng" nếu muốn bóc cả phần này.`
+      );
+      return null;
+    }
+
     let passageText = extractVerbatimPassage(part.content);
     let partQuestions: ParsedQuestion[] = [];
     let aiResult: any = null;
+    let partGaps: CoverageGap[] = [];
 
     // Trích xuất cấu trúc nhóm câu hỏi riêng của Part này
     const partGroups = extractGroupSkeletonsFromText(part.content, idx);
     const partExpectedStart = partGroups.length > 0 ? partGroups[0].startNum : 1;
 
-    if (keyPool.length > 0) {
+    // Chuẩn hóa + kiểm tra 1 câu (Gate 2). Trả true nếu câu được giữ lại.
+    const acceptQuestion = (rq: any, rawNum: number, source: "AI" | "QUY_TAC"): boolean => {
+      const matchedGroup = partGroups.find((g) => g.expectedNumbers.includes(rawNum));
+      const normalizedQ = normalizeQuestion(rq, rawNum, partTitle, effectiveSkill, matchedGroup);
+      const vRes = validateQuestion(normalizedQ, matchedGroup);
+      if (vRes.isValid) {
+        partQuestions.push(normalizedQ);
+        return true;
+      }
+      // Câu chỉ dẫn / tiêu đề bảng / prompt trùng chỉ dẫn nhóm / quá ngắn: loại và cảnh báo
+      if (
+        vRes.reasons.some(
+          (r) =>
+            r.includes("prompt_la_cau_chi_dan") ||
+            r.includes("prompt_trung_instruction") ||
+            r.includes("prompt_placeholder") ||
+            r.includes("la_tieu_de_bang_khong_phai_cau_hoi") ||
+            r.includes("qua_ngan")
+        )
+      ) {
+        warnings.push(
+          `Phần ${idx + 1}: Đã loại phần tử lỗi từ ${source} (Câu ${rawNum}): ${vRes.reasons.join(", ")}`
+        );
+        return false;
+      }
+      // Các trường hợp khác (ví dụ thiếu chỗ trống) vẫn giữ lại để giáo viên tự sửa
+      partQuestions.push(normalizedQ);
+      return true;
+    };
+
+    // Writing/Speaking: văn bản Part chính là đề bài, không cần AI (tiết kiệm token, tránh vượt hạn mức)
+    const needsAi = effectiveSkill !== "WRITING" && effectiveSkill !== "SPEAKING";
+    if (keyPool.length > 0 && needsAi) {
       try {
         const preferredKeyIdx = idx % keyPool.length;
-        aiResult = await callGroqForPart(part.content, effectiveSkill, preferredKeyIdx);
+        aiResult = await callGroqForPartWithRetry(part.content, effectiveSkill, preferredKeyIdx);
         if (aiResult) {
           passageText = extractVerbatimPassage(
             part.content,
             aiResult.passageText,
             aiResult.questionStartMarker
           );
+          if (aiResult._truncated) {
+            warnings.push(
+              `Phần ${idx + 1}: Kết quả AI bị cắt giữa chừng (hết giới hạn đầu ra). Các câu còn thiếu được bù bằng bộ quy tắc hoặc báo ở mục thiếu câu.`
+            );
+          }
           const rawQuestions = Array.isArray(aiResult.questions) ? aiResult.questions : [];
 
-          // Chuẩn hóa và lọc qua Cổng kiểm tra nội dung (Gate 2: Content Validator)
           for (let qIdx = 0; qIdx < rawQuestions.length; qIdx++) {
             const rq = rawQuestions[qIdx];
-            const rawNum = typeof rq?.questionNumber === "number" && rq.questionNumber > 0
-              ? rq.questionNumber
-              : partExpectedStart + qIdx;
-
-            const matchedGroup = partGroups.find((g) => g.expectedNumbers.includes(rawNum));
-            const normalizedQ = normalizeQuestion(
-              rq,
-              rawNum,
-              partTitle,
-              effectiveSkill,
-              matchedGroup
-            );
-
-            // Cổng kiểm tra nội dung câu hỏi
-            const vRes = validateQuestion(normalizedQ, matchedGroup);
-            if (vRes.isValid) {
-              partQuestions.push(normalizedQ);
-            } else {
-              // Nếu là câu chỉ dẫn hoặc tiêu đề bảng bị nhận nhầm, loại bỏ và cảnh báo
-              if (
-                vRes.reasons.some((r) =>
-                  r.includes("prompt_la_cau_chi_dan") ||
-                  r.includes("la_tieu_de_bang_khong_phai_cau_hoi") ||
-                  r.includes("qua_ngan")
-                )
-              ) {
-                warnings.push(
-                  `Phần ${idx + 1}: Đã loại bỏ phần tử lỗi (Câu ${rawNum}): ${vRes.reasons.join(", ")}`
-                );
-              } else {
-                // Các trường hợp khác (ví dụ thiếu chỗ trống) vẫn giữ lại để giáo viên tự sửa
-                partQuestions.push(normalizedQ);
-              }
-            }
+            const rawNum =
+              typeof rq?.questionNumber === "number" && rq.questionNumber > 0
+                ? rq.questionNumber
+                : partExpectedStart + qIdx;
+            acceptQuestion(rq, rawNum, "AI");
           }
         }
       } catch (err: any) {
         console.warn(`[parseExamTextWithGroq] Fallback cho phần ${idx + 1}:`, err.message);
-        warnings.push(`Phần ${idx + 1}: Đã kích hoạt bộ phân tích quy tắc dự phòng (${err.message}).`);
+        warnings.push(`Phần ${idx + 1}: Đã kích hoạt bộ phân tích quy tắc dự phòng (${String(err.message).slice(0, 140)}).`);
       }
     }
 
@@ -895,6 +976,30 @@ export async function parseExamTextWithGroq(params: {
       if (fallback.matchingHeadings && !aiResult?.matchingHeadings) {
         aiResult = { ...aiResult, matchingHeadings: fallback.matchingHeadings };
       }
+    } else if (partGroups.length > 0) {
+      // AI trả về nhưng còn thiếu so với Skeleton: thử bù đúng các số còn thiếu bằng bộ quy tắc
+      const haveNums = new Set(partQuestions.map((q) => q.questionNumber));
+      const stillMissing = partGroups.flatMap((g) => g.expectedNumbers).filter((n) => !haveNums.has(n));
+      if (stillMissing.length > 0) {
+        const fb = fallbackRuleBasedParse(partTitle, part.content, effectiveSkill, partExpectedStart, partGroups);
+        const missingSet = new Set(stillMissing);
+        for (const fq of fb.questions) {
+          if (missingSet.has(fq.questionNumber)) acceptQuestion(fq, fq.questionNumber, "QUY_TAC");
+        }
+      }
+    }
+
+    // Writing/Speaking: không để AI tự gán số câu (từng ra "câu 41"); đánh số 1..n trong từng Part
+    if (effectiveSkill === "WRITING" || effectiveSkill === "SPEAKING") {
+      partQuestions = partQuestions.map((q, i) => ({ ...q, questionNumber: i + 1 }));
+    } else if (partGroups.length > 0) {
+      // Đối chiếu với Skeleton: báo rõ nhóm nào còn thiếu câu (thường là bảng/sơ đồ nằm trong ảnh)
+      const issues = checkGroupCoverage(
+        partGroups,
+        partQuestions.map((q) => q.questionNumber),
+        `Phần ${idx + 1}`
+      );
+      partGaps = issues.map((i) => i.gap);
     }
 
     return {
@@ -907,43 +1012,50 @@ export async function parseExamTextWithGroq(params: {
       tables: aiResult?.tables,
       summaries: aiResult?.summaries,
       partGroups,
+      gaps: partGaps,
     };
-  });
+  };
 
-  const partResults = await Promise.all(partTasks);
+  // Giới hạn số Part gọi AI song song để không vượt hạn mức token/phút của Groq
+  const partResults = (await mapWithLimit(rawParts, MAX_PARALLEL_PARTS, runPart)).filter(
+    (r): r is NonNullable<typeof r> => r !== null
+  );
 
   // 3. Gom và sắp xếp các câu hỏi theo ĐÚNG SỐ THỰC TẾ CỦA ĐỀ THI
   // TUYỆT ĐỐI KHÔNG DỒN SỐ TỰ ĐỘNG (runningQuestionNum) ĐỂ TRÁNH TẠO 40 CÂU ẢO
   const sections: ParsedSection[] = [];
   const allQuestions: ParsedQuestion[] = [];
-  const seenQuestionNumbers = new Set<number>();
 
   for (let idx = 0; idx < partResults.length; idx++) {
     const res = partResults[idx];
+    const secId = `${res.effectiveSkill.toLowerCase()}_${idx + 1}`;
 
+    // Chỉ cảnh báo trùng số trong CÙNG một Section (Reading và Listening đánh số lại từ 1 là hợp lệ)
+    const seenInSection = new Set<number>();
     const adjustedQuestions = res.questions.map((q) => {
-      if (seenQuestionNumbers.has(q.questionNumber)) {
+      if (seenInSection.has(q.questionNumber)) {
         warnings.push(
-          `Cảnh báo trùng số câu: Câu ${q.questionNumber} xuất hiện nhiều hơn 1 lần trong đề thi`
+          `Cảnh báo trùng số câu: Câu ${q.questionNumber} xuất hiện nhiều hơn 1 lần trong ${res.partTitle.slice(0, 40)}`
         );
       }
-      seenQuestionNumbers.add(q.questionNumber);
+      seenInSection.add(q.questionNumber);
 
       return {
         ...q,
+        sectionKey: secId,
         passageText: res.passageText || q.passageText || res.partTitle,
       };
     });
 
     allQuestions.push(...adjustedQuestions);
+    (res.gaps || []).forEach((g) => coverageGaps.push({ ...g, sectionKey: secId }));
 
-    const secId = `${res.effectiveSkill.toLowerCase()}_${idx + 1}`;
     sections.push({
       id: secId,
       key: `${res.effectiveSkill}_${idx + 1}`,
       skill: res.effectiveSkill,
       title: res.partTitle.includes(title) ? res.partTitle : `${title} - ${res.partTitle}`,
-      durationMinutes: Math.max(15, Math.round(durationMinutes / Math.max(1, rawParts.length))),
+      durationMinutes: Math.max(15, Math.round(durationMinutes / Math.max(1, partResults.length))),
       audioUrl: res.effectiveSkill === "LISTENING" ? audioUrl : null,
       passageText: res.passageText,
       questions: adjustedQuestions,
@@ -965,11 +1077,20 @@ export async function parseExamTextWithGroq(params: {
         allMatchingHeadings.push(r.matchingHeadings);
       }
     }
+    // Loại nhóm RỖNG do AI tạo ra khi không có dữ liệu (vd bảng nằm trong ảnh: headers=[] và rows=[]).
+    // Nhóm rỗng còn khiến giao diện ẩn các câu thuộc nhóm đó khỏi danh sách câu hỏi thường.
     if (r.tables && Array.isArray(r.tables)) {
-      allTables.push(...r.tables);
+      for (const t of r.tables) {
+        const hasContent = Array.isArray(t?.rows) && t.rows.length > 0 && Array.isArray(t?.headers) && t.headers.length > 0;
+        if (hasContent) allTables.push(t);
+        else warnings.push(`Đã bỏ một bảng rỗng do AI tạo (câu ${(t?.questionNumbers || []).join(", ")}): nội dung bảng không có trong văn bản PDF.`);
+      }
     }
     if (r.summaries && Array.isArray(r.summaries)) {
-      allSummaries.push(...r.summaries);
+      for (const sm of r.summaries) {
+        if (typeof sm?.summaryText === "string" && sm.summaryText.trim().length >= 10) allSummaries.push(sm);
+        else warnings.push(`Đã bỏ một đoạn tóm tắt rỗng do AI tạo (câu ${(sm?.questionNumbers || []).join(", ")}).`);
+      }
     }
   }
 
@@ -985,5 +1106,7 @@ export async function parseExamTextWithGroq(params: {
     tables: allTables.length > 0 ? allTables : undefined,
     summaries: allSummaries.length > 0 ? allSummaries : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
+    coverageGaps: coverageGaps.length > 0 ? coverageGaps : undefined,
+    coverageIssues: coverageGaps.length > 0 ? coverageGaps.map(formatCoverageGap) : undefined,
   };
 }

@@ -509,7 +509,12 @@ export async function getSubmissionsForAssignmentAction(
 ): Promise<{ success: boolean; submissions: any[]; error?: string }> {
   try {
     const session = await getSession();
-    const auth = checkAuth(session, "Vui lòng đăng nhập để xem danh sách bài nộp!");
+    const auth = checkRole(
+      session,
+      ROLE_GROUPS.STAFF_AND_ADMIN,
+      "Bạn không có quyền xem danh sách bài nộp!",
+      "Vui lòng đăng nhập để xem danh sách bài nộp!"
+    );
     if (!auth.ok) {
       return {
         success: false,

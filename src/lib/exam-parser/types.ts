@@ -72,6 +72,8 @@ export const ParsedQuestionSchema = z.object({
   options: z.array(ParsedOptionSchema).default([]),
   flowchartGroupTitle: z.string().optional(),
   flowchartBoxText: z.string().optional(),
+  // Section chứa câu này (vd "reading_1"): số câu có thể trùng giữa các kỹ năng nên cần khoá phụ để phân biệt
+  sectionKey: z.string().optional(),
 });
 
 export const ParsedSectionSchema = z.object({
@@ -175,6 +177,16 @@ export interface SummaryCompletionGroup {
   questionNumbers: number[];
 }
 
+// Một nhóm câu hỏi còn thiếu nội dung so với Skeleton (vd bảng nằm trong ảnh PDF)
+export interface CoverageGap {
+  sectionKey?: string;
+  partLabel: string;
+  kind: string;
+  startNum: number;
+  endNum: number;
+  missingNumbers: number[];
+}
+
 export interface ParsedExamResult {
   title: string;
   skill: string;
@@ -188,5 +200,8 @@ export interface ParsedExamResult {
   matchingHeadings?: MatchingHeadingsGroup[];
   summaries?: SummaryCompletionGroup[];
   warnings?: string[];
+  // Các nhóm câu hỏi còn thiếu nội dung so với Skeleton (hiển thị cho giáo viên)
+  coverageIssues?: string[];
+  coverageGaps?: CoverageGap[];
   invariantsReport?: any;
 }

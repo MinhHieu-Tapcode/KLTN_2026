@@ -1408,24 +1408,44 @@ export async function updateUserService(
         if (effectiveRole === "STUDENT") {
           targetUser.classEnrollments = [];
           for (const cls of demoClasses) {
-            cls.enrollments = (cls.enrollments || []).filter(
-              (e: any) => e.studentId !== id && e.student?.id !== id
+            cls.enrollments = cls.enrollments || [];
+            const existing = cls.enrollments.find(
+              (e: any) => e.studentId === id || e.student?.id === id
             );
             if (classIdSet.has(cls.id) || classIdSet.has(cls.code)) {
-              const enId = `en-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-              targetUser.classEnrollments.push({
-                id: enId,
-                classId: cls.id,
-                class: { id: cls.id, code: cls.code, name: cls.name, school: cls.school },
-              });
-              cls.enrollments.push({
-                id: enId,
-                studentId: id,
-                status: "STUDYING",
-                student: targetUser,
-              });
+              if (existing) {
+                existing.status = "STUDYING";
+                existing.isActive = true;
+                targetUser.classEnrollments.push({
+                  id: existing.id || `en-${cls.id}-${id}`,
+                  classId: cls.id,
+                  class: { id: cls.id, code: cls.code, name: cls.name, school: cls.school },
+                });
+              } else {
+                const enId = `en-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                targetUser.classEnrollments.push({
+                  id: enId,
+                  classId: cls.id,
+                  class: { id: cls.id, code: cls.code, name: cls.name, school: cls.school },
+                });
+                cls.enrollments.push({
+                  id: enId,
+                  studentId: id,
+                  status: "STUDYING",
+                  isActive: true,
+                  student: targetUser,
+                });
+              }
+            } else if (existing) {
+              existing.status = "DROPPED";
+              existing.isActive = false;
             }
-            cls._count = { ...(cls._count || {}), enrollments: cls.enrollments.length };
+            cls._count = {
+              ...(cls._count || {}),
+              enrollments: cls.enrollments.filter(
+                (e: any) => e.status !== "DROPPED" && e.status !== "TRANSFERRED" && e.isActive !== false
+              ).length,
+            };
           }
         } else if (effectiveRole === "TEACHER" || effectiveRole === "TEACHING_ASSISTANT") {
           targetUser.classAssignments = [];
@@ -1549,13 +1569,38 @@ export async function updateUserService(
           });
         }
       } else if (data.roleCode === "STUDENT") {
-        await prisma.classEnrollment.deleteMany({ where: { studentId: id } });
+        const validNewClassIds: string[] = [];
         for (const rawClassId of data.classIds) {
           if (!rawClassId) continue;
           const realClassId = await resolveRealClassId(rawClassId);
-          if (!realClassId) continue;
-          await prisma.classEnrollment.create({
-            data: {
+          if (realClassId) validNewClassIds.push(realClassId);
+        }
+
+        // Cập nhật status: "DROPPED" cho các lớp cũ không còn theo học (bảo toàn lịch sử học tập)
+        await prisma.classEnrollment.updateMany({
+          where: {
+            studentId: id,
+            classId: { notIn: validNewClassIds },
+            status: { not: "DROPPED" },
+          },
+          data: {
+            status: "DROPPED",
+          },
+        });
+
+        // Upsert hoặc cập nhật status: "STUDYING" cho các lớp mới được gán
+        for (const realClassId of validNewClassIds) {
+          await prisma.classEnrollment.upsert({
+            where: {
+              classId_studentId: {
+                classId: realClassId,
+                studentId: id,
+              },
+            },
+            update: {
+              status: "STUDYING",
+            },
+            create: {
               classId: realClassId,
               studentId: id,
               status: "STUDYING",

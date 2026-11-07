@@ -4,6 +4,8 @@ import { extractText, getDocumentProxy } from "unpdf";
 export interface ExtractedDocument {
   cleanedText: string;
   pageCount: number;
+  /** Số trang (từ 1) gần như không có chữ trong khi các trang khác có chữ: nhiều khả năng là ảnh */
+  lowTextPages?: number[];
   parts: Array<{
     title: string;
     detectedSkill?: "READING" | "LISTENING" | "WRITING" | "SPEAKING";
@@ -158,11 +160,24 @@ export async function extractAndCleanDocument(
     const cleanedText = cleanAndReflowPages(pageTexts);
     const parts = splitIntoExamParts(cleanedText);
 
+    // Trang gần như trống chữ giữa một file có chữ => nhiều khả năng là ảnh (OCR chỉ chạy khi cả file trống)
+    let lowTextPages: number[] | undefined;
+    if (isPdf && pageTexts.length >= 2) {
+      const counts = pageTexts.map((t) => t.replace(/\s+/g, "").length);
+      const sorted = [...counts].sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      if (median >= 200) {
+        const low = counts.map((c, i) => (c < 40 ? i + 1 : 0)).filter(Boolean);
+        if (low.length > 0) lowTextPages = low;
+      }
+    }
+
     return {
       ok: true,
       data: {
         cleanedText,
         pageCount,
+        lowTextPages,
         parts,
       },
     };
@@ -283,6 +298,11 @@ export function cleanAndReflowPages(pages: string[]): string {
     if (!t) return true;
     // Bảng biểu Markdown | ... |
     if (t.startsWith("|") && t.endsWith("|")) return true;
+    // Dòng chỉ chứa số thứ tự câu hỏi trần (ví dụ: "1." hoặc "1)") do OCR ngắt dòng:
+    // Không coi là dòng cấu trúc tách biệt mà cho phép nối tiếp nội dung ở dòng kế tiếp
+    if (/^\d{1,3}[\.\)]\s*$/.test(t)) {
+      return false;
+    }
     // Tiêu đề phần / kỹ năng / câu hỏi / đoạn văn
     if (
       /^(reading\s+passage|passage\s+(?:\d+|one|two|three|i|ii|iii|[a-d])|listening|writing\s+task|speaking|part\s+(?:\d+|one|two|three|four|i|ii|iii|iv|[a-d])|section\s+(?:\d+|one|two|three|four|i|ii|iii|iv|[a-d])|questions?\s+\d+|task\s+(?:\d+|one|two)|paragraph\s+[a-z])\b/i.test(
@@ -311,20 +331,24 @@ export function cleanAndReflowPages(pages: string[]): string {
     if (/^(?:[ivxlc]+)[\.\)]\s/i.test(t)) {
       return true;
     }
-    // Dòng Tiêu đề bài đọc ngắn (Passage Title: dưới 70 ký tự, không kết thúc bằng dấu chấm/phẩy)
+    // Dòng Tiêu đề bài đọc ngắn (Passage Title: từ 2 từ trở lên hoặc viết hoa toàn bộ, dưới 70 ký tự, không kết thúc bằng dấu chấm/phẩy)
     if (
       t.length <= 70 &&
       t.length >= 3 &&
       !/[.,:;]$/.test(t) &&
-      (/^[A-Z][A-Za-z0-9\s,'"-]+$/.test(t) || t === t.toUpperCase()) &&
+      ((t.split(/\s+/).length >= 2 && /^[A-Z][A-Za-z0-9\s,'"-]+$/.test(t)) ||
+        (t === t.toUpperCase() && /[A-Z]/.test(t))) &&
       !/^(the|a|an|in|on|at|by|for|with|and|but|or)\b/i.test(t)
     ) {
       return true;
     }
     // Dòng chứa biểu mẫu điền từ (có chỗ trống ___ hoặc ...) hoặc nhãn ngắn có dấu hai chấm (Name: ...)
+    // Ngoại trừ trường hợp chỉ vỏn vẹn là ký tự gạch dưới "_____" hoặc "....." (đang tiếp nối câu dở phía trước)
     if (
-      /(___+|\.{3,}|\[question\s*\d+\]|\[\d+\])/i.test(t) ||
-      /^[A-Za-z\s]{2,30}:\s*/.test(t)
+      ((/(___+|\.{3,}|\[question\s*\d+\]|\[\d+\])/i.test(t) &&
+        !/^_{2,}[.?!]?$/.test(t) &&
+        !/^\.{3,}[.?!]?$/.test(t)) ||
+        /^[A-Za-z\s]{2,30}:\s*/.test(t))
     ) {
       return true;
     }
@@ -345,12 +369,39 @@ export function cleanAndReflowPages(pages: string[]): string {
     }
 
     const prev = reflowedLines.length > 0 ? reflowedLines[reflowedLines.length - 1] : "";
+    const prevIsBareQuestionNum = /^\d{1,3}[\.\)]\s*$/.test(prev);
+    const prevIsUnfinishedQuestion =
+      /^(\d{1,3}[\.\)]|\(\d{1,3}\))\s+/.test(prev) &&
+      !/[.?!:]$/.test(prev) &&
+      !/_{2,}|\.{3,}/.test(prev);
+
+    const trimmedStartsNewItem =
+      /^(\d{1,3}[\.\)]\s*|\[?question\s*\d+\]?|\(\d{1,3}\)|[A-H][\.\)]\s|•|\*|[-–—]\s+[A-Z0-9])/i.test(
+        trimmed
+      ) || isStructuralLine(trimmed);
+
+    // Nếu prev là số câu hỏi đứng trần ("1."), luôn nối dòng tiếp theo vào để tạo prompt hợp lệ
+    if (prevIsBareQuestionNum && !/^\d{1,3}[\.\)]\s*$/.test(trimmed)) {
+      reflowedLines[reflowedLines.length - 1] = `${prev} ${trimmed}`;
+      continue;
+    }
+
+    // Nếu prev là câu hỏi đang dang dở (chưa kết thúc bằng dấu chấm hay chỗ trống) và dòng tiếp theo là phần tiếp nối
+    if (
+      prevIsUnfinishedQuestion &&
+      (!trimmedStartsNewItem || /^_{2,}[.?!]?$/.test(trimmed) || /^\.{3,}[.?!]?$/.test(trimmed))
+    ) {
+      reflowedLines[reflowedLines.length - 1] = `${prev} ${trimmed}`;
+      continue;
+    }
+
+    const prevEndsSentence = /[.!?:"]$/.test(prev);
     if (
       prev &&
       prev !== "" &&
       !isStructuralLine(prev) &&
       !isStructuralLine(trimmed) &&
-      !/[.!?:"]$/.test(prev)
+      !prevEndsSentence
     ) {
       reflowedLines[reflowedLines.length - 1] = `${prev} ${trimmed}`;
     } else {
@@ -365,6 +416,8 @@ export function cleanAndReflowPages(pages: string[]): string {
  * Tách văn bản đề thi thành các Phần (Part / Passage / Section / Task)
  * Hỗ trợ số thường (1, 2, 3), chữ tiếng Anh (ONE, TWO, THREE, FOUR) và số La Mã (I, II, III, IV)
  */
+const MIN_PART_GAP_CHARS = 10;
+
 export function splitIntoExamParts(cleanedText: string): Array<{
   title: string;
   detectedSkill?: "READING" | "LISTENING" | "WRITING" | "SPEAKING";
@@ -376,7 +429,7 @@ export function splitIntoExamParts(cleanedText: string): Array<{
   // TUYỆT ĐỐI KHÔNG chia theo các câu chỉ dẫn/tham chiếu (như 'Reading Passage 1 has six paragraphs', 'which are based on...')
   // VÀ KHÔNG chia nếu số thứ tự phần thi đã xuất hiện trước đó (tránh nhân đôi 1 bài đọc thành 2)
   const headingRegex = new RegExp(
-    `(?:^|\\n)(?:[#*\\s]*)(PART\\s*${numToken}\\s*[-–:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s*${numToken}|PASSAGE\\s*${numToken}|LISTENING\\s+(?:SECTION|PART)\\s*${numToken}|SECTION\\s*${numToken}|WRITING\\s+TASK\\s*${numToken}|SPEAKING\\s+PART\\s*${numToken})\\b([^\\n]*)`,
+    `(?:^|\\n)(?:[#*\\s]*)(PART\\s*${numToken}\\s*[-–:]?\\s*(?:READING|LISTENING|WRITING|SPEAKING)?|READING\\s+PASSAGE\\s*${numToken}|PASSAGE\\s*${numToken}|LISTENING\\s+(?:SECTION|PART)\\s*${numToken}|SECTION\\s*${numToken}|WRITING\\s+TASK\\s*${numToken}|TASK\\s*[12]|SPEAKING\\s+PART\\s*${numToken})\\b([^\\n]*)`,
     "gi"
   );
 
@@ -399,8 +452,10 @@ export function splitIntoExamParts(cleanedText: string): Array<{
     const restOfLine = match[2] || "";
 
     // Bỏ qua nếu dòng này là một câu chỉ dẫn/tham chiếu chứ không phải tiêu đề độc lập
+    // LƯU Ý: KHÔNG loại dòng chỉ vì có "Questions x-y" đi kèm. Tiêu đề phổ biến như
+    // "SECTION 1  Questions 1-10" là tiêu đề Part thật (trước đây bị loại nhầm làm mất cả Section Listening).
     if (
-      /based on|has\s+\w+\s+paragraphs|referred to|below|according to|consists of|questions?\s+\d+/i.test(
+      /based on|has\s+\w+\s+paragraphs|referred to|below|according to|consists of/i.test(
         restOfLine
       )
     ) {
@@ -419,10 +474,22 @@ export function splitIntoExamParts(cleanedText: string): Array<{
     }
 
     const pos = match.index + (cleanedText[match.index] === "\n" ? 1 : 0);
-    // Yêu cầu khoảng cách tối thiểu giữa 2 bài đọc IELTS là 1200 ký tự (tránh phân tách vụn vặt)
-    if (indices.length === 0 || pos - indices[indices.length - 1] > 1200) {
+    // Khoảng cách tối thiểu rất nhỏ, chỉ để loại tiêu đề bị lặp sát nhau (header/footer). Trước đây là 1200 ký tự
+    // nên nuốt mất Section Listening ngắn và dồn Writing Task 2 + Speaking vào một Part.
+    if (indices.length === 0 || pos - indices[indices.length - 1] > MIN_PART_GAP_CHARS) {
       indices.push(pos);
       seenPartKeys.add(partKey);
+    }
+  }
+
+  // Phần văn bản nằm TRƯỚC tiêu đề đầu tiên được nhận: trước đây bị bỏ hoàn toàn.
+  // Nếu có nội dung thật (đủ dài hoặc chứa câu hỏi) thì giữ lại thành một Part riêng.
+  if (indices.length > 0 && indices[0] > 0) {
+    const preamble = cleanedText.slice(0, indices[0]).trim();
+    const looksLikeContent =
+      preamble.length >= 400 || /(?:^|\n)\s*(?:questions?\s+\d+|\d{1,2}[.)]\s+\S)/i.test(preamble);
+    if (looksLikeContent) {
+      indices.unshift(0);
     }
   }
 
@@ -507,7 +574,11 @@ function detectSkillFromText(
     return "LISTENING";
   }
 
-  if (/WRITING\s+TASK\s+[12]|TASK\s+[12]\s*:\s*WRITE/i.test(head)) {
+  if (
+    /WRITING\s+TASK\s+[12]|TASK\s+[12]\s*:\s*WRITE/i.test(head) ||
+    /^\s*TASK\s*[12]\b/.test(head) ||
+    /TO\s+WHAT\s+EXTENT\s+DO\s+YOU\s+AGREE|WRITE\s+AT\s+LEAST\s+\d+\s+WORDS/i.test(head)
+  ) {
     return "WRITING";
   }
 

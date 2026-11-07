@@ -1,6 +1,6 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
 import type { SessionPayload } from "@/lib/auth";
-import { isSchoolManager, isStudent, isTeacherOrTA } from "@/lib/permissions";
+import { isSchoolManager, isStudent, isTeacher } from "@/lib/permissions";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
 import { areSchedulesConflicting, validateScheduleString } from "@/lib/schedule";
 import { logSystemWarning } from "@/lib/telemetry";
@@ -475,7 +475,7 @@ export async function getClassesService(
 
       if (isSchoolManager(session)) {
         whereClause.school = { managerId: session.userId };
-      } else if (isTeacherOrTA(session)) {
+      } else if (isTeacher(session)) {
         whereClause.assignments = {
           some: {
             OR: [
@@ -488,6 +488,7 @@ export async function getClassesService(
       } else if (isStudent(session)) {
         whereClause.enrollments = {
           some: {
+            status: { notIn: ["DROPPED", "TRANSFERRED"] },
             OR: [
               { studentId: session.userId },
               ...(session.username ? [{ student: { username: session.username } }] : []),
@@ -522,6 +523,7 @@ export async function getClassesService(
               },
             },
             enrollments: {
+              where: { status: { notIn: ["DROPPED", "TRANSFERRED"] } },
               include: {
                 student: { include: { profile: true } },
               },
@@ -538,7 +540,12 @@ export async function getClassesService(
               },
             },
             _count: {
-              select: { enrollments: true, materialFolders: true },
+              select: {
+                enrollments: {
+                  where: { status: { notIn: ["DROPPED", "TRANSFERRED"] } },
+                },
+                materialFolders: true,
+              },
             },
           },
           orderBy: { createdAt: "desc" },
@@ -555,12 +562,17 @@ export async function getClassesService(
               },
             },
             enrollments: {
+              where: { status: { notIn: ["DROPPED", "TRANSFERRED"] } },
               include: {
                 student: { include: { profile: true } },
               },
             },
             _count: {
-              select: { enrollments: true },
+              select: {
+                enrollments: {
+                  where: { status: { notIn: ["DROPPED", "TRANSFERRED"] } },
+                },
+              },
             },
           },
           orderBy: { createdAt: "desc" },
@@ -571,6 +583,7 @@ export async function getClassesService(
       if (isStudent(session) && list.length === 0 && session?.userId) {
         const enrolledRows = await prisma.classEnrollment.findMany({
           where: {
+            status: { notIn: ["DROPPED", "TRANSFERRED"] },
             OR: [
               { studentId: session.userId },
               ...(session.username ? [{ student: { username: session.username } }] : []),
@@ -587,6 +600,7 @@ export async function getClassesService(
                   },
                 },
                 enrollments: {
+                  where: { status: { notIn: ["DROPPED", "TRANSFERRED"] } },
                   include: {
                     student: { include: { profile: true } },
                   },
@@ -632,13 +646,16 @@ export async function getClassesService(
     memoryClasses = memoryClasses.filter((c) =>
       c.enrollments?.some(
         (e: any) =>
-          e.studentId === session?.userId ||
-          e.student?.id === session?.userId ||
-          e.student?.email === session?.email ||
-          e.student?.username === session?.username
+          e.status !== "DROPPED" &&
+          e.status !== "TRANSFERRED" &&
+          e.isActive !== false &&
+          (e.studentId === session?.userId ||
+            e.student?.id === session?.userId ||
+            e.student?.email === session?.email ||
+            e.student?.username === session?.username)
       )
     );
-  } else if (isTeacherOrTA(session)) {
+  } else if (isTeacher(session)) {
     memoryClasses = memoryClasses.filter((c) =>
       c.assignments?.some(
         (a: any) =>
@@ -653,9 +670,13 @@ export async function getClassesService(
       (c) =>
         c.school?.managerId === session?.userId ||
         c.school?.manager?.id === session?.userId ||
-        c.school?.manager?.username === session?.username ||
-        (session?.username === "manager_quan" && c.schoolId === "demo-school-1")
+        c.school?.manager?.username === session?.username
     );
+  } else if (session?.role === "ADMIN") {
+    // ADMIN toàn quyền xem tất cả lớp học
+  } else {
+    // Fail-Closed: Khách, vai trò lạ hoặc TEACHING_ASSISTANT không xem được lớp
+    memoryClasses = [];
   }
 
   if (activeState === "ACTIVE") {
@@ -679,6 +700,7 @@ export async function getClassDetailService(id: string) {
             },
           },
           enrollments: {
+            where: { status: { notIn: ["DROPPED", "TRANSFERRED"] } },
             include: {
               student: { include: { profile: true } },
             },
@@ -688,7 +710,15 @@ export async function getClassDetailService(id: string) {
       });
       if (res) return res as any;
       const foundDemo = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
-      return (foundDemo as any) || null;
+      if (foundDemo) {
+        return {
+          ...foundDemo,
+          enrollments: (foundDemo.enrollments || []).filter(
+            (e: any) => e.status !== "DROPPED" && e.status !== "TRANSFERRED" && e.isActive !== false
+          ),
+        } as any;
+      }
+      return null;
     } catch (err: any) {
       logSystemWarning("class.service", "getClassDetailService", "Lỗi DB khi lấy chi tiết lớp", err);
     }
@@ -696,7 +726,15 @@ export async function getClassDetailService(id: string) {
 
   logSystemWarning("class.service", "getClassDetailService", "DB offline, tìm lớp trong demoClasses");
   const found = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
-  return (found as any) || null;
+  if (found) {
+    return {
+      ...found,
+      enrollments: (found.enrollments || []).filter(
+        (e: any) => e.status !== "DROPPED" && e.status !== "TRANSFERRED" && e.isActive !== false
+      ),
+    } as any;
+  }
+  return null;
 }
 
 export async function createClassService(data: {
@@ -993,6 +1031,18 @@ export async function updateClassService(
       };
     }
 
+    if (!(await isDbAlive())) {
+      const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
+      if (!cls) return { success: false, error: "Không tìm thấy lớp học!" };
+      if (data.name) cls.name = data.name.trim();
+      if (data.program) cls.program = data.program;
+      if (data.level) cls.level = data.level;
+      if (data.capacity) cls.capacity = data.capacity;
+      if (data.status) cls.status = data.status;
+      if (data.schedule !== undefined) cls.description = data.schedule;
+      return { success: true };
+    }
+
     const currentClass = await prisma.class.findUnique({
       where: { id },
       include: {
@@ -1201,6 +1251,14 @@ export async function deleteClassService(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!(await isDbAlive())) {
+      const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
+      if (cls) {
+        cls.isActive = false;
+      }
+      return { success: true };
+    }
+
     await prisma.class.update({
       where: { id },
       data: { isActive: false },
@@ -1216,6 +1274,14 @@ export async function restoreClassService(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!(await isDbAlive())) {
+      const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
+      if (cls) {
+        cls.isActive = true;
+      }
+      return { success: true };
+    }
+
     await prisma.class.update({
       where: { id },
       data: { isActive: true },
@@ -1234,6 +1300,16 @@ export async function deleteMultipleClassesService(
   ids: string[]
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!(await isDbAlive())) {
+      for (const id of ids) {
+        const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
+        if (cls) {
+          cls.isActive = false;
+        }
+      }
+      return { success: true };
+    }
+
     await prisma.class.updateMany({
       where: { id: { in: ids } },
       data: { isActive: false },
@@ -1322,6 +1398,14 @@ export async function removeStaffFromClassService(
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!(await isDbAlive())) {
+      const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === classId);
+      if (cls && cls.assignments) {
+        cls.assignments = cls.assignments.filter((a: any) => a.userId !== userId);
+      }
+      return { success: true };
+    }
+
     await prisma.classAssignment.delete({
       where: {
         classId_userId: { classId, userId },
@@ -1360,7 +1444,11 @@ export async function enrollStudentToClassService(
             },
           },
         });
-        cls._count = { enrollments: cls.enrollments.length };
+        cls._count = {
+          enrollments: cls.enrollments.filter(
+            (e: any) => e.status !== "DROPPED" && e.status !== "TRANSFERRED" && e.isActive !== false
+          ).length,
+        };
       }
     }
     return { success: true };
@@ -1370,7 +1458,13 @@ export async function enrollStudentToClassService(
       where: { id: classId },
       include: {
         school: true,
-        _count: { select: { enrollments: true } },
+        _count: {
+          select: {
+            enrollments: {
+              where: { status: { notIn: ["DROPPED", "TRANSFERRED"] } },
+            },
+          },
+        },
       },
     });
     if (!cls || !cls.isActive) {
@@ -1453,18 +1547,27 @@ export async function removeStudentFromClassService(
       (c) => c.id === classId
     );
     if (cls) {
-      cls.enrollments = (cls.enrollments || []).filter(
-        (e: any) => e.studentId !== studentId
+      cls.enrollments = (cls.enrollments || []).map((e: any) =>
+        e.studentId === studentId
+          ? { ...e, status: "DROPPED", isActive: false }
+          : e
       );
-      cls._count = { enrollments: cls.enrollments.length };
+      cls._count = {
+        enrollments: (cls.enrollments || []).filter(
+          (e: any) => e.status !== "DROPPED" && e.status !== "TRANSFERRED" && e.isActive !== false
+        ).length,
+      };
     }
     return { success: true };
   }
   try {
-    await prisma.classEnrollment.deleteMany({
+    await prisma.classEnrollment.updateMany({
       where: {
         classId,
         studentId,
+      },
+      data: {
+        status: "DROPPED",
       },
     });
 
@@ -1477,52 +1580,116 @@ export async function removeStudentFromClassService(
   }
 }
 
+export function getAvailableStudentsFromDemoStore(
+  classId: string
+): { success: boolean; error?: string; students: any[] } {
+  const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === classId);
+  if (!cls) {
+    return { success: false, error: "Không tìm thấy lớp học!", students: [] };
+  }
+
+  const schoolId = cls.schoolId || cls.school?.id;
+  const globalUsers: any[] = ((globalThis as any).demoUsers || []) as any[];
+
+  let filteredStudents = globalUsers.filter((u) => {
+    if (u.role?.code !== "STUDENT" || u.isActive === false) return false;
+    const isEnrolledInClass = (u.classEnrollments || []).some(
+      (e: any) =>
+        e.classId === classId &&
+        e.status !== "DROPPED" &&
+        e.status !== "TRANSFERRED" &&
+        e.isActive !== false
+    );
+    if (isEnrolledInClass) return false;
+
+    const belongsToSchool =
+      u.schoolId === schoolId ||
+      (u.classEnrollments || []).some(
+        (e: any) =>
+          (e.class?.schoolId === schoolId || e.class?.school?.id === schoolId) &&
+          e.status !== "DROPPED" &&
+          e.status !== "TRANSFERRED"
+      );
+    return belongsToSchool;
+  });
+
+  // Seed demo chỉ cho demo-school-1 nếu demoUsers rỗng
+  if (filteredStudents.length === 0 && schoolId === "demo-school-1") {
+    filteredStudents = [
+      {
+        id: "st-demo-3",
+        username: "HV003",
+        email: "hv003@simpace.vn",
+        schoolId: "demo-school-1",
+        profile: {
+          fullName: "Vũ Minh Anh",
+          entryIeltsScore: 5.5,
+          phone: "0912345678",
+        },
+        classEnrollments: [
+          { class: { name: "IELTS Cơ bản - 10A2", schoolId: "demo-school-1" } },
+        ],
+      },
+      {
+        id: "st-demo-4",
+        username: "HV004",
+        email: "hv004@simpace.vn",
+        schoolId: "demo-school-1",
+        profile: {
+          fullName: "Đặng Gia Huy",
+          entryIeltsScore: 6.5,
+          phone: "0987654321",
+        },
+        classEnrollments: [
+          { class: { name: "IELTS Cơ bản - 10A2", schoolId: "demo-school-1" } },
+        ],
+      },
+    ];
+  }
+
+  return { success: true, students: filteredStudents };
+}
+
 export async function getAvailableStudentsForClassService(
   classId: string
 ): Promise<{ success: boolean; error?: string; students: any[] }> {
   if (!(await isDbAlive())) {
-    return {
-      success: true,
-      students: [
-        {
-          id: "st-demo-3",
-          username: "HV003",
-          email: "hv003@simpace.vn",
-          profile: {
-            fullName: "Vũ Minh Anh",
-            entryIeltsScore: 5.5,
-            phone: "0912345678",
-          },
-          classEnrollments: [],
-        },
-        {
-          id: "st-demo-4",
-          username: "HV004",
-          email: "hv004@simpace.vn",
-          profile: {
-            fullName: "Đặng Gia Huy",
-            entryIeltsScore: 6.5,
-            phone: "0987654321",
-          },
-          classEnrollments: [],
-        },
-      ],
-    };
+    return getAvailableStudentsFromDemoStore(classId);
   }
   try {
+    const currentClass = await prisma.class.findUnique({
+      where: { id: classId },
+      select: { schoolId: true, isActive: true },
+    });
+
+    if (!currentClass) {
+      return { success: false, error: "Không tìm thấy lớp học!", students: [] };
+    }
+
     const students = await prisma.user.findMany({
       where: {
         role: { code: "STUDENT" },
         isActive: true,
         NOT: {
           classEnrollments: {
-            some: { classId },
+            some: {
+              classId,
+              status: { notIn: ["DROPPED", "TRANSFERRED"] },
+            },
+          },
+        },
+        classEnrollments: {
+          some: {
+            class: { schoolId: currentClass.schoolId },
           },
         },
       },
       include: {
         profile: true,
         classEnrollments: {
+          where: {
+            class: { schoolId: currentClass.schoolId },
+          },
           include: {
             class: {
               include: { school: true },
@@ -1549,25 +1716,58 @@ export async function transferStudentClassService(
   studentId: string
 ) {
   if (!(await isDbAlive())) {
+    if (!currentClassId || !targetClassId || !studentId) {
+      return { success: false, error: "Thiếu thông tin chuyển lớp!" };
+    }
+    if (currentClassId === targetClassId) {
+      return {
+        success: false,
+        error: "Lớp học chuyển đến phải khác lớp hiện tại!",
+      };
+    }
     const curCls = (globalClassesStore.demoClasses || []).find(
       (c) => c.id === currentClassId
     );
     const tgtCls = (globalClassesStore.demoClasses || []).find(
       (c) => c.id === targetClassId
     );
-    if (curCls && tgtCls) {
-      const studentEnr = (curCls.enrollments || []).find(
-        (e: any) => e.studentId === studentId
-      );
-      if (studentEnr) {
-        curCls.enrollments = curCls.enrollments.filter(
-          (e: any) => e.studentId !== studentId
-        );
-        curCls._count = { enrollments: curCls.enrollments.length };
-        tgtCls.enrollments = tgtCls.enrollments || [];
-        tgtCls.enrollments.push(studentEnr);
-        tgtCls._count = { enrollments: tgtCls.enrollments.length };
-      }
+    if (!curCls || !tgtCls) {
+      return {
+        success: false,
+        error: "Không tìm thấy lớp học!",
+      };
+    }
+    const curSchoolId = curCls.schoolId || curCls.school?.id;
+    const tgtSchoolId = tgtCls.schoolId || tgtCls.school?.id;
+    if (curSchoolId !== tgtSchoolId) {
+      return {
+        success: false,
+        error: "Không thể chuyển học viên giữa hai lớp thuộc hai trường học khác nhau!",
+      };
+    }
+    const studentEnr = (curCls.enrollments || []).find(
+      (e: any) => e.studentId === studentId || e.student?.id === studentId
+    );
+    if (studentEnr) {
+      studentEnr.status = "TRANSFERRED";
+      studentEnr.isActive = false;
+      tgtCls.enrollments = tgtCls.enrollments || [];
+      tgtCls.enrollments.push({
+        ...studentEnr,
+        classId: targetClassId,
+        status: "STUDYING",
+        isActive: true,
+      });
+      tgtCls._count = {
+        enrollments: tgtCls.enrollments.filter(
+          (e: any) => e.status !== "DROPPED" && e.status !== "TRANSFERRED" && e.isActive !== false
+        ).length,
+      };
+      curCls._count = {
+        enrollments: curCls.enrollments.filter(
+          (e: any) => e.status !== "DROPPED" && e.status !== "TRANSFERRED" && e.isActive !== false
+        ).length,
+      };
     }
     return {
       success: true,
@@ -1616,8 +1816,7 @@ export async function transferStudentClassService(
     if (currentClass.schoolId !== targetClass.schoolId) {
       return {
         success: false,
-        error:
-          "Ràng buộc hệ thống: Chỉ được phép chuyển học sinh giữa các lớp trong cùng 1 trường học!",
+        error: "Không thể chuyển học viên giữa hai lớp thuộc hai trường học khác nhau!",
       };
     }
 
@@ -1664,10 +1863,13 @@ export async function transferStudentClassService(
     }
 
     await prisma.$transaction([
-      prisma.classEnrollment.deleteMany({
+      prisma.classEnrollment.updateMany({
         where: {
           classId: currentClassId,
           studentId,
+        },
+        data: {
+          status: "TRANSFERRED",
         },
       }),
       prisma.classEnrollment.upsert({

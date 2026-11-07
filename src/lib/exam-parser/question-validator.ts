@@ -5,13 +5,13 @@ import { GroupSkeleton, ParsedQuestion } from "./types";
  * Tránh nhận nhầm câu chỉ dẫn thành nội dung câu hỏi
  */
 export const INSTRUCTION_REGEX =
-  /^(?:complete|choose|write|do the following|label|look at|answer the questions|in boxes|read the|classify the following|match the)\b|NO MORE THAN|from the (?:passage|box|list)|statements agree with|true if the statement|choose TWO|choose THREE/i;
+  /^(?:complete|choose|write|do the following|label|look at|answer the questions|in boxes|read the|classify the following|match the|give (?:one|two|three|four|\d+) examples? of the following|which (?:two|three) of the following|no more than|statements agree with|true if the statement)\b/i;
 
 /**
  * Regex nhận diện chỗ trống điền từ:
- * Hỗ trợ dấu gạch dưới (____), dấu chấm lửng (.....), ký tự ellipsis (…), hoặc số trong ngoặc đơn (1)
+ * Hỗ trợ dấu gạch dưới (____), dấu chấm lửng (.....), ký tự ellipsis (…), số trong ngoặc đơn (1) hoặc ngoặc vuông [1]
  */
-export const BLANK_REGEX = /_{2,}|\.{3,}|…|\(\s*\d{1,2}\s*\)/;
+export const BLANK_REGEX = /_{2,}|\.{3,}|…|\(\s*\d{1,2}\s*\)|\[\s*\d{1,2}\s*\]/;
 
 /**
  * Tính toán độ tương đồng từ vựng (Jaccard similarity) giữa 2 chuỗi
@@ -32,6 +32,20 @@ function calculateWordSimilarity(str1: string, str2: string): number {
   words2.forEach((w) => unionSet.add(w));
 
   return unionSet.size === 0 ? 0 : intersection / unionSet.size;
+}
+
+/**
+ * Tỉ lệ từ của `part` nằm trong `whole` (độ "chứa"). Bắt ca prompt chỉ là một đoạn trích của câu chỉ dẫn,
+ * ví dụ "Give TWO examples of the following categories." so với cả đoạn hướng dẫn dài, nơi Jaccard thấp.
+ * Chỉ áp dụng khi prompt có ít nhất 4 từ để tránh loại nhầm câu hỏi ngắn.
+ */
+function calculateWordContainment(part: string, whole: string): number {
+  const w1 = part.toLowerCase().match(/[a-z0-9]+/g) || [];
+  if (w1.length < 4) return 0;
+  const w2 = new Set(whole.toLowerCase().match(/[a-z0-9]+/g) || []);
+  if (w2.size === 0) return 0;
+  const inside = w1.filter((w) => w2.has(w)).length;
+  return inside / w1.length;
 }
 
 /**
@@ -57,10 +71,20 @@ export function validateQuestion(
     reasons.push(
       `prompt_la_cau_chi_dan: Nội dung câu ${q.questionNumber} là câu chỉ dẫn ("${prompt.slice(0, 45)}...")`
     );
-  } else if (group && group.instruction && calculateWordSimilarity(prompt, group.instruction) > 0.65) {
+  } else if (
+    group &&
+    group.instruction &&
+    (calculateWordSimilarity(prompt, group.instruction) > 0.65 ||
+      calculateWordContainment(prompt, group.instruction) >= 0.85)
+  ) {
     reasons.push(
       `prompt_trung_instruction: Nội dung quá giống câu chỉ dẫn nhóm (${group.title})`
     );
+  }
+
+  // 2b. Prompt chỉ là nhãn tự điền khi AI không đọc được nội dung ("Câu hỏi số 31"): coi như CHƯA CÓ nội dung
+  if (/^(?:câu hỏi số|question|câu)\s*\d+\s*[.:]?$/i.test(prompt) && (!q.options || q.options.length === 0)) {
+    reasons.push(`prompt_placeholder: Câu ${q.questionNumber} chưa có nội dung thật (chỉ là nhãn "${prompt}")`);
   }
 
   // 3. Kiểm tra độ dài tối thiểu của câu hỏi

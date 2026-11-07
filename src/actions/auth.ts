@@ -8,7 +8,7 @@ import {
   clearSessionCookie,
   getSession,
 } from "@/lib/auth";
-import { checkAuth } from "@/lib/permissions";
+import { checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
 import {
   authenticateUserService,
   requestActivationOtpService,
@@ -264,6 +264,16 @@ export async function changePasswordAction(
   );
 }
 
-export async function ensureDefaultAdminAction() {
+export async function ensureDefaultAdminAction(): Promise<{ success: boolean; error?: string }> {
+  const session = await getSession();
+  const auth = checkRole(
+    session,
+    ROLE_GROUPS.ADMIN_ONLY,
+    "Chỉ Quản trị viên hệ thống mới có quyền thực hiện thao tác này!"
+  );
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
+  }
   await ensureDefaultAdminService();
+  return { success: true };
 }

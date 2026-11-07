@@ -46,7 +46,7 @@ export async function getRecentActivitiesService(
         : Promise.resolve([] as any[]),
       prisma.class.findMany({
         take: 5,
-        where: classScope,
+        where: { ...classScope, isActive: true },
         orderBy: { createdAt: "desc" },
       }),
       isAdminViewer
@@ -64,7 +64,9 @@ export async function getRecentActivitiesService(
         : Promise.resolve([] as any[]),
       prisma.learningMaterial.findMany({
         take: 5,
-        where: isAdminViewer ? {} : { folder: { class: classScope } },
+        where: isAdminViewer
+          ? { isActive: true }
+          : { isActive: true, folder: { isActive: true, class: { ...classScope, isActive: true } } },
         orderBy: { createdAt: "desc" },
       }),
     ]);

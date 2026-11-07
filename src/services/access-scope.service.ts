@@ -32,14 +32,11 @@ export async function assertSchoolAccess(s: SessionPayload, schoolId: string): P
   if (!(await isDbAlive())) {
     if (!isDemoMode()) return deny("Hệ thống đang bảo trì CSDL, không thể xác minh quyền!");
     if (schoolId === "demo-school-1") {
-      return s.userId === "demo-manager-1" || s.username === "manager_quan"
+      return s.userId === "demo-manager-1"
         ? OK
         : deny("Trường học này không thuộc phạm vi quản nhiệm của bạn!");
     }
-    if (schoolId.startsWith("demo-school-")) {
-      return deny("Trường học này không thuộc phạm vi quản nhiệm của bạn!");
-    }
-    return OK;
+    return deny("Trường học này không thuộc phạm vi quản nhiệm của bạn!");
   }
   try {
     const sc = await prisma.school.findUnique({ where: { id: schoolId }, select: { managerId: true } });

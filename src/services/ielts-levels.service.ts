@@ -81,6 +81,7 @@ export async function getIeltsLevelsService() {
 
   try {
     const levels = await prisma.ieltsLevel.findMany({
+      where: { isActive: true },
       orderBy: [{ minScore: "asc" }, { sortOrder: "asc" }],
       include: {
         _count: {
@@ -432,7 +433,10 @@ export async function deleteIeltsLevelService(id: string) {
           };
         }
 
-        await prisma.ieltsLevel.delete({ where: { id } });
+        await prisma.ieltsLevel.update({
+          where: { id },
+          data: { isActive: false },
+        });
         return { success: true };
       } catch (dbErr: any) {
         logSystemWarning("ielts-levels.service", "deleteIeltsLevelService", "Lỗi DB khi xóa trình độ IELTS", dbErr);
@@ -441,7 +445,10 @@ export async function deleteIeltsLevelService(id: string) {
     }
 
     if (globalIeltsStore.demoLevels) {
-      globalIeltsStore.demoLevels = globalIeltsStore.demoLevels.filter((l) => l.id !== id);
+      const lvl = globalIeltsStore.demoLevels.find((l) => l.id === id);
+      if (lvl) {
+        lvl.isActive = false;
+      }
     }
 
     return { success: true };

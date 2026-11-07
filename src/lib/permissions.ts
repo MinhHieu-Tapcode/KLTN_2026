@@ -6,7 +6,7 @@ export const DEFAULT_PERMISSIONS = [
     featureKey: "VIEW_DASHBOARD",
     name: "Xem Tổng quan (Dashboard)",
     category: "Chung",
-    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT", "STUDENT"] as RoleCode[],
+    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "STUDENT"] as RoleCode[],
   },
   {
     featureKey: "VIEW_USERS",
@@ -24,13 +24,13 @@ export const DEFAULT_PERMISSIONS = [
     featureKey: "VIEW_CLASSES",
     name: "Quản lý Lớp học (Danh sách, Chi tiết, Tạo lớp)",
     category: "Lớp học",
-    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT"] as RoleCode[],
+    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER"] as RoleCode[],
   },
   {
     featureKey: "VIEW_SCHEDULE",
     name: "Xem Lịch học & Giảng dạy",
     category: "Đào tạo",
-    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT", "STUDENT"] as RoleCode[],
+    allowedRoles: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "STUDENT"] as RoleCode[],
   },
   {
     featureKey: "VIEW_REPORTS",
@@ -55,8 +55,8 @@ export const DEFAULT_PERMISSIONS = [
 export const ROLE_GROUPS = {
   ADMIN_ONLY: ["ADMIN"] as readonly RoleCode[],
   ADMIN_AND_MANAGER: ["ADMIN", "SCHOOL_MANAGER"] as readonly RoleCode[],
-  STAFF_AND_ADMIN: ["ADMIN", "SCHOOL_MANAGER", "TEACHER", "TEACHING_ASSISTANT"] as readonly RoleCode[],
-  TEACHING_STAFF: ["TEACHER", "TEACHING_ASSISTANT"] as readonly RoleCode[],
+  STAFF_AND_ADMIN: ["ADMIN", "SCHOOL_MANAGER", "TEACHER"] as readonly RoleCode[],
+  TEACHING_STAFF: ["TEACHER"] as readonly RoleCode[],
   EXAM_CREATORS: ["ADMIN", "TEACHER"] as readonly RoleCode[],
   REPORT_COMMENT_AUTHORS: ["ADMIN", "SCHOOL_MANAGER", "TEACHER"] as readonly RoleCode[],
 };
@@ -65,36 +65,55 @@ export type AuthCheckResult =
   | { ok: true; session: SessionPayload }
   | { ok: false; error: string };
 
+export function extractRoleCode(role: any): string | undefined {
+  if (!role) return undefined;
+  if (typeof role === "string") return role;
+  if (typeof role === "object" && typeof role.code === "string") return role.code;
+  return undefined;
+}
+
 export function hasRole(
   session: SessionPayload | null | undefined,
   allowedRoles: readonly RoleCode[]
 ): boolean {
-  if (!session?.role) return false;
-  return allowedRoles.includes(session.role as RoleCode);
+  const role = extractRoleCode(session?.role);
+  if (!role) return false;
+  return allowedRoles.includes(role as RoleCode);
 }
 
 export function isAdmin(
   session: SessionPayload | null | undefined
 ): session is SessionPayload & { role: "ADMIN" } {
-  return session?.role === "ADMIN";
+  return extractRoleCode(session?.role) === "ADMIN";
 }
 
 export function isSchoolManager(
   session: SessionPayload | null | undefined
 ): session is SessionPayload & { role: "SCHOOL_MANAGER" } {
-  return session?.role === "SCHOOL_MANAGER";
+  return extractRoleCode(session?.role) === "SCHOOL_MANAGER";
 }
 
+export function isTeacher(
+  session: SessionPayload | null | undefined
+): session is SessionPayload & { role: "TEACHER" } {
+  return extractRoleCode(session?.role) === "TEACHER";
+}
+
+/**
+ * @deprecated Dùng isTeacher thay thế theo chuẩn 4 vai trò của dự án.
+ * Giữ lại để tương thích ngược.
+ */
 export function isTeacherOrTA(
   session: SessionPayload | null | undefined
 ): session is SessionPayload & { role: "TEACHER" | "TEACHING_ASSISTANT" } {
-  return session?.role === "TEACHER" || session?.role === "TEACHING_ASSISTANT";
+  const role = extractRoleCode(session?.role);
+  return role === "TEACHER" || role === "TEACHING_ASSISTANT";
 }
 
 export function isStudent(
   session: SessionPayload | null | undefined
 ): session is SessionPayload & { role: "STUDENT" } {
-  return session?.role === "STUDENT";
+  return extractRoleCode(session?.role) === "STUDENT";
 }
 
 export function checkAuth(
@@ -139,10 +158,11 @@ export function hasFeatureAccess(
   featureKey: string,
   customAllowedRoles?: readonly RoleCode[] | null
 ): boolean {
-  if (!session?.role) return false;
+  const roleCode = extractRoleCode(session?.role);
+  if (!roleCode) return false;
   if (isAdmin(session)) return true;
 
-  const role = session.role as RoleCode;
+  const role = roleCode as RoleCode;
   if (customAllowedRoles) {
     return customAllowedRoles.includes(role);
   }

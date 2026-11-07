@@ -59,7 +59,17 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
 // React.cache chỉ có trong môi trường Server Components của Next; ngoài đó (script test) dùng hàm thường.
 const perRequestCache: <T extends (...a: any[]) => any>(fn: T) => T =
   (React as any).cache ?? ((fn: any) => fn);
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const loadLiveUser = perRequestCache(async (userId: string) => {
+  if (!userId) return null;
+  if (!UUID_REGEX.test(userId)) {
+    return prisma.user.findFirst({
+      where: {
+        OR: [{ username: userId }, { email: userId }],
+      },
+      select: { isActive: true, role: { select: { code: true } } },
+    });
+  }
   return prisma.user.findUnique({
     where: { id: userId },
     select: { isActive: true, role: { select: { code: true } } },

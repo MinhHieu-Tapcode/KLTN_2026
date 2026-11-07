@@ -220,6 +220,7 @@ export async function getReportScopeOptionsService(user: {
         if (classes.length > 0) {
           return { schools: [], classes };
         }
+        return { schools: [], classes: [] };
       } else if (role === "TEACHER") {
         const assigned = await prisma.classAssignment.findMany({
           where: {
@@ -261,15 +262,11 @@ export async function getReportScopeOptionsService(user: {
         if (classes.length > 0) {
           return { schools: [], classes };
         }
+        return { schools: [], classes: [] };
       } else {
         const whereSchool: any = { isActive: true };
         if (role === "SCHOOL_MANAGER") {
-          const managedCount = await prisma.school.count({
-            where: { isActive: true, managerId: user.userId },
-          });
-          if (managedCount > 0) {
-            whereSchool.managerId = user.userId;
-          }
+          whereSchool.managerId = user.userId;
         }
 
         const schoolsDb = await prisma.school.findMany({
@@ -314,9 +311,7 @@ export async function getReportScopeOptionsService(user: {
         }));
 
         const allClasses = schools.flatMap((s) => s.classes);
-        if (schools.length > 0) {
-          return { schools, classes: allClasses };
-        }
+        return { schools, classes: allClasses };
       }
     } catch (err: any) {
       console.warn("[getReportScopeOptionsService] Prisma error, fallback to demo:", err?.message);

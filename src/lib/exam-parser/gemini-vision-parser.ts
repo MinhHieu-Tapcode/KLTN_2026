@@ -8,6 +8,8 @@ const GEMINI_MODELS = [
 
 export interface GeminiVisionParseOptions {
   missingNumbers?: number[];
+  /** Mô tả các nhóm cần đọc từ ảnh, vd "Questions 31-35 (TABLE); Questions 36-40 (TABLE)" */
+  groupHints?: string;
   hintContext?: string;
   partTitle?: string;
 }
@@ -15,7 +17,9 @@ export interface GeminiVisionParseOptions {
 export interface GeminiVisionResult {
   questions: ParsedQuestion[];
   flowchart?: FlowchartGroup;
+  /** Bảng đầu tiên (giữ để tương thích); dùng `tables` khi đề có nhiều bảng */
   table?: TableCompletionGroup;
+  tables?: TableCompletionGroup[];
 }
 
 /**
@@ -42,7 +46,7 @@ export async function extractDiagramQuestionsWithGemini(
 
   const promptText = `Bạn là chuyên gia phân tích đề thi IELTS từ tệp PDF có chứa sơ đồ hình ảnh (Flowchart, Diagram, Map, Table Completion).
 Hãy NHÌN VÀO HÌNH ẢNH SƠ ĐỒ hoặc LƯU ĐỒ QUY TRÌNH (Flowchart) trong tệp PDF này.
-Nhiệm vụ:
+${options.groupHints ? `CÁC NHÓM CÂU HỎI CẦN ĐỌC TỪ HÌNH ẢNH (văn bản của PDF không có nội dung): ${options.groupHints}.\nNếu PDF có NHIỀU bảng, trả về mảng "tables" (mỗi bảng một phần tử, mỗi ô chứa chỗ trống ghi rõ số câu dạng "(31) _______"); vẫn giữ "table" là bảng đầu tiên.\n` : ""}Nhiệm vụ:
 1. Trích xuất CHÍNH XÁC nội dung các câu hỏi điền từ hoặc trắc nghiệm nằm bên trong các khối hộp hoặc nhãn của sơ đồ (đặc biệt là các câu: ${targetNums}).
 2. Trích xuất CẤU TRÚC SƠ ĐỒ (các khối hộp và mũi tên liên kết giữa các hộp) để hệ thống tái hiện lại sơ đồ khối cho học sinh làm bài trực quan.
 
@@ -170,11 +174,13 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
 
   for (const model of GEMINI_MODELS) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // Khoá đặt trong header (không để trên URL để khỏi lộ vào log)
+          "x-goog-api-key": geminiKey,
         },
         body: JSON.stringify({
           contents: [
@@ -194,7 +200,7 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
           ],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 4096,
+            maxOutputTokens: 8192,
             responseMimeType: "application/json",
           },
         }),
@@ -262,32 +268,37 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
         };
       }
 
-      let tableGroup: TableCompletionGroup | undefined = undefined;
-      if (
-        parsed?.table &&
-        Array.isArray(parsed.table.headers) &&
-        Array.isArray(parsed.table.rows)
-      ) {
-        const tQNums: number[] = Array.isArray(parsed.table.questionNumbers)
-          ? parsed.table.questionNumbers
-              .map(Number)
-              .filter((n: number) => !isNaN(n) && n > 0)
+      const buildTable = (raw: any, idx: number): TableCompletionGroup | undefined => {
+        if (!raw || !Array.isArray(raw.headers) || !Array.isArray(raw.rows)) return undefined;
+        const tQNums: number[] = Array.isArray(raw.questionNumbers)
+          ? raw.questionNumbers.map(Number).filter((n: number) => !isNaN(n) && n > 0)
           : [];
-
-        tableGroup = {
-          id: `tbl-${Date.now()}`,
-          title: String(
-            parsed.table.title || options.partTitle || "Table Completion"
-          ).trim(),
+        return {
+          id: `tbl-${Date.now()}-${idx}`,
+          title: String(raw.title || options.partTitle || "Table Completion").trim(),
           instruction: String(
-            parsed.table.instruction ||
-              "Complete the table. Choose NO MORE THAN TWO WORDS from the passage for each answer."
+            raw.instruction || "Complete the table. Choose NO MORE THAN TWO WORDS from the passage for each answer."
           ).trim(),
-          headers: parsed.table.headers.map(String),
-          rows: parsed.table.rows,
+          headers: raw.headers.map(String),
+          rows: raw.rows,
           questionNumbers: tQNums,
         };
-      }
+      };
+
+      const rawTables: any[] = [
+        ...(Array.isArray(parsed?.tables) ? parsed.tables : []),
+        ...(parsed?.table ? [parsed.table] : []),
+      ];
+      const tableGroups: TableCompletionGroup[] = [];
+      rawTables.forEach((rt, i) => {
+        const t = buildTable(rt, i);
+        if (!t) return;
+        // Bỏ bảng trùng (cùng tập số câu) khi AI trả cả "table" lẫn "tables"
+        const key = t.questionNumbers.join(",");
+        if (key && tableGroups.some((x) => x.questionNumbers.join(",") === key)) return;
+        tableGroups.push(t);
+      });
+      const tableGroup: TableCompletionGroup | undefined = tableGroups[0];
 
       if (questionsList.length > 0 || boxesList.length > 0 || tableGroup) {
         console.log(
@@ -399,6 +410,7 @@ CÁC NGUYÊN TẮC BẮT BUỘC:
           questions: mappedQuestions,
           flowchart: flowchartGroup,
           table: tableGroup,
+          tables: tableGroups,
         };
       }
     } catch (err: any) {

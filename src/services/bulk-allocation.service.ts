@@ -808,12 +808,13 @@ export async function commitBulkAllocationService(
       { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định" },
       { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên" },
     ];
-    const school = demoSchools.find((s: any) => s.id === schoolId) ||
-      demoSchools[0] || {
-        id: schoolId,
-        code: "SCH_TD",
-        name: "Trường đối tác",
+    const school = demoSchools.find((s: any) => s.id === schoolId);
+    if (!school) {
+      return {
+        success: false,
+        error: `Không tìm thấy trường học có mã định danh "${schoolId}"!`,
       };
+    }
 
     const allCreatedClasses: any[] = [];
     const createdUsersSummary: {
@@ -946,19 +947,12 @@ export async function commitBulkAllocationService(
     return { success: false, error: "Không tìm thấy vai trò STUDENT trong hệ thống!" };
   }
 
-  let school = await prisma.school.findUnique({ where: { id: schoolId } });
-  if (!school) {
-    school = await prisma.school.findFirst({ where: { isActive: true } });
-    if (!school) {
-      school = await prisma.school.create({
-        data: {
-          code: "SCH_SIMPACE",
-          name: "Trường đối tác SIMPACE",
-          address: "Hà Nội",
-          isActive: true,
-        },
-      });
-    }
+  const school = await prisma.school.findUnique({ where: { id: schoolId } });
+  if (!school || !school.isActive) {
+    return {
+      success: false,
+      error: `Không tìm thấy trường học có mã định danh "${schoolId}" hoặc trường đã ngừng hoạt động!`,
+    };
   }
 
   const defaultPassword = generateTempPassword(); // mỗi đợt phân lớp một mật khẩu tạm ngẫu nhiên

@@ -10,19 +10,19 @@ export function filterAccessibleClasses(classes: any[], currentUser: any): any[]
 
   return classes.filter((c) => {
     if (!c.isActive) return false;
-    if (!currentUser || currentUser.role === "ADMIN") return true;
+    if (!currentUser) return false;
+    if (currentUser.role === "ADMIN") return true;
 
     if (currentUser.role === "SCHOOL_MANAGER") {
       return (
         c.school?.managerId === currentUid ||
         c.school?.manager?.id === currentUid ||
         c.school?.manager?.username === currentUser.username ||
-        (currentUser.username === "manager_quan" && c.schoolId === "demo-school-1") ||
         currentUser.managedSchools?.some((ms: any) => ms.id === c.schoolId)
       );
     }
 
-    if (currentUser.role === "TEACHER" || currentUser.role === "TEACHING_ASSISTANT") {
+    if (currentUser.role === "TEACHER") {
       return c.assignments?.some(
         (a: any) =>
           a.userId === currentUid ||
@@ -35,10 +35,13 @@ export function filterAccessibleClasses(classes: any[], currentUser: any): any[]
     if (currentUser.role === "STUDENT") {
       return c.enrollments?.some(
         (e: any) =>
-          e.studentId === currentUid ||
-          e.student?.id === currentUid ||
-          (currentUser.username && e.student?.username === currentUser.username) ||
-          (currentUser.email && e.student?.email === currentUser.email)
+          e.status !== "DROPPED" &&
+          e.status !== "TRANSFERRED" &&
+          e.isActive !== false &&
+          (e.studentId === currentUid ||
+            e.student?.id === currentUid ||
+            (currentUser.username && e.student?.username === currentUser.username) ||
+            (currentUser.email && e.student?.email === currentUser.email))
       );
     }
 

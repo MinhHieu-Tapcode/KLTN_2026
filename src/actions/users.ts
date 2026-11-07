@@ -26,7 +26,6 @@ import {
   generateUserCodeService,
   getUsersService,
   getTeachersService,
-  getTAsService,
   createUserService,
   updateUserService,
   deleteUserService,
@@ -78,10 +77,12 @@ export async function getTeachersAction() {
   return stripSensitive(await getTeachersService());
 }
 
-export async function getTAsAction() {
-  const auth = await requireUserManager();
-  if (!auth.ok) return [];
-  return stripSensitive(await getTAsService());
+/**
+ * @deprecated Vai trò TEACHING_ASSISTANT đã được loại bỏ theo chuẩn 4 vai trò của dự án.
+ * Hàm luôn trả về mảng rỗng [] một cách an toàn mà không làm gãy type.
+ */
+export async function getTAsAction(): Promise<any[]> {
+  return [];
 }
 
 // Tạo người dùng mới với cơ chế Role-First, RFC5322 validation, sinh mã tuần tự & gán đa nhiệm (+)
