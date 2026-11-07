@@ -124,9 +124,20 @@ function getMemoryScopeOptions(user: { userId: string; role: string }): ScopeOpt
   const rawClasses = (globalReportMemoryRef.demoClasses || []).filter((c) => c.isActive !== false);
   const mappedClasses = rawClasses
     .filter((c) => {
+      if (user.role === "SCHOOL_MANAGER") {
+        return (
+          c.school?.managerId === user.userId ||
+          (isDemoMode() && user.userId === "demo-manager-1" && c.schoolId === "demo-school-1")
+        );
+      }
       if (user.role === "TEACHER") {
         return (c.assignments || []).some(
-          (a: any) => a.userId === user.userId || (isDemoMode() && a.userId === "teacher-1")
+          (a: any) => a.userId === user.userId || a.staff?.id === user.userId
+        );
+      }
+      if (user.role === "STUDENT") {
+        return (c.enrollments || []).some(
+          (en: any) => en.studentId === user.userId || en.student?.id === user.userId
         );
       }
       return true;

@@ -47,13 +47,12 @@ export async function isDbAlive(): Promise<boolean> {
   const { host, port } = parseDbHostAndPort();
   const isLocal = host === "127.0.0.1" || host === "localhost";
 
-  // Trên Cloud / Vercel: DB Supabase luôn sẵn sàng qua Connection Pooler.
-  // Không thực hiện TCP raw socket hay query thừa trước mỗi request để tránh đội latency.
-  if (!isLocal || process.env.VERCEL) {
-    return true;
+  // Trên Vercel, localhost không bao giờ là DB thật
+  if (isLocal && process.env.VERCEL) {
+    return false;
   }
 
-  // Ở Local: Kiểm tra nhanh socket để hỗ trợ dev khi chạy máy cá nhân
+  // Kiểm tra nhanh socket (cache 15s) ở cả Local và Vercel để phát hiện chính xác DB sống hay offline
   const now = Date.now();
   if (
     globalForPrisma.isDbReachable !== undefined &&
@@ -63,9 +62,10 @@ export async function isDbAlive(): Promise<boolean> {
     return globalForPrisma.isDbReachable;
   }
 
+  const timeoutMs = isLocal ? 300 : 1200;
   const isSocketOpen = await new Promise<boolean>((resolve) => {
     try {
-      const socket = net.createConnection({ host, port, timeout: 300 });
+      const socket = net.createConnection({ host, port, timeout: timeoutMs });
       socket.unref();
       socket.once("connect", () => {
         socket.destroy();

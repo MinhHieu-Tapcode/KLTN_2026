@@ -17,7 +17,8 @@ const VERIFY_FAIL = "Không thể xác minh quyền, vui lòng thử lại!";
 export type ClassNeed = "VIEW" | "TEACH" | "GRADE" | "MANAGE";
 
 export function isDemoMode(): boolean {
-  return process.env.DEMO_MODE === "1";
+  if (process.env.DEMO_MODE === "0") return false;
+  return process.env.DEMO_MODE === "1" || Boolean(process.env.VERCEL);
 }
 
 async function dbGuard(): Promise<ScopeResult | null> {
@@ -28,8 +29,18 @@ async function dbGuard(): Promise<ScopeResult | null> {
 export async function assertSchoolAccess(s: SessionPayload, schoolId: string): Promise<ScopeResult> {
   if (s.role === "ADMIN") return OK;
   if (s.role !== "SCHOOL_MANAGER") return deny("Bạn không có quyền truy cập trường học này!");
-  const g = await dbGuard();
-  if (g) return g;
+  if (!(await isDbAlive())) {
+    if (!isDemoMode()) return deny("Hệ thống đang bảo trì CSDL, không thể xác minh quyền!");
+    if (schoolId === "demo-school-1") {
+      return s.userId === "demo-manager-1" || s.username === "manager_quan"
+        ? OK
+        : deny("Trường học này không thuộc phạm vi quản nhiệm của bạn!");
+    }
+    if (schoolId.startsWith("demo-school-")) {
+      return deny("Trường học này không thuộc phạm vi quản nhiệm của bạn!");
+    }
+    return OK;
+  }
   try {
     const sc = await prisma.school.findUnique({ where: { id: schoolId }, select: { managerId: true } });
     if (!sc) return deny("Trường học không tồn tại!");
@@ -46,8 +57,59 @@ export async function assertClassAccess(
 ): Promise<ScopeResult> {
   if (!classId) return deny("Thiếu mã lớp học!");
   if (s.role === "ADMIN") return OK;
-  const g = await dbGuard();
-  if (g) return g;
+  if (!(await isDbAlive())) {
+    if (!isDemoMode()) return deny("Hệ thống đang bảo trì CSDL, không thể xác minh quyền!");
+    if (s.role === "TEACHER" && need === "MANAGE") {
+      return deny("Giáo viên không có quyền quản lý lớp học!");
+    }
+    if (s.role === "STUDENT" && need !== "VIEW") {
+      return deny("Bạn không có quyền thao tác trên lớp học này!");
+    }
+    const demoClasses: any[] | undefined = (globalThis as any).demoClasses;
+    if (Array.isArray(demoClasses) && demoClasses.length > 0) {
+      const c = demoClasses.find((x) => x.id === classId && x.isActive !== false);
+      if (!c) {
+        return classId.startsWith("demo-") ? deny("Lớp học không tồn tại!") : OK;
+      }
+      const isStaff = (c.assignments || []).some(
+        (a: any) =>
+          a.userId === s.userId || a.staff?.id === s.userId || a.staff?.username === s.username
+      );
+      const isTeacher = (c.assignments || []).some(
+        (a: any) =>
+          (a.userId === s.userId || a.staff?.id === s.userId || a.staff?.username === s.username) &&
+          a.roleInClass === "TEACHER"
+      );
+      const isEnrolled = (c.enrollments || []).some(
+        (e: any) =>
+          e.studentId === s.userId ||
+          e.student?.id === s.userId ||
+          e.student?.username === s.username
+      );
+      const isManager =
+        c.school?.managerId === s.userId || c.school?.manager?.username === s.username;
+
+      switch (s.role) {
+        case "SCHOOL_MANAGER":
+          return isManager && (need === "VIEW" || need === "MANAGE")
+            ? OK
+            : deny("Lớp học không thuộc trường bạn quản nhiệm!");
+        case "TEACHER":
+          return (need === "TEACH" ? isTeacher : isStaff)
+            ? OK
+            : deny("Bạn không được phân công giảng dạy lớp này!");
+        case "TEACHING_ASSISTANT":
+          return (need === "VIEW" || need === "GRADE") && isStaff
+            ? OK
+            : deny("Bạn không được phân công lớp này!");
+        case "STUDENT":
+          return need === "VIEW" && isEnrolled ? OK : deny("Bạn không thuộc lớp học này!");
+        default:
+          return deny("Bạn không có quyền truy cập lớp học này!");
+      }
+    }
+    return OK;
+  }
   try {
     const c = await prisma.class.findUnique({
       where: { id: classId },
@@ -162,8 +224,28 @@ export async function assertStudentAccess(s: SessionPayload, studentId: string):
   if (s.role !== "TEACHER" && s.role !== "SCHOOL_MANAGER") {
     return deny("Bạn không có quyền xem thông tin học sinh này!");
   }
-  const g = await dbGuard();
-  if (g) return g;
+  if (!(await isDbAlive())) {
+    if (!isDemoMode()) return deny("Hệ thống đang bảo trì CSDL, không thể xác minh quyền!");
+    const demoClasses: any[] | undefined = (globalThis as any).demoClasses;
+    if (Array.isArray(demoClasses) && demoClasses.length > 0) {
+      const hit = demoClasses.some((c) => {
+        if (c.isActive === false) return false;
+        const hasStudent = (c.enrollments || []).some(
+          (e: any) => e.studentId === studentId || e.student?.id === studentId
+        );
+        if (!hasStudent) return false;
+        if (s.role === "TEACHER") {
+          return (c.assignments || []).some(
+            (a: any) =>
+              a.userId === s.userId || a.staff?.id === s.userId || a.staff?.username === s.username
+          );
+        }
+        return c.school?.managerId === s.userId || c.school?.manager?.username === s.username;
+      });
+      return hit ? OK : deny("Học sinh này không thuộc phạm vi phụ trách của bạn!");
+    }
+    return OK;
+  }
   try {
     const hit = await prisma.classEnrollment.findFirst({
       where:
@@ -185,8 +267,34 @@ export async function assertUserInManagerScope(
 ): Promise<ScopeResult> {
   if (s.role === "ADMIN") return OK;
   if (s.role !== "SCHOOL_MANAGER") return deny("Bạn không có quyền quản lý người dùng!");
-  const g = await dbGuard();
-  if (g) return g;
+  if (!(await isDbAlive())) {
+    if (!isDemoMode()) return deny("Hệ thống đang bảo trì CSDL, không thể xác minh quyền!");
+    const demoUsers: any[] | undefined = (globalThis as any).demoUsers;
+    if (Array.isArray(demoUsers) && demoUsers.length > 0) {
+      const u = demoUsers.find((x) => x.id === targetUserId);
+      if (!u) return deny("Người dùng không tồn tại!");
+      if (!["TEACHER", "TEACHING_ASSISTANT", "STUDENT"].includes(u.role?.code)) {
+        return deny("Quản nhiệm không được thao tác trên tài khoản Quản trị viên hoặc Quản nhiệm!");
+      }
+      const demoClasses: any[] | undefined = (globalThis as any).demoClasses;
+      if (Array.isArray(demoClasses) && demoClasses.length > 0) {
+        const hit = demoClasses.some((c) => {
+          const isManaged =
+            c.school?.managerId === s.userId || c.school?.manager?.username === s.username;
+          if (!isManaged) return false;
+          const inStaff = (c.assignments || []).some(
+            (a: any) => a.userId === targetUserId || a.staff?.id === targetUserId
+          );
+          const inStudents = (c.enrollments || []).some(
+            (e: any) => e.studentId === targetUserId || e.student?.id === targetUserId
+          );
+          return inStaff || inStudents;
+        });
+        return hit ? OK : deny("Người dùng này không thuộc trường bạn quản nhiệm!");
+      }
+    }
+    return OK;
+  }
   try {
     const u = await prisma.user.findUnique({
       where: { id: targetUserId },

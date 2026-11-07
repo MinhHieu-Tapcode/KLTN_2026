@@ -550,7 +550,7 @@ export function SimpaceApp({
                       </p>
                     </div>
 
-                    {currentUser.role !== "STUDENT" && (
+                    {(currentUser.role === "ADMIN" || currentUser.role === "TEACHER") && (
                       <Button
                         onClick={() => setIsMultiClassAssignmentModalOpen(true)}
                         className="h-9 px-3.5 text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold gap-1.5 shadow-sm shrink-0"
@@ -746,6 +746,7 @@ export function SimpaceApp({
           user={editingUser}
           schools={schools}
           classes={classes}
+          currentUser={currentUser}
           onClose={() => setEditingUser(null)}
           onDone={() => {
             setEditingUser(null);

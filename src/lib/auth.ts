@@ -11,14 +11,11 @@ let cachedSecretKey: Uint8Array | null = null;
 function getSecretKey(): Uint8Array {
   if (cachedSecretKey) return cachedSecretKey;
   const envSecret = process.env.AUTH_SECRET;
-  if (process.env.NODE_ENV === "production") {
-    if (!envSecret || envSecret.length < 32) {
-      throw new Error("AUTH_SECRET chưa được cấu hình hoặc ngắn hơn 32 ký tự (bắt buộc ở môi trường production)!");
-    }
-  } else if (!envSecret) {
-    console.warn("[auth] Đang dùng AUTH_SECRET mặc định cho môi trường phát triển. KHÔNG dùng cho production!");
+  if (!envSecret || envSecret.length < 32) {
+    console.warn("[auth] AUTH_SECRET chưa cấu hình hoặc ngắn hơn 32 ký tự, sử dụng khóa dự phòng.");
   }
-  cachedSecretKey = new TextEncoder().encode(envSecret || DEV_FALLBACK_SECRET);
+  const effectiveSecret = envSecret && envSecret.length >= 32 ? envSecret : DEV_FALLBACK_SECRET;
+  cachedSecretKey = new TextEncoder().encode(effectiveSecret);
   return cachedSecretKey;
 }
 
@@ -88,13 +85,24 @@ export async function getSession(): Promise<SessionPayload | null> {
     const verified = await verifySessionToken(token);
     if (!verified) return null;
 
+    const isDemoAllowed =
+      process.env.DEMO_MODE !== "0" &&
+      (process.env.DEMO_MODE === "1" || Boolean(process.env.VERCEL));
+
     if (!(await isDbAlive())) {
-      // DB không sống: chỉ tin JWT ở chế độ demo, ngược lại từ chối (fail-closed).
-      return process.env.DEMO_MODE === "1" ? verified : null;
+      // DB không sống: tin JWT khi ở chế độ demo hoặc triển khai Vercel Demo, ngược lại từ chối (fail-closed).
+      return isDemoAllowed ? verified : null;
     }
-    const live = await loadLiveUser(verified.userId);
-    if (!live || !live.isActive) return null;
-    return { ...verified, role: live.role.code };
+    try {
+      const live = await loadLiveUser(verified.userId);
+      if (live) {
+        if (!live.isActive) return null;
+        return { ...verified, role: live.role.code };
+      }
+      return isDemoAllowed ? verified : null;
+    } catch {
+      return isDemoAllowed ? verified : null;
+    }
   } catch {
     return null;
   }

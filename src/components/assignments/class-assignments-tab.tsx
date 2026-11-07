@@ -211,8 +211,7 @@ export function ClassAssignmentsTab({
 
   const canManage =
     currentUser.role === "ADMIN" ||
-    currentUser.role === "TEACHER" ||
-    currentUser.role === "SCHOOL_MANAGER";
+    currentUser.role === "TEACHER";
 
   const loadAssignments = async () => {
     setIsLoading(true);
@@ -890,7 +889,7 @@ export function ClassAssignmentsTab({
                       onClick={() => handleOpenGradingView(item)}
                       className="text-xs rounded-xl border-orange-200 text-[#EA580C] hover:bg-orange-50 font-semibold gap-1.5 flex-1"
                     >
-                      <UserCheck className="size-3.5" /> Chấm bài ({item.submittedCount})
+                      <UserCheck className="size-3.5" /> {canManage ? `Chấm bài (${item.submittedCount})` : `Xem bài nộp (${item.submittedCount})`}
                     </Button>
 
                     <Button
@@ -903,7 +902,7 @@ export function ClassAssignmentsTab({
                       <Eye className="size-3.5" />
                     </Button>
 
-                    {item.submittedCount > 0 && (
+                    {canManage && item.submittedCount > 0 && (
                       <button
                         onClick={() => handlePromptRegrade(item)}
                         className="size-8 grid place-items-center text-slate-400 hover:text-[#EA580C] rounded-xl hover:bg-orange-50 transition"
@@ -913,13 +912,15 @@ export function ClassAssignmentsTab({
                       </button>
                     )}
 
-                    <button
-                      onClick={() => handleDeleteAssignment(item)}
-                      className="size-8 grid place-items-center text-slate-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition"
-                      title="Xóa bài tập"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {canManage && (
+                      <button
+                        onClick={() => handleDeleteAssignment(item)}
+                        className="size-8 grid place-items-center text-slate-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition"
+                        title="Xóa bài tập"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </>
                 )}
               </div>

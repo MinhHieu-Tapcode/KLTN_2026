@@ -107,10 +107,8 @@ export default async function HomePage({
   }
 
   // Cung cấp dữ liệu mẫu dự phòng khi cơ sở dữ liệu chưa sẵn sàng
-  if (!classes || classes.length === 0) {
-    if (session?.role === "STUDENT") {
-      classes = [];
-    } else {
+  if ((!classes || classes.length === 0) && session?.role === "ADMIN") {
+    {
       classes = [
       {
         id: "demo-class-1",
@@ -172,7 +170,7 @@ export default async function HomePage({
     }
   }
 
-  if (!schools || schools.length === 0) {
+  if ((!schools || schools.length === 0) && session?.role === "ADMIN") {
     schools = [
       { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định", type: "THPT", address: "Hoàng Mai, Hà Nội", managerId: "demo-manager-1", isActive: true },
       { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên", type: "THPT", address: "Đống Đa, Hà Nội", managerId: "demo-manager-1", isActive: true },

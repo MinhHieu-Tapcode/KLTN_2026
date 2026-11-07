@@ -45,7 +45,9 @@ export function ClassesPageView({
     setLocalClasses(classes);
   }, [classes]);
 
-  const filtered = localClasses.filter((c) => {
+  const accessibleClasses = filterAccessibleClasses(localClasses, currentUser);
+
+  const filtered = accessibleClasses.filter((c) => {
     if (!c.isActive) return false;
     const matchesSchool = selectedSchoolId === "ALL" || c.schoolId === selectedSchoolId;
     const matchesLifecycle = lifecycleStatus === "ALL" || c.status === lifecycleStatus;
@@ -59,7 +61,7 @@ export function ClassesPageView({
     return matchesSchool && matchesLifecycle && matchesSearch;
   });
 
-  const scheduleClasses = localClasses.filter((c) => {
+  const scheduleClasses = accessibleClasses.filter((c) => {
     if (!c.isActive || c.status === "FINISHED") return false;
     if (selectedSchoolId !== "ALL" && c.schoolId !== selectedSchoolId) return false;
     return true;
@@ -160,7 +162,7 @@ export function ClassesPageView({
             {schools
               .filter((s: any) => s.isActive)
               .map((s: any) => {
-                const count = localClasses.filter((c: any) => c.schoolId === s.id && c.isActive).length;
+                const count = accessibleClasses.filter((c: any) => c.schoolId === s.id && c.isActive).length;
                 return (
                   <option key={s.id} value={s.id}>
                     {s.name} ({count} lớp)
@@ -230,18 +232,20 @@ export function ClassesPageView({
             <table className="w-full min-w-[780px] border-collapse text-left text-sm">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                  <th className="px-4 py-3.5 w-10">
-                    <input
-                      type="checkbox"
-                      checked={filtered.length > 0 && selectedIds.length === filtered.length}
-                      onChange={toggleSelectAll}
-                      className="rounded border-[#CBD5E1]"
-                    />
-                  </th>
+                  {canManageClass && (
+                    <th className="px-4 py-3.5 w-10">
+                      <input
+                        type="checkbox"
+                        checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-[#CBD5E1]"
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Mã lớp</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Tên lớp</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trường học</th>
-                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Giáo viên / TA phụ trách</th>
+                  <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Giáo viên phụ trách</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Sĩ số</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Trạng thái</th>
                   <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase text-right">Thao tác</th>
@@ -251,14 +255,16 @@ export function ClassesPageView({
                 {filtered.length > 0 ? (
                   filtered.map((c) => (
                     <tr key={c.id} className="hover:bg-[#F8FAFC] transition">
-                      <td className="px-4 py-3.5">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(c.id)}
-                          onChange={() => toggleSelect(c.id)}
-                          className="rounded border-[#CBD5E1]"
-                        />
-                      </td>
+                      {canManageClass && (
+                        <td className="px-4 py-3.5">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(c.id)}
+                            onChange={() => toggleSelect(c.id)}
+                            className="rounded border-[#CBD5E1]"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3.5 font-mono font-bold text-xs text-[#0F172A]">{c.code}</td>
                       <td className="px-4 py-3.5 font-bold text-[#0F172A]">
                         <button
@@ -270,21 +276,18 @@ export function ClassesPageView({
                       </td>
                       <td className="px-4 py-3.5 text-[#475569]">{c.school?.name || "—"}</td>
                       <td className="px-4 py-3.5 text-xs text-[#64748B]">
-                        {c.assignments && c.assignments.length > 0 ? (
+                        {c.assignments && c.assignments.filter((a: any) => a.roleInClass === "TEACHER").length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            {c.assignments.map((a: any) => (
-                              <span
-                                key={a.id}
-                                className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${
-                                  a.roleInClass === "TEACHER"
-                                    ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                    : "bg-purple-50 text-purple-700 border border-purple-200"
-                                }`}
-                              >
-                                {a.roleInClass === "TEACHER" ? "GV: " : "TA: "}
-                                {a.staff?.profile?.fullName || a.staff?.username}
-                              </span>
-                            ))}
+                            {c.assignments
+                              .filter((a: any) => a.roleInClass === "TEACHER")
+                              .map((a: any) => (
+                                <span
+                                  key={a.id}
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200"
+                                >
+                                  GV: {a.staff?.profile?.fullName || a.staff?.username}
+                                </span>
+                              ))}
                           </div>
                         ) : (
                           <span className="text-[#94A3B8] italic">Chưa phân công</span>

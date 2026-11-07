@@ -9,7 +9,7 @@ import { sendAccountCreatedEmail } from "@/lib/mail";
 import { resolveRealClassId, resolveRealSchoolId } from "./class.service";
 import { logSystemWarning } from "@/lib/telemetry";
 
-const DEMO_USERS_VERSION = "v2026-15-users-v2";
+const DEMO_USERS_VERSION = "v2026-15-users-v3-no-ta";
 
 const globalUsersStore = globalThis as unknown as {
   demoUsers?: any[];
@@ -107,31 +107,6 @@ if (!globalUsersStore.demoUsers || globalUsersStore.demoUsersVersion !== DEMO_US
       classEnrollments: [],
       managedSchools: [],
     },
-    {
-      id: "ta-1",
-      username: "ta_mai",
-      email: "ta.mai@simpace.vn",
-      passwordHash: BCRYPT_SIMPACE_2026,
-      role: { code: "TEACHING_ASSISTANT", name: "Trợ giảng" },
-      profile: { fullName: "Vũ Phương Mai", phoneNumber: "0907654321" },
-      isActive: true,
-      mustChangePassword: false,
-      classAssignments: [
-        {
-          id: "as-ta-1",
-          classId: "demo-class-1",
-          class: {
-            id: "demo-class-1",
-            code: "IELTS_TD_01",
-            name: "IELTS Bứt Phá - 10A1",
-            school: { id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" },
-          },
-        },
-      ],
-      classEnrollments: [],
-      managedSchools: [],
-    },
-
     // 15 Học viên mẫu (HV1001 -> HV1015) đầy đủ dữ liệu thực tế
     {
       id: "demo-student-1",
@@ -664,9 +639,26 @@ export async function getUsersService(
       "Học sinh": "STUDENT",
     };
     if (isSchoolManager(session)) {
+      const managerUser = list.find(
+        (u) => u.id === session?.userId || u.username === session?.username
+      );
+      const managedSchoolIds = new Set<string>(
+        (managerUser?.managedSchools || []).map((s: any) => s.id)
+      );
+      if (session?.userId === "demo-manager-1" || session?.username === "manager_quan") {
+        managedSchoolIds.add("demo-school-1");
+      }
+
       list = list.filter((u) => {
         const r = u.role?.code;
-        return r === "TEACHER" || r === "TEACHING_ASSISTANT" || r === "STUDENT";
+        if (r !== "TEACHER" && r !== "STUDENT") return false;
+        const inAssignedClass = (u.classAssignments || []).some((ca: any) =>
+          managedSchoolIds.has(ca.class?.school?.id || ca.class?.schoolId)
+        );
+        const inEnrolledClass = (u.classEnrollments || []).some((ce: any) =>
+          managedSchoolIds.has(ce.class?.school?.id || ce.class?.schoolId)
+        );
+        return inAssignedClass || inEnrolledClass;
       });
       if (roleFilter === "Quản trị viên" || roleFilter === "Quản nhiệm") {
         return [];
@@ -877,15 +869,7 @@ export async function getTeachersService() {
 
 export async function getTAsService() {
   if (!(await isDbAlive())) {
-    return [
-      {
-        id: "ta-1",
-        username: "ta_mai",
-        email: "ta.mai@simpace.vn",
-        role: { code: "TEACHING_ASSISTANT", name: "Trợ giảng" },
-        profile: { fullName: "Vũ Phương Mai", phoneNumber: "0907654321" },
-      },
-    ] as any;
+    return [] as any;
   }
   try {
     return await prisma.user.findMany({
@@ -895,15 +879,7 @@ export async function getTAsService() {
     });
   } catch (err: any) {
     console.warn("[getTAsService] DB offline fallback:", err?.message);
-    return [
-      {
-        id: "ta-1",
-        username: "ta_mai",
-        email: "ta.mai@simpace.vn",
-        role: { code: "TEACHING_ASSISTANT", name: "Trợ giảng" },
-        profile: { fullName: "Vũ Phương Mai", phoneNumber: "0907654321" },
-      },
-    ] as any;
+    return [] as any;
   }
 }
 

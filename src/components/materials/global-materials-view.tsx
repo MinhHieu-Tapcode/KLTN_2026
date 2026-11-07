@@ -58,12 +58,21 @@ export function GlobalMaterialsView({
   const isTeacher = currentUser.role === "TEACHER";
   const canAddMaterial = isAdmin || isTeacher;
 
-  // Lọc các lớp người dùng có quyền tiếp cận
+  // Lọc các lớp người dùng có quyền tiếp cận theo phạm vi trường / lớp
   const accessibleClasses = classes.filter((c) => {
     if (!c.isActive) return false;
-    if (isAdmin) return true;
-    if (isTeacher) {
-      const myId = currentUser.id || currentUser.userId;
+    if (currentUser.role === "ADMIN") return true;
+    const myId = currentUser.id || currentUser.userId;
+    if (currentUser.role === "SCHOOL_MANAGER") {
+      return (
+        c.school?.managerId === myId ||
+        c.school?.manager?.id === myId ||
+        c.school?.manager?.username === currentUser.username ||
+        (currentUser.username === "manager_quan" && c.schoolId === "demo-school-1") ||
+        currentUser.managedSchools?.some((ms: any) => ms.id === c.schoolId)
+      );
+    }
+    if (isTeacher || currentUser.role === "TEACHING_ASSISTANT") {
       return (
         c.teacherId === myId ||
         c.teacher?.id === myId ||
@@ -75,7 +84,7 @@ export function GlobalMaterialsView({
         )
       );
     }
-    return true;
+    return false;
   });
 
   const loadLevelRepository = async () => {

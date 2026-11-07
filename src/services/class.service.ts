@@ -5,7 +5,7 @@ import { ClassStatus, StaffClassRole } from "@prisma/client";
 import { areSchedulesConflicting, validateScheduleString } from "@/lib/schedule";
 import { logSystemWarning } from "@/lib/telemetry";
 
-const DEMO_CLASSES_VERSION = "v2026-15-users-classes-v3-no-ta";
+const DEMO_CLASSES_VERSION = "v2026-15-users-classes-v5-scope";
 
 const globalClassesStore = globalThis as unknown as {
   demoClasses?: any[];
@@ -24,7 +24,18 @@ if (!globalClassesStore.demoClasses || globalClassesStore.demoClassesVersion !==
       capacity: 30,
       status: "ACTIVE",
       description: "Thứ 2, 4, 6 (18:00 - 20:00)",
-      school: { name: "THPT Trương Định", id: "demo-school-1", code: "SCH_TD" },
+      school: {
+        name: "THPT Trương Định",
+        id: "demo-school-1",
+        code: "SCH_TD",
+        managerId: "demo-manager-1",
+        manager: {
+          id: "demo-manager-1",
+          username: "manager_quan",
+          email: "manager@simpace.vn",
+          profile: { fullName: "ThS. Hoàng Văn Quản" },
+        },
+      },
       schoolId: "demo-school-1",
       isActive: true,
       assignments: [
@@ -160,7 +171,18 @@ if (!globalClassesStore.demoClasses || globalClassesStore.demoClassesVersion !==
       capacity: 25,
       status: "ACTIVE",
       description: "Thứ 3, 5, 7 (19:30 - 21:30)",
-      school: { name: "THPT Trương Định", id: "demo-school-1", code: "SCH_TD" },
+      school: {
+        name: "THPT Trương Định",
+        id: "demo-school-1",
+        code: "SCH_TD",
+        managerId: "demo-manager-1",
+        manager: {
+          id: "demo-manager-1",
+          username: "manager_quan",
+          email: "manager@simpace.vn",
+          profile: { fullName: "ThS. Hoàng Văn Quản" },
+        },
+      },
       schoolId: "demo-school-1",
       isActive: true,
       assignments: [
@@ -173,17 +195,6 @@ if (!globalClassesStore.demoClasses || globalClassesStore.demoClassesVersion !==
             username: "teacher_huong",
             email: "teacher@simpace.vn",
             profile: { fullName: "Cô Nguyễn Thu Hường" },
-          },
-        },
-        {
-          id: "as-5",
-          userId: "teacher-1",
-          roleInClass: "TEACHER",
-          staff: {
-            id: "teacher-1",
-            username: "teacher1",
-            email: "gv.nguyenvan@simpace.vn",
-            profile: { fullName: "ThS. Nguyễn Văn A" },
           },
         },
       ],
@@ -548,7 +559,11 @@ export async function getClassesService(
     );
   } else if (isSchoolManager(session)) {
     memoryClasses = memoryClasses.filter(
-      (c) => c.school?.managerId === session?.userId
+      (c) =>
+        c.school?.managerId === session?.userId ||
+        c.school?.manager?.id === session?.userId ||
+        c.school?.manager?.username === session?.username ||
+        (session?.username === "manager_quan" && c.schoolId === "demo-school-1")
     );
   }
 
@@ -1595,16 +1610,21 @@ export async function getSchoolClassesWithStudentsService(
   schoolId: string
 ): Promise<{ success: boolean; error?: string; school: any }> {
   if (!(await isDbAlive())) {
+    const targetSchoolId = schoolId || "demo-school-1";
+    const schoolClasses = (globalClassesStore.demoClasses || []).filter(
+      (c) => c.isActive !== false && (c.schoolId === targetSchoolId || c.school?.id === targetSchoolId)
+    );
     return {
       success: true,
       school: {
-        id: schoolId || "demo-school-1",
-        name: "THPT Trương Định",
-        classes: (globalClassesStore.demoClasses || []).map((c) => ({
+        id: targetSchoolId,
+        name: targetSchoolId === "demo-school-2" ? "THPT Việt Đức" : "THPT Trương Định",
+        classes: schoolClasses.map((c) => ({
           id: c.id,
           code: c.code,
           name: c.name,
           capacity: c.capacity,
+          assignments: c.assignments || [],
           enrollments: c.enrollments || [],
         })),
       },

@@ -226,14 +226,16 @@ export function SchoolsPageView({
         <table className="w-full min-w-[750px] border-collapse text-left text-sm">
           <thead>
             <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              <th className="px-4 py-3.5 w-10">
-                <input
-                  type="checkbox"
-                  checked={filtered.length > 0 && selectedIds.length === filtered.length}
-                  onChange={toggleSelectAll}
-                  className="rounded border-[#CBD5E1]"
-                />
-              </th>
+              {currentUser?.role === "ADMIN" && (
+                <th className="px-4 py-3.5 w-10">
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                    onChange={toggleSelectAll}
+                    className="rounded border-[#CBD5E1]"
+                  />
+                </th>
+              )}
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Tên trường</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Mã trường</th>
               <th className="px-4 py-3.5 text-xs font-bold text-[#64748B] uppercase">Khối học</th>
@@ -250,37 +252,45 @@ export function SchoolsPageView({
                   className="hover:bg-[#F8FAFC] transition cursor-pointer"
                   onClick={() => setSelectedSchoolDetail(s)}
                 >
-                  <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(s.id)}
-                      onChange={() => toggleSelect(s.id)}
-                      className="rounded border-[#CBD5E1]"
-                    />
-                  </td>
+                  {currentUser?.role === "ADMIN" && (
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(s.id)}
+                        onChange={() => toggleSelect(s.id)}
+                        className="rounded border-[#CBD5E1]"
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-3.5 font-bold text-[#0F172A]">
                     <span>{s.name}</span>
                   </td>
                   <td className="px-4 py-3.5 font-mono text-xs text-[#64748B]">{s.code}</td>
                   <td className="px-4 py-3.5 text-[#475569]">{s.type}</td>
                   <td className="px-4 py-3.5 text-[#0F172A] font-medium" onClick={(e) => e.stopPropagation()}>
-                    <select
-                      value={s.managerId || ""}
-                      onChange={(e) => handleManagerChangeRequest(s, e.target.value)}
-                      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-orange-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-slate-800 transition max-w-[210px] truncate shadow-xs cursor-pointer"
-                      title="Nhấp để thay đổi Quản nhiệm phụ trách trường"
-                    >
-                      {!s.managerId && <option value="">-- Chưa phân công --</option>}
-                      {managersList.map((m: any) => {
-                        const mName = m.profile?.fullName || m.username;
-                        const schoolCount = m.managedSchools?.length || 0;
-                        return (
-                          <option key={m.id} value={m.id}>
-                            {mName} {schoolCount > 0 ? `(${schoolCount} trường)` : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
+                    {currentUser?.role === "ADMIN" ? (
+                      <select
+                        value={s.managerId || ""}
+                        onChange={(e) => handleManagerChangeRequest(s, e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-orange-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-slate-800 transition max-w-[210px] truncate shadow-xs cursor-pointer"
+                        title="Nhấp để thay đổi Quản nhiệm phụ trách trường"
+                      >
+                        {!s.managerId && <option value="">-- Chưa phân công --</option>}
+                        {managersList.map((m: any) => {
+                          const mName = m.profile?.fullName || m.username;
+                          const schoolCount = m.managedSchools?.length || 0;
+                          return (
+                            <option key={m.id} value={m.id}>
+                              {mName} {schoolCount > 0 ? `(${schoolCount} trường)` : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                        {s.manager?.profile?.fullName || currentUser?.fullName || "Chưa phân công"}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3.5 font-semibold text-[#EA580C]">
                     <button

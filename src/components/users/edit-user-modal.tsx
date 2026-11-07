@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useTransition } from "react";
 import { Loader2, Plus, ShieldCheck, Trash2, X } from "lucide-react";
@@ -201,8 +201,8 @@ export function EditUserModal({
             >
               <option value="STUDENT">Học sinh</option>
               <option value="TEACHER">Giáo viên</option>
-              <option value="SCHOOL_MANAGER">Quản nhiệm</option>
-              <option value="ADMIN">Quản trị viên</option>
+              {!isSchoolManager && <option value="SCHOOL_MANAGER">Quản nhiệm</option>}
+              {!isSchoolManager && <option value="ADMIN">Quản trị viên</option>}
             </select>
           </label>
 

@@ -3,9 +3,77 @@ import { areSchedulesConflicting } from "@/lib/schedule";
 import { logSystemWarning } from "@/lib/telemetry";
 
 export const DEMO_SCHOOLS: any[] = [
-  { id: "demo-school-1", code: "SCH_TD", name: "THPT Trương Định", type: "THPT", address: "Hoàng Mai, Hà Nội", isActive: true, classes: [] },
-  { id: "demo-school-2", code: "SCH_KL", name: "THPT Kim Liên", type: "THPT", address: "Đống Đa, Hà Nội", isActive: true, classes: [] },
+  {
+    id: "demo-school-1",
+    code: "SCH_TD",
+    name: "THPT Trương Định",
+    type: "THPT",
+    address: "Hoàng Mai, Hà Nội",
+    contactName: "Thầy Nguyễn Văn Hiệu",
+    contactPhone: "0912345001",
+    managerId: "demo-manager-1",
+    manager: {
+      id: "demo-manager-1",
+      username: "manager_quan",
+      email: "manager@simpace.vn",
+      profile: { fullName: "ThS. Hoàng Văn Quản", phoneNumber: "0981234567" },
+    },
+    isActive: true,
+    classes: [],
+  },
+  {
+    id: "demo-school-2",
+    code: "SCH_KL",
+    name: "THPT Kim Liên",
+    type: "THPT",
+    address: "Đống Đa, Hà Nội",
+    contactName: "Cô Trần Thị Phó",
+    contactPhone: "0912345002",
+    managerId: null,
+    manager: null,
+    isActive: true,
+    classes: [],
+  },
 ];
+
+function hydrateDemoSchools(params: GetSchoolsServiceParams = {}) {
+  const { searchKeyword = "", statusFilter = "ACTIVE", managerId } = params;
+  const allDemoClasses = (((globalThis as any).demoClasses || []) as any[]).filter(
+    (c) => c.isActive !== false
+  );
+
+  let list = DEMO_SCHOOLS.map((s) => {
+    const schoolClasses = allDemoClasses.filter((c) => c.schoolId === s.id);
+    return {
+      ...s,
+      classes: schoolClasses,
+      _count: { classes: schoolClasses.length },
+    };
+  });
+
+  if (statusFilter === "ACTIVE") {
+    list = list.filter((s) => s.isActive !== false);
+  } else if (statusFilter === "INACTIVE") {
+    list = list.filter((s) => s.isActive === false);
+  }
+
+  if (managerId) {
+    list = list.filter((s) => s.managerId === managerId);
+  }
+
+  if (searchKeyword && searchKeyword.trim()) {
+    const q = searchKeyword.trim().toLowerCase();
+    list = list.filter(
+      (s) =>
+        s.name?.toLowerCase().includes(q) ||
+        s.code?.toLowerCase().includes(q) ||
+        s.address?.toLowerCase().includes(q) ||
+        s.contactName?.toLowerCase().includes(q)
+    );
+  }
+
+  return list;
+}
 
 /**
  * Sinh mã trường học tự động từ tên trường (VD: THPT Trương Định -> SCH_TD)
@@ -67,7 +135,7 @@ export async function getSchoolsService(params: GetSchoolsServiceParams = {}) {
 
   if (!(await isDbAlive())) {
     logSystemWarning("school.service", "getSchoolsService", "DB offline, trả về danh sách trường học demo");
-    return DEMO_SCHOOLS as any;
+    return hydrateDemoSchools(params) as any;
   }
 
   try {
@@ -118,7 +186,7 @@ export async function getSchoolsService(params: GetSchoolsServiceParams = {}) {
     });
   } catch (err: any) {
     logSystemWarning("school.service", "getSchoolsService", "Lỗi truy vấn DB khi lấy danh sách trường, fallback demo", err);
-    return DEMO_SCHOOLS as any;
+    return hydrateDemoSchools(params) as any;
   }
 }
 
@@ -127,8 +195,8 @@ export async function getSchoolsService(params: GetSchoolsServiceParams = {}) {
  */
 export async function getSchoolDetailService(schoolId: string) {
   if (!(await isDbAlive())) {
-    logSystemWarning("school.service", "getSchoolDetailService", "DB offline, không tìm thấy trường học");
-    return null;
+    const hydrated = hydrateDemoSchools({ statusFilter: "ALL" });
+    return hydrated.find((s) => s.id === schoolId) || null;
   }
 
   try {
@@ -154,7 +222,8 @@ export async function getSchoolDetailService(schoolId: string) {
     });
   } catch (err: any) {
     logSystemWarning("school.service", "getSchoolDetailService", "Lỗi DB khi lấy chi tiết trường", err);
-    return null;
+    const hydrated = hydrateDemoSchools({ statusFilter: "ALL" });
+    return hydrated.find((s) => s.id === schoolId) || null;
   }
 }
 
@@ -163,8 +232,20 @@ export async function getSchoolDetailService(schoolId: string) {
  */
 export async function getSchoolManagersService() {
   if (!(await isDbAlive())) {
-    logSystemWarning("school.service", "getSchoolManagersService", "DB offline, trả về mảng rỗng");
-    return [];
+    const demoUsers = (((globalThis as any).demoUsers || []) as any[]).filter(
+      (u) => u.isActive !== false && u.role?.code === "SCHOOL_MANAGER"
+    );
+    if (demoUsers.length > 0) return demoUsers;
+    return [
+      {
+        id: "demo-manager-1",
+        username: "manager_quan",
+        email: "manager@simpace.vn",
+        isActive: true,
+        profile: { fullName: "ThS. Hoàng Văn Quản", phoneNumber: "0981234567" },
+        managedSchools: [{ id: "demo-school-1", name: "THPT Trương Định", code: "SCH_TD" }],
+      },
+    ] as any;
   }
 
   try {

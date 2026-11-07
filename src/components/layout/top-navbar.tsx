@@ -123,7 +123,7 @@ export function TopNavbar({
     },
     {
       key: "classes" as View,
-      labelFull: "Quản lý lớp học",
+      labelFull: currentUser.role === "STUDENT" ? "Lớp học của tôi" : "Quản lý lớp học",
       labelShort: "Lớp học",
       icon: GraduationCap,
       visible: hasPerm("VIEW_CLASSES") || hasPerm("VIEW_SCHEDULE"),

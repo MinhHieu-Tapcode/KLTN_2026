@@ -23,7 +23,7 @@ import { canStudentViewAnswers } from "@/lib/assignment-config";
 import { createNotifications } from "./notification.service";
 import { logSystemWarning } from "@/lib/telemetry";
 
-const DEMO_STORE_VERSION = "v2026-15-users-reports-v4";
+const DEMO_STORE_VERSION = "v2026-15-users-reports-v5";
 
 const globalAssignmentsStore = globalThis as unknown as {
   demoAssignments?: any[];
@@ -366,7 +366,7 @@ if (
           id: "sub-l-lan",
           assignmentId: "demo-assign-2",
           classId: "demo-class-1",
-          studentId: "demo-student-2",
+          studentId: "st-1",
           studentName: "Trần Thị Lan",
           studentEmail: "lan.tran@simpace.vn",
           attemptNumber: 1,
@@ -579,7 +579,7 @@ if (
           id: "sub-w-lan-pending",
           assignmentId: "demo-assign-3",
           classId: "demo-class-1",
-          studentId: "demo-student-2",
+          studentId: "st-1",
           studentName: "Trần Thị Lan",
           studentEmail: "lan.tran@simpace.vn",
           attemptNumber: 1,
@@ -819,7 +819,7 @@ if (
           id: "sub-s-lan-pending",
           assignmentId: "demo-assign-4",
           classId: "demo-class-1",
-          studentId: "demo-student-2",
+          studentId: "st-1",
           studentName: "Trần Thị Lan",
           studentEmail: "lan.tran@simpace.vn",
           attemptNumber: 1,
@@ -1313,7 +1313,7 @@ function formatDemoAssignmentDetail(
   const studentSubs = (found.submissions || [])
     .filter((s: any) => s.studentId === studentId)
     .sort((a: any, b: any) => (b.attemptNumber || 1) - (a.attemptNumber || 1));
-  const demoLatestSub = studentSubs[0] || (found.submissions || [])[0] || null;
+  const demoLatestSub = studentSubs[0] || null;
 
   const formattedQuestions = (found.questions || []).map((q: any, idx: number) => {
     const rawOptions = q.options || [];

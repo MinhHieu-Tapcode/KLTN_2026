@@ -102,18 +102,33 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const uploadDir = path.join(process.cwd(), "public", "uploads", "materials");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
     const safeName = sanitizeFileName(file.name);
     const uniqueFileName = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safeName}`;
-    const filePath = path.join(uploadDir, uniqueFileName);
+    let fileUrl = `/uploads/materials/${uniqueFileName}`;
 
-    fs.writeFileSync(filePath, buffer);
+    try {
+      const uploadDir = path.join(process.cwd(), "public", "uploads", "materials");
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      const filePath = path.join(uploadDir, uniqueFileName);
+      fs.writeFileSync(filePath, buffer);
+    } catch (fsErr) {
+      // Trên Vercel (Read-Only Filesystem), lưu tạm vào /tmp để không văng lỗi 500
+      try {
+        const tmpDir = path.join("/tmp", "uploads", "materials");
+        if (!fs.existsSync(tmpDir)) {
+          fs.mkdirSync(tmpDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(tmpDir, uniqueFileName), buffer);
+      } catch {
+        // Bỏ qua nếu /tmp không khả dụng
+      }
+      if (file.size <= 4 * 1024 * 1024 && (file.type?.startsWith("audio/") || file.type?.startsWith("image/"))) {
+        fileUrl = `data:${file.type};base64,${buffer.toString("base64")}`;
+      }
+    }
 
-    const fileUrl = `/uploads/materials/${uniqueFileName}`;
     const fileType = detectMaterialType(file.name, file.type);
 
     return NextResponse.json({

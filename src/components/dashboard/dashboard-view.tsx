@@ -118,7 +118,6 @@ export function DashboardView({
     const list = [
       { label: "Học sinh", count: students, pct: getPct(students), dotColor: "bg-[#EA580C]", hex: "#EA580C" },
       { label: "Giáo viên", count: teachers, pct: getPct(teachers), dotColor: "bg-[#3B82F6]", hex: "#3B82F6" },
-      { label: "Trợ giảng (TA)", count: tas, pct: getPct(tas), dotColor: "bg-[#FBBF24]", hex: "#FBBF24" },
       { label: "Quản nhiệm trường", count: managers, pct: getPct(managers), dotColor: "bg-[#10B981]", hex: "#10B981" },
       { label: "Quản trị viên (Admin)", count: admins, pct: getPct(admins), dotColor: "bg-[#8B5CF6]", hex: "#8B5CF6" },
     ];
@@ -188,18 +187,44 @@ export function DashboardView({
     );
   }
 
+  const totalTeacherStudents = useMemo(() => {
+    const ids = new Set<string>();
+    for (const cls of classes) {
+      if (cls.isActive === false) continue;
+      for (const en of cls.enrollments || []) {
+        const sid = en.studentId || en.student?.id;
+        if (sid) ids.add(sid);
+      }
+    }
+    return ids.size;
+  }, [classes]);
+
+  const isTeacherRole = currentUser?.role === "TEACHER";
+
   const kpiCards = [
-    {
-      id: "users",
-      icon: UserRound,
-      label: "Người dùng",
-      value: usersCount.toLocaleString("vi-VN"),
-      trend: "+12%",
-      trendSub: "so với tháng trước",
-      dest: "users" as View,
-      iconBg: "bg-[#FFF1EB] text-[#EA580C]",
-      sparkColor: "#EA580C",
-    },
+    isTeacherRole
+      ? {
+          id: "users",
+          icon: UserRound,
+          label: "Học viên phụ trách",
+          value: totalTeacherStudents.toLocaleString("vi-VN"),
+          trend: "Đang theo học",
+          trendSub: "",
+          dest: "classes" as View,
+          iconBg: "bg-[#FFF1EB] text-[#EA580C]",
+          sparkColor: "#EA580C",
+        }
+      : {
+          id: "users",
+          icon: UserRound,
+          label: "Người dùng",
+          value: usersCount.toLocaleString("vi-VN"),
+          trend: "+12%",
+          trendSub: "so với tháng trước",
+          dest: "users" as View,
+          iconBg: "bg-[#FFF1EB] text-[#EA580C]",
+          sparkColor: "#EA580C",
+        },
     {
       id: "classes",
       icon: GraduationCap,
@@ -285,7 +310,7 @@ export function DashboardView({
             <div className="flex items-center gap-2.5">
               <BarChart3 className="size-5 text-[#EA580C]" />
               <h2 className="font-bold text-base sm:text-lg text-[#0F172A]">
-                Thống kê người dùng theo vai trò
+                {isTeacherRole ? "Lớp học đang phụ trách" : "Thống kê người dùng theo vai trò"}
               </h2>
             </div>
             <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1.5 text-xs font-semibold text-[#334155]">
@@ -293,6 +318,25 @@ export function DashboardView({
             </span>
           </div>
 
+          {isTeacherRole ? (
+            <div className="my-4 space-y-3">
+              {classes.filter((cls) => cls.isActive !== false).map((cls) => (
+                <div
+                  key={cls.id}
+                  onClick={() => navigate("classes")}
+                  className="flex items-center justify-between p-3.5 rounded-xl border border-slate-200/80 hover:border-orange-300 hover:bg-orange-50/30 transition cursor-pointer"
+                >
+                  <div>
+                    <p className="font-bold text-sm text-[#0F172A]">{cls.name}</p>
+                    <p className="text-xs text-[#64748B] mt-0.5">{cls.code} • {cls.description || "Chưa xếp lịch"}</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-[#FFF1EB] text-[#EA580C] text-xs font-bold">
+                    {cls.enrollments?.length || 0}/{cls.capacity || 30} HV
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="my-6 flex flex-col sm:flex-row items-center justify-center gap-8">
             <div
               className="grid size-44 shrink-0 place-items-center rounded-full shadow-inner transition-all"
@@ -324,6 +368,7 @@ export function DashboardView({
               ))}
             </div>
           </div>
+          )}
         </section>
 
         <section className="lg:col-span-7 rounded-2xl bg-white p-6 border border-[#E2E8F0]/80 shadow-xs">
@@ -335,7 +380,7 @@ export function DashboardView({
               </h2>
             </div>
             <button
-              onClick={() => navigate("users")}
+              onClick={() => navigate(isTeacherRole ? "classes" : "users")}
               className="text-xs sm:text-sm font-bold text-[#EA580C] hover:underline"
             >
               Xem tất cả →
