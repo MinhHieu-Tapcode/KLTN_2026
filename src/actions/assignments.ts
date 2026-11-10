@@ -199,8 +199,9 @@ export async function createAssignmentAction(data: {
 export async function deleteAssignmentAction(
   assignmentId: string,
   classId?: string,
-  deleteFromAll?: boolean
-): Promise<{ success: boolean; deletedFromAll?: boolean; error?: string }> {
+  deleteFromAll?: boolean,
+  confirmed?: boolean
+): Promise<{ success: boolean; deletedFromAll?: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   const auth = checkRole(
     await getSession(),
     ROLE_GROUPS.EXAM_CREATORS,
@@ -220,7 +221,7 @@ export async function deleteAssignmentAction(
   }
 
   try {
-    const res = await deleteAssignmentService(assignmentId, classId, deleteFromAll);
+    const res = await deleteAssignmentService(assignmentId, classId, deleteFromAll, { confirmed });
     safeRevalidate();
     return res;
   } catch (err: any) {

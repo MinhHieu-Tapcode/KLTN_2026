@@ -4,6 +4,7 @@ import { createNotifications } from "./notification.service";
 import type { SessionPayload } from "@/lib/auth";
 import { isAdmin, isSchoolManager, isTeacher as checkIsTeacher } from "@/lib/permissions";
 import { logSystemWarning } from "@/lib/telemetry";
+import { checkMaterialDeletable, checkMaterialFolderDeletable, type DeleteOptions } from "./delete-rules.service";
 
 const globalMaterialsStore = globalThis as unknown as {
   demoFolders?: any[];
@@ -401,8 +402,9 @@ export async function createMaterialFolderService(
 }
 
 export async function deleteMaterialFolderService(
-  folderId: string
-): Promise<{ success: boolean; error?: string }> {
+  folderId: string,
+  opts?: DeleteOptions
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   if (!(await isDbAlive())) {
     if (globalMaterialsStore.demoFolders) {
       const folder = globalMaterialsStore.demoFolders.find((f) => f.id === folderId);
@@ -421,6 +423,16 @@ export async function deleteMaterialFolderService(
   }
 
   try {
+    const rule = await checkMaterialFolderDeletable(folderId, opts);
+    if (!rule.ok) {
+      return {
+        success: false,
+        error: rule.error,
+        requiresConfirm: rule.requiresConfirm,
+        warnings: rule.warnings,
+      };
+    }
+
     await prisma.materialFolder.update({
       where: { id: folderId },
       data: { isActive: false },
@@ -578,8 +590,8 @@ export async function uploadLearningMaterialService(
 }
 
 export async function deleteLearningMaterialService(
-  materialId: string
-): Promise<{ success: boolean; error?: string }> {
+  materialId: string, opts?: DeleteOptions
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   if (!(await isDbAlive())) {
     if (globalMaterialsStore.demoMaterials) {
       const target = globalMaterialsStore.demoMaterials.find((m) => m.id === materialId);
@@ -591,6 +603,9 @@ export async function deleteLearningMaterialService(
   }
 
   try {
+    const rule = await checkMaterialDeletable(materialId, opts);
+    if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
+
     await prisma.learningMaterial.update({
       where: { id: materialId },
       data: { isActive: false },

@@ -84,15 +84,16 @@ export async function createMaterialFolderAction(data: {
  * Xóa mềm Thư mục học liệu
  */
 export async function deleteMaterialFolderAction(
-  folderId: string
-): Promise<{ success: boolean; error?: string }> {
+  folderId: string,
+  confirmed?: boolean
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG);
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
   const scope = await assertFolderAccess(auth.session, folderId, "EDIT");
   if (!scope.ok) return { success: false, error: scope.error };
-  const res = await deleteMaterialFolderService(folderId);
+  const res = await deleteMaterialFolderService(folderId, { confirmed });
   if (res.success) safeRevalidate();
   return res;
 }
@@ -141,15 +142,16 @@ export async function uploadLearningMaterialAction(data: {
  * Xóa mềm Tài liệu
  */
 export async function deleteLearningMaterialAction(
-  materialId: string
-): Promise<{ success: boolean; error?: string }> {
+  materialId: string,
+  confirmed?: boolean
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   const auth = checkRole(await getSession(), MATERIAL_EDITOR_ROLES, MATERIAL_EDIT_MSG);
   if (!auth.ok) {
     return { success: false, error: auth.error };
   }
   const scope = await assertMaterialAccess(auth.session, materialId, "EDIT");
   if (!scope.ok) return { success: false, error: scope.error };
-  const res = await deleteLearningMaterialService(materialId);
+  const res = await deleteLearningMaterialService(materialId, { confirmed });
   if (res.success) safeRevalidate();
   return res;
 }

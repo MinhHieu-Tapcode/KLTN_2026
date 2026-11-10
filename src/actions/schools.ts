@@ -115,13 +115,13 @@ export async function updateSchoolAction(id: string, data: UpdateSchoolData) {
   return res;
 }
 
-export async function deleteSchoolAction(id: string) {
+export async function deleteSchoolAction(id: string, confirmed?: boolean) {
   const session = await getSession();
   if (!session || !isAdmin(session)) {
     return { success: false, error: "Bạn không có quyền xóa trường học!" };
   }
 
-  const res = await deleteSchoolService(id);
+  const res = await deleteSchoolService(id, { confirmed });
   if (res.success) {
     safeRevalidate("/schools");
   }
@@ -141,13 +141,13 @@ export async function restoreSchoolAction(id: string) {
   return res;
 }
 
-export async function deleteMultipleSchoolsAction(ids: string[]) {
+export async function deleteMultipleSchoolsAction(ids: string[], confirmed?: boolean) {
   const session = await getSession();
   if (!session || !isAdmin(session)) {
     return { success: false, error: "Bạn không có quyền xóa hàng loạt trường học!" };
   }
 
-  const res = await deleteMultipleSchoolsService(ids);
+  const res = await deleteMultipleSchoolsService(ids, { confirmed });
   if (res.success) {
     safeRevalidate("/schools");
   }

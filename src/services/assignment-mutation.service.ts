@@ -2,6 +2,7 @@ import { prisma, isDbAlive } from "@/lib/prisma";
 import { validateAssignmentConfig } from "@/lib/assignment-config";
 import { createNotifications } from "./notification.service";
 import { resolveRealClassId } from "./class.service";
+import { checkAssignmentDeletable, type DeleteOptions } from "./delete-rules.service";
 import { AssignmentSkill, AssignmentType, QuestionType } from "@prisma/client";
 
 const globalAssignmentsStore = globalThis as unknown as {
@@ -648,8 +649,9 @@ export async function updateAssignmentService(
 export async function deleteAssignmentService(
   assignmentId: string,
   classId?: string,
-  deleteFromAll?: boolean
-): Promise<{ success: boolean; deletedFromAll?: boolean; error?: string }> {
+  deleteFromAll?: boolean,
+  opts?: DeleteOptions
+): Promise<{ success: boolean; deletedFromAll?: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   if (!(await isDbAlive())) {
     const item = (globalAssignmentsStore.demoAssignments || []).find((a) => a.id === assignmentId);
     if (!item) return { success: true };
@@ -673,6 +675,13 @@ export async function deleteAssignmentService(
     }
     return { success: true, deletedFromAll: true };
   }
+
+  const rule = await checkAssignmentDeletable(
+    assignmentId,
+    classId && !deleteFromAll ? classId : undefined,
+    opts
+  );
+  if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
 
   if (classId && !deleteFromAll) {
     await prisma.assignmentClass.updateMany({

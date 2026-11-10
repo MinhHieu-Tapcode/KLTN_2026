@@ -39,6 +39,7 @@ import { ClassMaterialsPanel } from "@/components/materials/class-materials-pane
 import { ClassAssignmentsPanel } from "@/components/assignments/class-assignments-panel";
 import { CreateModeChoiceModal } from "@/components/assignments/assignment-action-modals";
 import { filterAccessibleClasses } from "@/lib/accessible-classes";
+import { AssignmentGlobalSearch } from "@/components/assignments/assignment-global-search";
 import { MultiClassManualBuilderModal } from "@/components/assignments/multi-class-manual-builder-modal";
 import { SmartParserModal } from "@/components/assignments/exam-parser";
 import { SimpaceLogo } from "@/components/logo";
@@ -560,6 +561,15 @@ export function SimpaceApp({
                     )}
                   </div>
 
+                  <AssignmentGlobalSearch
+                    currentUser={currentUser}
+                    classes={accessibleClassesForAssignments}
+                    onOpenClass={async (id) => {
+                      const cls = accessibleClassesForAssignments.find((c) => c.id === id);
+                      const detail = await getClassDetailAction(id);
+                      setActiveGlobalAssignmentClass(detail || cls || null);
+                    }}
+                  >
                   {accessibleClassesForAssignments.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {accessibleClassesForAssignments.map((cls) => (
@@ -601,6 +611,7 @@ export function SimpaceApp({
                       </p>
                     </div>
                   )}
+                  </AssignmentGlobalSearch>
                 </div>
               );
             })()}

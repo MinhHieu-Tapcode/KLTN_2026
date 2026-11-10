@@ -5,6 +5,7 @@ import { Building2, CalendarDays, Edit2, Eye, Plus, Search, Trash2, List } from 
 import { Button } from "@/components/ui/button";
 import { deleteClassAction, deleteMultipleClassesAction } from "@/actions/classes";
 import { ConfirmDialog, Status } from "@/components/shared/common-widgets";
+import { formatDeleteWarnings } from "@/lib/delete-warning";
 import { ClassesTimetableGrid } from "./classes-page-modals";
 import { filterAccessibleClasses } from "@/lib/accessible-classes";
 
@@ -40,6 +41,7 @@ export function ClassesPageView({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
   const [localClasses, setLocalClasses] = useState(classes);
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     setLocalClasses(classes);
@@ -100,9 +102,35 @@ export function ClassesPageView({
       title: "Xác nhận xóa các lớp học đã chọn",
       description: `Bạn có chắc chắn muốn xóa ${toDeleteIds.length} lớp học đã chọn? Các lớp học này sẽ ngừng hoạt động và bị xóa khỏi hệ thống.`,
       action: async () => {
+        setActionError("");
         setLocalClasses((prev) => prev.filter((c) => !toDeleteIds.includes(c.id)));
         setSelectedIds([]);
-        await deleteMultipleClassesAction(toDeleteIds);
+        const res = await deleteMultipleClassesAction(toDeleteIds);
+        if (res?.requiresConfirm) {
+          setLocalClasses(classes);
+          setConfirmModal({
+            open: true,
+            title: "Cảnh báo trước khi xóa các lớp học đã chọn",
+            description: formatDeleteWarnings(res.warnings),
+            action: async () => {
+              setActionError("");
+              setLocalClasses((prev) => prev.filter((c) => !toDeleteIds.includes(c.id)));
+              const forced = await deleteMultipleClassesAction(toDeleteIds, true);
+              if (!forced?.success) {
+                setLocalClasses(classes);
+                setActionError(forced?.error || "Không thể xóa các lớp học đã chọn!");
+                return;
+              }
+              onRefresh();
+            },
+          });
+          return;
+        }
+        if (!res?.success) {
+          setLocalClasses(classes);
+          setActionError(res?.error || "Không thể xóa các lớp học đã chọn!");
+          return;
+        }
         onRefresh();
       },
     });
@@ -114,8 +142,34 @@ export function ClassesPageView({
       title: "Xác nhận xóa lớp học",
       description: `Bạn có chắc chắn muốn xóa lớp học "${cls.name}" (Mã lớp: ${cls.code})? Lớp học sẽ ngừng hoạt động và bị xóa khỏi hệ thống.`,
       action: async () => {
+        setActionError("");
         setLocalClasses((prev) => prev.filter((c) => c.id !== cls.id));
-        await deleteClassAction(cls.id);
+        const res = await deleteClassAction(cls.id);
+        if (res?.requiresConfirm) {
+          setLocalClasses(classes);
+          setConfirmModal({
+            open: true,
+            title: "Cảnh báo trước khi xóa lớp học",
+            description: formatDeleteWarnings(res.warnings),
+            action: async () => {
+              setActionError("");
+              setLocalClasses((prev) => prev.filter((c) => c.id !== cls.id));
+              const forced = await deleteClassAction(cls.id, true);
+              if (!forced?.success) {
+                setLocalClasses(classes);
+                setActionError(forced?.error || "Không thể xóa lớp học!");
+                return;
+              }
+              onRefresh();
+            },
+          });
+          return;
+        }
+        if (!res?.success) {
+          setLocalClasses(classes);
+          setActionError(res?.error || "Không thể xóa lớp học!");
+          return;
+        }
         onRefresh();
       },
     });
@@ -123,6 +177,18 @@ export function ClassesPageView({
 
   return (
     <section className="panel space-y-4">
+      {actionError && (
+        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError("")}
+            className="ml-3 text-xs font-bold text-red-600 hover:underline"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F5F9] pb-4">
         <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-[#E2E8F0]">
           <button

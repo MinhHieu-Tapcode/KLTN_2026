@@ -8,6 +8,7 @@ import { RoleCode, Gender, StaffClassRole } from "@prisma/client";
 import { sendAccountCreatedEmail } from "@/lib/mail";
 import { resolveRealClassId, resolveRealSchoolId } from "./class.service";
 import { logSystemWarning } from "@/lib/telemetry";
+import { checkAllDeletable, checkUserDeletable, type DeleteOptions } from "./delete-rules.service";
 
 const DEMO_USERS_VERSION = "v2026-15-users-v3-no-ta";
 
@@ -1660,8 +1661,8 @@ function softDeleteInMemoryUsers(ids: string[]) {
 
 export async function deleteUserService(
   session: SessionPayload,
-  id: string
-): Promise<{ success: boolean; error?: string }> {
+  id: string, opts?: DeleteOptions
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   try {
     if (session?.userId === id) {
       return {
@@ -1729,6 +1730,9 @@ export async function deleteUserService(
       };
     }
 
+    const rule = await checkUserDeletable(id, opts);
+    if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
+
     await prisma.user.update({
       where: { id },
       data: { isActive: false },
@@ -1763,8 +1767,8 @@ export async function restoreUserService(
 
 export async function deleteMultipleUsersService(
   session: SessionPayload,
-  ids: string[]
-): Promise<{ success: boolean; error?: string }> {
+  ids: string[], opts?: DeleteOptions
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   try {
     const safeIds = ids.filter((id) => id !== session?.userId);
     if (safeIds.length === 0) {
@@ -1793,6 +1797,9 @@ export async function deleteMultipleUsersService(
     const blockedRoles: RoleCode[] = isSchoolManager(session)
       ? ["ADMIN", "SCHOOL_MANAGER"]
       : ["ADMIN"];
+
+    const rule = await checkAllDeletable(safeIds, "USER", opts);
+    if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
 
     await prisma.user.updateMany({
       where: {

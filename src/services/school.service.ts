@@ -1,6 +1,7 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { areSchedulesConflicting } from "@/lib/schedule";
 import { logSystemWarning } from "@/lib/telemetry";
+import { checkAllDeletable, checkSchoolDeletable, type DeleteOptions } from "./delete-rules.service";
 
 export const DEMO_SCHOOLS: any[] = [
   {
@@ -413,9 +414,11 @@ export async function updateSchoolService(id: string, data: UpdateSchoolData) {
 /**
  * Xóa mềm trường học (isActive: false)
  */
-export async function deleteSchoolService(id: string) {
+export async function deleteSchoolService(id: string, opts?: DeleteOptions) {
   try {
     if (await isDbAlive()) {
+      const rule = await checkSchoolDeletable(id, opts);
+      if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
       await prisma.school.update({
         where: { id },
         data: { isActive: false },
@@ -453,9 +456,11 @@ export async function restoreSchoolService(id: string) {
 /**
  * Xóa mềm hàng loạt trường học
  */
-export async function deleteMultipleSchoolsService(ids: string[]) {
+export async function deleteMultipleSchoolsService(ids: string[], opts?: DeleteOptions) {
   try {
     if (await isDbAlive()) {
+      const rule = await checkAllDeletable(ids, "SCHOOL", opts);
+      if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
       await prisma.school.updateMany({
         where: { id: { in: ids } },
         data: { isActive: false },

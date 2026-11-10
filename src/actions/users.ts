@@ -149,8 +149,9 @@ export async function updateUserAction(
 
 // Xóa mềm người dùng (isActive: false) - Tuyệt đối bảo vệ dữ liệu lịch sử (BUG_05)
 export async function deleteUserAction(
-  id: string
-): Promise<{ success: boolean; error?: string }> {
+  id: string,
+  confirmed?: boolean
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   const session = await getSession();
   const roleCheck = checkRole(
     session,
@@ -164,7 +165,7 @@ export async function deleteUserAction(
   const userScope = await assertUserInManagerScope(roleCheck.session, id);
   if (!userScope.ok) return { success: false, error: userScope.error };
 
-  const res = await deleteUserService(roleCheck.session, id);
+  const res = await deleteUserService(roleCheck.session, id, { confirmed });
   if (res.success) {
     safeRevalidate("/users");
     safeRevalidate("/classes");
@@ -185,8 +186,9 @@ export async function restoreUserAction(
 
 // Xóa mềm hàng loạt
 export async function deleteMultipleUsersAction(
-  ids: string[]
-): Promise<{ success: boolean; error?: string }> {
+  ids: string[],
+  confirmed?: boolean
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   const session = await getSession();
   const roleCheck = checkRole(
     session,
@@ -202,7 +204,7 @@ export async function deleteMultipleUsersAction(
     if (!userScope.ok) return { success: false, error: userScope.error };
   }
 
-  const res = await deleteMultipleUsersService(roleCheck.session, ids);
+  const res = await deleteMultipleUsersService(roleCheck.session, ids, { confirmed });
   if (res.success) {
     safeRevalidate("/users");
     safeRevalidate("/classes");

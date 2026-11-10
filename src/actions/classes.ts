@@ -165,11 +165,12 @@ export async function updateClassAction(
 
 // Xóa mềm lớp học (isActive: false)
 export async function deleteClassAction(
-  id: string
-): Promise<{ success: boolean; error?: string }> {
+  id: string,
+  confirmed?: boolean
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   const denied = await requireClassManagerFor(id);
   if (denied) return denied;
-  return deleteClassService(id);
+  return deleteClassService(id, { confirmed });
 }
 
 // Khôi phục lớp học đã xóa mềm
@@ -182,11 +183,12 @@ export async function restoreClassAction(
 }
 
 export async function deleteMultipleClassesAction(
-  ids: string[]
-): Promise<{ success: boolean; error?: string }> {
+  ids: string[],
+  confirmed?: boolean
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   const denied = await requireClassManagerFor(...ids);
   if (denied) return denied;
-  return deleteMultipleClassesService(ids);
+  return deleteMultipleClassesService(ids, { confirmed });
 }
 
 export async function assignStaffToClassAction(

@@ -39,7 +39,7 @@ export function ConfirmDialog({
           </div>
           <div className="flex-1 space-y-1">
             <DialogTitle className="text-base font-bold text-[#0F172A]">{title}</DialogTitle>
-            <DialogDescription className="text-sm text-[#64748B] leading-relaxed pt-1">
+            <DialogDescription className="text-sm text-[#64748B] leading-relaxed pt-1 whitespace-pre-line">
               {description}
             </DialogDescription>
           </div>

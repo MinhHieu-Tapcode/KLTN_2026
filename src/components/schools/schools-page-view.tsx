@@ -1,4 +1,5 @@
-﻿"use client";
+"use client";
+import { formatDeleteWarnings } from "@/lib/delete-warning";
 
 import { useState, useEffect, useTransition } from "react";
 import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
@@ -43,6 +44,7 @@ export function SchoolsPageView({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, startTransition] = useTransition();
   const [localSchools, setLocalSchools] = useState(schools);
+  const [actionError, setActionError] = useState("");
   const [selectedSchoolDetail, setSelectedSchoolDetail] = useState<any>(null);
   const [selectedSchoolForClasses, setSelectedSchoolForClasses] = useState<any>(null);
   const [managersList, setManagersList] = useState<any[]>(managers);
@@ -164,9 +166,35 @@ export function SchoolsPageView({
       title: "Xác nhận xóa các trường học đã chọn",
       description: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} trường học đã chọn khỏi hệ thống?`,
       action: async () => {
+        setActionError("");
         setLocalSchools((prev) => prev.filter((s) => !idsToDelete.includes(s.id)));
         setSelectedIds([]);
-        await deleteMultipleSchoolsAction(idsToDelete);
+        const res = await deleteMultipleSchoolsAction(idsToDelete);
+        if (res?.requiresConfirm) {
+          setLocalSchools(schools);
+          setConfirmModal({
+            open: true,
+            title: "Cảnh báo trước khi xóa các trường học đã chọn",
+            description: formatDeleteWarnings(res.warnings),
+            action: async () => {
+              setActionError("");
+              setLocalSchools((prev) => prev.filter((s) => !idsToDelete.includes(s.id)));
+              const forced = await deleteMultipleSchoolsAction(idsToDelete, true);
+              if (!forced?.success) {
+                setLocalSchools(schools);
+                setActionError(forced?.error || "Không thể xóa các trường học đã chọn!");
+                return;
+              }
+              onRefresh();
+            },
+          });
+          return;
+        }
+        if (!res?.success) {
+          setLocalSchools(schools);
+          setActionError(res?.error || "Không thể xóa các trường học đã chọn!");
+          return;
+        }
         onRefresh();
       },
     });
@@ -178,8 +206,34 @@ export function SchoolsPageView({
       title: "Xác nhận xóa trường học",
       description: `Bạn có chắc chắn muốn xóa trường "${name}" (Mã trường: ${code}) khỏi hệ thống?`,
       action: async () => {
+        setActionError("");
         setLocalSchools((prev) => prev.filter((s) => s.id !== id));
-        await deleteSchoolAction(id);
+        const res = await deleteSchoolAction(id);
+        if (res?.requiresConfirm) {
+          setLocalSchools(schools);
+          setConfirmModal({
+            open: true,
+            title: "Cảnh báo trước khi xóa trường học",
+            description: formatDeleteWarnings(res.warnings),
+            action: async () => {
+              setActionError("");
+              setLocalSchools((prev) => prev.filter((s) => s.id !== id));
+              const forced = await deleteSchoolAction(id, true);
+              if (!forced?.success) {
+                setLocalSchools(schools);
+                setActionError(forced?.error || "Không thể xóa trường học!");
+                return;
+              }
+              onRefresh();
+            },
+          });
+          return;
+        }
+        if (!res?.success) {
+          setLocalSchools(schools);
+          setActionError(res?.error || "Không thể xóa trường học!");
+          return;
+        }
         onRefresh();
       },
     });
@@ -187,6 +241,18 @@ export function SchoolsPageView({
 
   return (
     <section className="panel">
+      {actionError && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError("")}
+            className="ml-3 text-xs font-bold text-red-600 hover:underline"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />

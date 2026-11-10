@@ -15,9 +15,12 @@ import {
   ArrowLeft,
   UserCheck,
   RefreshCw,
+  Pencil,
 } from "lucide-react";
 import { AnswerVisibilityMode, validateAssignmentConfig } from "@/lib/assignment-config";
 import { Button } from "@/components/ui/button";
+import { formatDeleteWarnings } from "@/lib/delete-warning";
+import { AssignmentEditModal } from "@/components/assignments/assignment-edit-modal";
 import { Badge } from "@/components/ui/badge";
 import {
   getClassAssignmentsAction,
@@ -213,6 +216,8 @@ export function ClassAssignmentsTab({
     currentUser.role === "ADMIN" ||
     currentUser.role === "TEACHER";
 
+  const [editAssignmentId, setEditAssignmentId] = useState<string | null>(null);
+
   const loadAssignments = async () => {
     setIsLoading(true);
     const res = await getClassAssignmentsAction(classId);
@@ -243,11 +248,14 @@ export function ClassAssignmentsTab({
     setConfirmDeleteModal(null);
 
     startTransition(async () => {
-      const res = await deleteAssignmentAction(
+      let res = await deleteAssignmentAction(
         assignmentId,
         classId,
         deleteScope === "ALL_CLASSES"
       );
+      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
+        res = await deleteAssignmentAction(assignmentId, classId, deleteScope === "ALL_CLASSES", true);
+      }
       if (res.success) {
         if (res.deletedFromAll) {
           showAlert("Thành công", "Đã xóa hoàn toàn bài tập ở tất cả các lớp học!", "success");
@@ -902,6 +910,16 @@ export function ClassAssignmentsTab({
                       <Eye className="size-3.5" />
                     </Button>
 
+                    {canManage && (
+                      <button
+                        onClick={() => setEditAssignmentId(item.id)}
+                        className="size-8 grid place-items-center text-slate-400 hover:text-[#EA580C] rounded-xl hover:bg-orange-50 transition"
+                        title="Sửa bài tập"
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
+                    )}
+
                     {canManage && item.submittedCount > 0 && (
                       <button
                         onClick={() => handlePromptRegrade(item)}
@@ -930,6 +948,13 @@ export function ClassAssignmentsTab({
       )}
 
       {/* 3. MODALS TẠO ĐỀ, LÀM BÀI, CHẤM BÀI & THÔNG BÁO */}
+      {canManage && (
+        <AssignmentEditModal
+          assignmentId={editAssignmentId}
+          onClose={() => setEditAssignmentId(null)}
+          onSaved={loadAssignments}
+        />
+      )}
       <CreateModeChoiceModal
         open={createMode === "choice"}
         onClose={() => setCreateMode(null)}

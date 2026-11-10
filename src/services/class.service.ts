@@ -4,6 +4,7 @@ import { isSchoolManager, isStudent, isTeacher } from "@/lib/permissions";
 import { ClassStatus, StaffClassRole } from "@prisma/client";
 import { areSchedulesConflicting, validateScheduleString } from "@/lib/schedule";
 import { logSystemWarning } from "@/lib/telemetry";
+import { checkAllDeletable, checkClassDeletable, type DeleteOptions } from "./delete-rules.service";
 
 const DEMO_CLASSES_VERSION = "v2026-15-users-classes-v5-scope";
 
@@ -1248,8 +1249,8 @@ export async function updateClassService(
 }
 
 export async function deleteClassService(
-  id: string
-): Promise<{ success: boolean; error?: string }> {
+  id: string, opts?: DeleteOptions
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   try {
     if (!(await isDbAlive())) {
       const cls = (globalClassesStore.demoClasses || []).find((c) => c.id === id);
@@ -1258,6 +1259,9 @@ export async function deleteClassService(
       }
       return { success: true };
     }
+
+    const rule = await checkClassDeletable(id, opts);
+    if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
 
     await prisma.class.update({
       where: { id },
@@ -1297,8 +1301,8 @@ export async function restoreClassService(
 }
 
 export async function deleteMultipleClassesService(
-  ids: string[]
-): Promise<{ success: boolean; error?: string }> {
+  ids: string[], opts?: DeleteOptions
+): Promise<{ success: boolean; error?: string; requiresConfirm?: boolean; warnings?: string[] }> {
   try {
     if (!(await isDbAlive())) {
       for (const id of ids) {
@@ -1309,6 +1313,9 @@ export async function deleteMultipleClassesService(
       }
       return { success: true };
     }
+
+    const rule = await checkAllDeletable(ids, "CLASS", opts);
+    if (!rule.ok) return { success: false, error: rule.error, requiresConfirm: rule.requiresConfirm, warnings: rule.warnings };
 
     await prisma.class.updateMany({
       where: { id: { in: ids } },

@@ -14,6 +14,7 @@ import {
   deleteMaterialFolderAction,
 } from "@/actions/materials";
 import { getIeltsLevelsAction } from "@/actions/ielts-levels";
+import { formatDeleteWarnings } from "@/lib/delete-warning";
 import { uploadMaterialFileToServer } from "@/lib/upload-material-client";
 import { ClassDirectoryTab } from "./class-directory-tab";
 import { LevelRepositoryTab, LevelFolderItem } from "./level-repository-tab";
@@ -241,7 +242,13 @@ export function GlobalMaterialsView({
       return;
     }
     startTransition(async () => {
-      const res = await deleteMaterialFolderAction(folderId);
+      let res = await deleteMaterialFolderAction(folderId);
+      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
+        res = await deleteMaterialFolderAction(folderId, true);
+      }
+      if (!res.success && !res.requiresConfirm && res.error) {
+        setToastMessage(res.error);
+      }
       if (res.success) {
         setToastMessage(`Đã xóa bộ học liệu "${folderName}"`);
         await loadLevelRepository();

@@ -1,4 +1,5 @@
 "use client";
+import { formatDeleteWarnings } from "@/lib/delete-warning";
 
 import React, { useState, useEffect, useTransition } from "react";
 import {
@@ -213,7 +214,11 @@ export function ClassMaterialsTab({
   const handleDeleteFolder = async (folderId: string, folderName: string) => {
     if (!window.confirm(`Bạn có chắc chắn muốn xóa thư mục "${folderName}"?`)) return;
     startTransition(async () => {
-      const res = await deleteMaterialFolderAction(folderId);
+      let res = await deleteMaterialFolderAction(folderId);
+      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
+        res = await deleteMaterialFolderAction(folderId, true);
+      }
+      if (!res.success && !res.requiresConfirm && res.error) setToastMsg(res.error);
       if (res.success) {
         setToastMsg(`Đã xóa thư mục "${folderName}"`);
         await loadFolders(currentFolder?.id || null);
@@ -224,7 +229,11 @@ export function ClassMaterialsTab({
   const handleDeleteMaterial = async (materialId: string, title: string) => {
     if (!window.confirm(`Bạn có chắc chắn muốn xóa tài liệu "${title}"?`)) return;
     startTransition(async () => {
-      const res = await deleteLearningMaterialAction(materialId);
+      let res = await deleteLearningMaterialAction(materialId);
+      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
+        res = await deleteLearningMaterialAction(materialId, true);
+      }
+      if (!res.success && !res.requiresConfirm && res.error) setToastMsg(res.error);
       if (res.success && currentFolder) {
         setToastMsg(`Đã xóa tài liệu "${title}"`);
         await loadMaterials(currentFolder.id);
