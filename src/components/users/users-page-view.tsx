@@ -109,22 +109,16 @@ export function UsersPageView({
         const res = await deleteMultipleUsersAction(idsToDelete);
         if (res?.requiresConfirm) {
           setLocalUsers(users);
-          setConfirmModal({
-            open: true,
-            title: "Cảnh báo trước khi xóa các tài khoản đã chọn",
-            description: formatDeleteWarnings(res.warnings),
-            action: async () => {
-              setActionError("");
-              setLocalUsers((prev) => prev.filter((u) => !idsToDelete.includes(u.id)));
-              const forced = await deleteMultipleUsersAction(idsToDelete, true);
-              if (!forced?.success) {
-                setLocalUsers(users);
-                setActionError(forced?.error || "Không thể xóa các tài khoản đã chọn!");
-                return;
-              }
-              await onRefresh();
-            },
-          });
+          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
+          setActionError("");
+          setLocalUsers((prev) => prev.filter((u) => !idsToDelete.includes(u.id)));
+          const forced = await deleteMultipleUsersAction(idsToDelete, true);
+          if (!forced?.success) {
+            setLocalUsers(users);
+            setActionError(forced?.error || "Không thể xóa các tài khoản đã chọn!");
+            return;
+          }
+          await onRefresh();
           return;
         }
         if (!res?.success) {
@@ -149,22 +143,16 @@ export function UsersPageView({
         const res = await deleteUserAction(id);
         if (res?.requiresConfirm) {
           setLocalUsers(users);
-          setConfirmModal({
-            open: true,
-            title: "Cảnh báo trước khi xóa người dùng",
-            description: formatDeleteWarnings(res.warnings),
-            action: async () => {
-              setActionError("");
-              setLocalUsers((prev) => prev.filter((u) => u.id !== id));
-              const forced = await deleteUserAction(id, true);
-              if (!forced?.success) {
-                setLocalUsers(users);
-                setActionError(forced?.error || "Không thể xóa tài khoản người dùng!");
-                return;
-              }
-              await onRefresh();
-            },
-          });
+          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
+          setActionError("");
+          setLocalUsers((prev) => prev.filter((u) => u.id !== id));
+          const forced = await deleteUserAction(id, true);
+          if (!forced?.success) {
+            setLocalUsers(users);
+            setActionError(forced?.error || "Không thể xóa tài khoản người dùng!");
+            return;
+          }
+          await onRefresh();
           return;
         }
         if (!res?.success) {

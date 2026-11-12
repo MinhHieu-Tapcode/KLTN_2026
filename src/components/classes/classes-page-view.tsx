@@ -108,22 +108,16 @@ export function ClassesPageView({
         const res = await deleteMultipleClassesAction(toDeleteIds);
         if (res?.requiresConfirm) {
           setLocalClasses(classes);
-          setConfirmModal({
-            open: true,
-            title: "Cảnh báo trước khi xóa các lớp học đã chọn",
-            description: formatDeleteWarnings(res.warnings),
-            action: async () => {
-              setActionError("");
-              setLocalClasses((prev) => prev.filter((c) => !toDeleteIds.includes(c.id)));
-              const forced = await deleteMultipleClassesAction(toDeleteIds, true);
-              if (!forced?.success) {
-                setLocalClasses(classes);
-                setActionError(forced?.error || "Không thể xóa các lớp học đã chọn!");
-                return;
-              }
-              onRefresh();
-            },
-          });
+          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
+          setActionError("");
+          setLocalClasses((prev) => prev.filter((c) => !toDeleteIds.includes(c.id)));
+          const forced = await deleteMultipleClassesAction(toDeleteIds, true);
+          if (!forced?.success) {
+            setLocalClasses(classes);
+            setActionError(forced?.error || "Không thể xóa các lớp học đã chọn!");
+            return;
+          }
+          onRefresh();
           return;
         }
         if (!res?.success) {
@@ -147,22 +141,16 @@ export function ClassesPageView({
         const res = await deleteClassAction(cls.id);
         if (res?.requiresConfirm) {
           setLocalClasses(classes);
-          setConfirmModal({
-            open: true,
-            title: "Cảnh báo trước khi xóa lớp học",
-            description: formatDeleteWarnings(res.warnings),
-            action: async () => {
-              setActionError("");
-              setLocalClasses((prev) => prev.filter((c) => c.id !== cls.id));
-              const forced = await deleteClassAction(cls.id, true);
-              if (!forced?.success) {
-                setLocalClasses(classes);
-                setActionError(forced?.error || "Không thể xóa lớp học!");
-                return;
-              }
-              onRefresh();
-            },
-          });
+          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
+          setActionError("");
+          setLocalClasses((prev) => prev.filter((c) => c.id !== cls.id));
+          const forced = await deleteClassAction(cls.id, true);
+          if (!forced?.success) {
+            setLocalClasses(classes);
+            setActionError(forced?.error || "Không thể xóa lớp học!");
+            return;
+          }
+          onRefresh();
           return;
         }
         if (!res?.success) {

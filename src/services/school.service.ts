@@ -425,6 +425,11 @@ export async function deleteSchoolService(id: string, opts?: DeleteOptions) {
       });
     } else {
       const demo = DEMO_SCHOOLS.find((s) => s.id === id);
+      const demoClasses = hydrateDemoSchools({ statusFilter: "ALL" }).find((s) => s.id === id)?._count?.classes || 0;
+      if (demoClasses > 0 && !opts?.confirmed) {
+        const warnings = [`Trường còn ${demoClasses} lớp học đang hoạt động. Các lớp này sẽ không còn trường quản lý.`];
+        return { success: false, error: `Cần xác nhận: ${warnings.join(" ")}`, requiresConfirm: true, warnings };
+      }
       if (demo) demo.isActive = false;
     }
     return { success: true };
@@ -466,6 +471,15 @@ export async function deleteMultipleSchoolsService(ids: string[], opts?: DeleteO
         data: { isActive: false },
       });
     } else {
+      const demoWarnings: string[] = [];
+      for (const sid of ids) {
+        const info = hydrateDemoSchools({ statusFilter: "ALL" }).find((s) => s.id === sid);
+        const n = info?._count?.classes || 0;
+        if (n > 0) demoWarnings.push(`[${info?.name}] Trường còn ${n} lớp học đang hoạt động. Các lớp này sẽ không còn trường quản lý.`);
+      }
+      if (demoWarnings.length > 0 && !opts?.confirmed) {
+        return { success: false, error: `Cần xác nhận: ${demoWarnings.join(" ")}`, requiresConfirm: true, warnings: demoWarnings };
+      }
       DEMO_SCHOOLS.forEach((s) => {
         if (ids.includes(s.id)) s.isActive = false;
       });
