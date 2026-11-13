@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, isDbAlive } from "@/lib/prisma";
 
 /**
  * Các quy tắc nghiệp vụ (business rule) kiểm tra TRƯỚC KHI xóa mềm (isActive: false).
@@ -51,8 +51,9 @@ async function schoolImpact(schoolId: string): Promise<DeleteImpact> {
     const students = await prisma.classEnrollment.count({
       where: { classId: { in: classes.map((c) => c.id) }, status: "STUDYING" },
     });
+    const studentNote = students > 0 ? ` (tổng ${students} học viên đang học)` : "";
     out.warnings.push(
-      `Trường còn ${classes.length} lớp học đang hoạt động (tổng ${students} học viên đang học). Các lớp này sẽ không còn trường quản lý.`
+      `Trường còn ${classes.length} lớp học đang hoạt động${studentNote}. Các lớp này sẽ không còn trường quản lý.`
     );
   }
   return out;
@@ -156,10 +157,11 @@ async function materialFolderImpact(folderId: string): Promise<DeleteImpact> {
     }),
   ]);
 
-  if (mats.length > 0 || subFoldersCount > 0) {
-    out.warnings.push(
-      `Thư mục này còn chứa ${mats.length} tài liệu và ${subFoldersCount} thư mục con đang hoạt động.`
-    );
+  const parts: string[] = [];
+  if (mats.length > 0) parts.push(`${mats.length} tài liệu`);
+  if (subFoldersCount > 0) parts.push(`${subFoldersCount} thư mục con`);
+  if (parts.length > 0) {
+    out.warnings.push(`Thư mục này còn chứa ${parts.join(" và ")} đang hoạt động.`);
   }
 
   const urls = mats.map((m) => m.fileUrl).filter(Boolean);
@@ -263,6 +265,36 @@ export async function checkAssignmentDeletable(
 }
 
 /**
+ * Lấy tác động gộp cho 1 hoặc nhiều đối tượng (dùng cho pre-check UI và checkAllDeletable).
+ * Nếu chỉ có 1 id thì giữ nguyên câu cảnh báo gọn, nhiều id thì gắn tiền tố `[Tên]`.
+ */
+export async function getBatchDeleteImpact(
+  kind: DeleteKind,
+  ids: string[],
+  opts?: { classId?: string }
+): Promise<DeleteImpact> {
+  if (ids.length === 0) return empty();
+  if (!(await isDbAlive())) return empty();
+
+  if (ids.length === 1) {
+    return getDeleteImpact(kind, ids[0], opts);
+  }
+
+  const out = empty();
+  for (const id of ids) {
+    const impact = await getDeleteImpact(kind, id, opts);
+    if (impact.blockers.length > 0) {
+      out.blockers.push(...impact.blockers);
+      return out;
+    }
+    for (const w of impact.warnings) {
+      out.warnings.push(impact.label ? `[${impact.label}] ${w}` : w);
+    }
+  }
+  return out;
+}
+
+/**
  * Kiểm tra nhiều đối tượng (xóa hàng loạt): dừng ở chặn cứng đầu tiên; các cảnh báo được GỘP
  * kèm tên từng đối tượng để người dùng xác nhận một lần.
  */
@@ -271,19 +303,5 @@ export async function checkAllDeletable(
   kind: DeleteKind,
   opts?: DeleteOptions
 ): Promise<DeleteCheck> {
-  const warnings: string[] = [];
-  for (const id of ids) {
-    const impact = await getDeleteImpact(kind, id);
-    if (impact.blockers.length > 0) return deny(impact.blockers[0]);
-    for (const w of impact.warnings) warnings.push(impact.label ? `[${impact.label}] ${w}` : w);
-  }
-  if (warnings.length > 0 && !opts?.confirmed) {
-    return {
-      ok: false,
-      error: `Cần xác nhận: ${warnings.join(" ")}`,
-      requiresConfirm: true,
-      warnings,
-    };
-  }
-  return OK;
+  return toCheck(await getBatchDeleteImpact(kind, ids, opts), opts?.confirmed);
 }

@@ -14,7 +14,7 @@ import {
   deleteMaterialFolderAction,
 } from "@/actions/materials";
 import { getIeltsLevelsAction } from "@/actions/ielts-levels";
-import { formatDeleteWarnings } from "@/lib/delete-warning";
+import { DeleteConfirmModal, type DeleteTarget } from "@/components/shared/delete-confirm-modal";
 import { uploadMaterialFileToServer } from "@/lib/upload-material-client";
 import { ClassDirectoryTab } from "./class-directory-tab";
 import { LevelRepositoryTab, LevelFolderItem } from "./level-repository-tab";
@@ -53,6 +53,7 @@ export function GlobalMaterialsView({
   const [previewFolderName, setPreviewFolderName] = useState<string>("Tài liệu học tập");
 
   const [toastMessage, setToastMessage] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [, startTransition] = useTransition();
 
   const isAdmin = currentUser.role === "ADMIN" || currentUser.role === "SCHOOL_MANAGER";
@@ -237,23 +238,18 @@ export function GlobalMaterialsView({
     });
   };
 
-  const handleDeleteLevelFolder = async (folderId: string, folderName: string) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa bộ học liệu "${folderName}" khỏi kho chung?`)) {
-      return;
-    }
-    startTransition(async () => {
-      let res = await deleteMaterialFolderAction(folderId);
-      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
-        res = await deleteMaterialFolderAction(folderId, true);
-      }
-      if (!res.success && !res.requiresConfirm && res.error) {
-        setToastMessage(res.error);
-      }
-      if (res.success) {
+  const handleDeleteLevelFolder = (folderId: string, folderName: string) => {
+    setDeleteTarget({
+      kind: "MATERIAL_FOLDER",
+      ids: [folderId],
+      title: "Xác nhận xóa bộ học liệu",
+      description: `Bạn có chắc chắn muốn xóa bộ học liệu "${folderName}" khỏi kho chung?`,
+      onExecute: (confirmed) => deleteMaterialFolderAction(folderId, confirmed),
+      onSuccess: async () => {
         setToastMessage(`Đã xóa bộ học liệu "${folderName}"`);
         await loadLevelRepository();
         onRefreshAll?.();
-      }
+      },
     });
   };
 
@@ -361,6 +357,8 @@ export function GlobalMaterialsView({
           }}
         />
       )}
+
+      <DeleteConfirmModal target={deleteTarget} onClose={() => setDeleteTarget(null)} />
 
       {/* Toast thông báo */}
       {toastMessage && (

@@ -1,7 +1,6 @@
 "use client";
-import { formatDeleteWarnings } from "@/lib/delete-warning";
-
 import React, { useState, useEffect, useTransition } from "react";
+import { DeleteConfirmModal, type DeleteTarget } from "@/components/shared/delete-confirm-modal";
 import {
   Folder,
   FolderPlus,
@@ -68,6 +67,7 @@ export function ClassMaterialsTab({
   const [previewMaterial, setPreviewMaterial] = useState<PreviewableMaterial | null>(null);
   const [editingMaterial, setEditingMaterial] = useState<any | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const isStudent = currentUser.role === "STUDENT";
   const canManage =
@@ -211,33 +211,31 @@ export function ClassMaterialsTab({
     });
   };
 
-  const handleDeleteFolder = async (folderId: string, folderName: string) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa thư mục "${folderName}"?`)) return;
-    startTransition(async () => {
-      let res = await deleteMaterialFolderAction(folderId);
-      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
-        res = await deleteMaterialFolderAction(folderId, true);
-      }
-      if (!res.success && !res.requiresConfirm && res.error) setToastMsg(res.error);
-      if (res.success) {
+  const handleDeleteFolder = (folderId: string, folderName: string) => {
+    setDeleteTarget({
+      kind: "MATERIAL_FOLDER",
+      ids: [folderId],
+      title: "Xác nhận xóa thư mục học liệu",
+      description: `Bạn có chắc chắn muốn xóa thư mục "${folderName}"?`,
+      onExecute: (confirmed) => deleteMaterialFolderAction(folderId, confirmed),
+      onSuccess: async () => {
         setToastMsg(`Đã xóa thư mục "${folderName}"`);
         await loadFolders(currentFolder?.id || null);
-      }
+      },
     });
   };
 
-  const handleDeleteMaterial = async (materialId: string, title: string) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa tài liệu "${title}"?`)) return;
-    startTransition(async () => {
-      let res = await deleteLearningMaterialAction(materialId);
-      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
-        res = await deleteLearningMaterialAction(materialId, true);
-      }
-      if (!res.success && !res.requiresConfirm && res.error) setToastMsg(res.error);
-      if (res.success && currentFolder) {
+  const handleDeleteMaterial = (materialId: string, title: string) => {
+    setDeleteTarget({
+      kind: "MATERIAL",
+      ids: [materialId],
+      title: "Xác nhận xóa tài liệu",
+      description: `Bạn có chắc chắn muốn xóa tài liệu "${title}"?`,
+      onExecute: (confirmed) => deleteLearningMaterialAction(materialId, confirmed),
+      onSuccess: async () => {
         setToastMsg(`Đã xóa tài liệu "${title}"`);
-        await loadMaterials(currentFolder.id);
-      }
+        if (currentFolder) await loadMaterials(currentFolder.id);
+      },
     });
   };
 
@@ -599,6 +597,8 @@ export function ClassMaterialsTab({
           </div>
         </div>
       )}
+
+      <DeleteConfirmModal target={deleteTarget} onClose={() => setDeleteTarget(null)} />
 
       {/* Toast thông báo */}
       {toastMsg && (

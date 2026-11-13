@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
@@ -50,6 +50,9 @@ export function AssignmentEditModal({ assignmentId, onClose, onSaved }: Props) {
   const [duration, setDuration] = useState<string>("");
   const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
   const [questions, setQuestions] = useState<EditableQuestion[]>([]);
+  const [regradePrompt, setRegradePrompt] = useState<{ assignmentId: string; submissionCount: number } | null>(null);
+  const [regrading, setRegrading] = useState(false);
+  const [regradeError, setRegradeError] = useState("");
 
   useEffect(() => {
     if (!assignmentId) return;
@@ -57,6 +60,8 @@ export function AssignmentEditModal({ assignmentId, onClose, onSaved }: Props) {
     (async () => {
       setLoading(true);
       setError("");
+      setRegradePrompt(null);
+      setRegradeError("");
       const res: any = await getAssignmentForEditAction(assignmentId);
       if (cancelled) return;
       if (!res?.success) {
@@ -139,21 +144,39 @@ export function AssignmentEditModal({ assignmentId, onClose, onSaved }: Props) {
       setError(res?.error || "Không thể lưu thay đổi!");
       return;
     }
-    if (
-      res.needsRegrade &&
-      window.confirm(
-        `Bạn vừa đổi đáp án/điểm của câu đã có bài làm (${res.submissionCount} bài nộp). Chấm lại tự động các bài trắc nghiệm theo đáp án mới?`
-      )
-    ) {
-      const r: any = await regradeAfterEditAction(assignmentId);
-      if (!r?.success) window.alert(r?.error || "Chấm lại thất bại, bạn có thể chấm lại thủ công sau.");
+    onSaved();
+    if (res.needsRegrade) {
+      setRegradeError("");
+      setRegradePrompt({ assignmentId, submissionCount: res.submissionCount || 0 });
+      return;
     }
+    onClose();
+  };
+
+  const handleConfirmRegrade = async () => {
+    if (!regradePrompt) return;
+    setRegrading(true);
+    setRegradeError("");
+    const r: any = await regradeAfterEditAction(regradePrompt.assignmentId);
+    setRegrading(false);
+    if (!r?.success) {
+      setRegradeError(r?.error || "Chấm lại thất bại, bạn có thể chấm lại thủ công sau.");
+      return;
+    }
+    setRegradePrompt(null);
     onSaved();
     onClose();
   };
 
+  const handleSkipRegrade = () => {
+    if (regrading) return;
+    setRegradePrompt(null);
+    onClose();
+  };
+
   return (
-    <Dialog open={!!assignmentId} onOpenChange={(o) => !o && !saving && onClose()}>
+    <>
+    <Dialog open={!!assignmentId && !regradePrompt} onOpenChange={(o) => !o && !saving && onClose()}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Chỉnh sửa bài tập</DialogTitle>
@@ -254,5 +277,34 @@ export function AssignmentEditModal({ assignmentId, onClose, onSaved }: Props) {
         </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={Boolean(regradePrompt)} onOpenChange={(o) => !o && handleSkipRegrade()}>
+      <DialogContent className="max-w-md rounded-2xl p-6 bg-white shadow-xl">
+        <div className="text-center space-y-3.5">
+          <div className="size-12 rounded-2xl bg-orange-100 text-[#EA580C] grid place-items-center mx-auto">
+            <RefreshCw className="size-6" />
+          </div>
+          <div>
+            <DialogTitle className="text-base font-bold text-slate-900">Chấm lại bài nộp tự động</DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+              Bạn vừa thay đổi đáp án hoặc điểm của câu đã có bài làm ({regradePrompt?.submissionCount || 0} bài nộp). Bạn có muốn chấm lại tự động các bài trắc nghiệm theo đáp án mới không?
+            </DialogDescription>
+          </div>
+          {regradeError && (
+            <p className="text-xs text-rose-600 bg-rose-50 rounded-lg px-3 py-2 text-left">{regradeError}</p>
+          )}
+          <div className="flex items-center gap-2 pt-1">
+            <Button type="button" variant="outline" onClick={handleSkipRegrade} disabled={regrading} className="flex-1 text-xs rounded-xl h-9">
+              Để sau
+            </Button>
+            <Button type="button" onClick={handleConfirmRegrade} disabled={regrading} className="flex-1 text-xs rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white font-semibold h-9">
+              {regrading && <Loader2 className="size-3.5 animate-spin mr-1" />}
+              {regrading ? "Đang chấm..." : "Chấm lại ngay"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

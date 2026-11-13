@@ -1,11 +1,9 @@
 "use client";
-import { formatDeleteWarnings } from "@/lib/delete-warning";
-
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect } from "react";
 import { FileSpreadsheet, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteUserAction, deleteMultipleUsersAction } from "@/actions/users";
-import { ConfirmDialog } from "@/components/shared/common-widgets";
+import { DeleteConfirmModal, type DeleteTarget } from "@/components/shared/delete-confirm-modal";
 import { UserTableRow } from "./user-edit-modal";
 
 export function UsersPageView({
@@ -34,8 +32,8 @@ export function UsersPageView({
   const [tab, setTab] = useState("Tất cả");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [isDeleting, startTransition] = useTransition();
   const [localUsers, setLocalUsers] = useState(users);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   useEffect(() => {
     setLocalUsers(users);
@@ -83,83 +81,32 @@ export function UsersPageView({
     );
   };
 
-  const [confirmModal, setConfirmModal] = useState<{
-    open: boolean;
-    title: string;
-    description: string;
-    action: () => Promise<void>;
-  }>({
-    open: false,
-    title: "",
-    description: "",
-    action: async () => {},
-  });
-  const [actionError, setActionError] = useState("");
-
   const handleBatchDelete = () => {
     const idsToDelete = [...selectedIds];
-    setConfirmModal({
-      open: true,
+    setDeleteTarget({
+      kind: "USER",
+      ids: idsToDelete,
       title: "Xác nhận xóa người dùng đã chọn",
       description: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} người dùng đã chọn khỏi hệ thống?`,
-      action: async () => {
-        setActionError("");
+      onExecute: (confirmed) => deleteMultipleUsersAction(idsToDelete, confirmed),
+      onSuccess: async () => {
         setLocalUsers((prev) => prev.filter((u) => !idsToDelete.includes(u.id)));
         setSelectedIds([]);
-        const res = await deleteMultipleUsersAction(idsToDelete);
-        if (res?.requiresConfirm) {
-          setLocalUsers(users);
-          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
-          setActionError("");
-          setLocalUsers((prev) => prev.filter((u) => !idsToDelete.includes(u.id)));
-          const forced = await deleteMultipleUsersAction(idsToDelete, true);
-          if (!forced?.success) {
-            setLocalUsers(users);
-            setActionError(forced?.error || "Không thể xóa các tài khoản đã chọn!");
-            return;
-          }
-          await onRefresh();
-          return;
-        }
-        if (!res?.success) {
-          setLocalUsers(users);
-          setActionError(res?.error || "Không thể xóa các tài khoản đã chọn!");
-          return;
-        }
         await onRefresh();
       },
     });
   };
 
   const handleDeleteSingle = (id: string, name?: string) => {
-    setConfirmModal({
-      open: true,
+    setDeleteTarget({
+      kind: "USER",
+      ids: [id],
       title: "Xác nhận xóa người dùng",
       description: `Bạn có chắc chắn muốn xóa tài khoản ${name ? `"${name}"` : "này"} khỏi hệ thống?`,
-      action: async () => {
-        setActionError("");
+      onExecute: (confirmed) => deleteUserAction(id, confirmed),
+      onSuccess: async () => {
         setLocalUsers((prev) => prev.filter((u) => u.id !== id));
         setSelectedIds((prev) => prev.filter((x) => x !== id));
-        const res = await deleteUserAction(id);
-        if (res?.requiresConfirm) {
-          setLocalUsers(users);
-          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
-          setActionError("");
-          setLocalUsers((prev) => prev.filter((u) => u.id !== id));
-          const forced = await deleteUserAction(id, true);
-          if (!forced?.success) {
-            setLocalUsers(users);
-            setActionError(forced?.error || "Không thể xóa tài khoản người dùng!");
-            return;
-          }
-          await onRefresh();
-          return;
-        }
-        if (!res?.success) {
-          setLocalUsers(users);
-          setActionError(res?.error || "Không thể xóa tài khoản người dùng!");
-          return;
-        }
         await onRefresh();
       },
     });
@@ -167,18 +114,6 @@ export function UsersPageView({
 
   return (
     <section className="panel overflow-hidden">
-      {actionError && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
-          <span>{actionError}</span>
-          <button
-            type="button"
-            onClick={() => setActionError("")}
-            className="ml-3 text-xs font-bold text-red-600 hover:underline"
-          >
-            Đóng
-          </button>
-        </div>
-      )}
       <div className="mb-4 flex gap-6 overflow-x-auto border-b border-[#E2E8F0]">
         {roleTabs.map((t) => (
           <button
@@ -210,7 +145,7 @@ export function UsersPageView({
               variant="destructive"
               size="sm"
               onClick={handleBatchDelete}
-              disabled={isDeleting}
+              disabled={Boolean(deleteTarget)}
               className="rounded-xl shadow-sm"
             >
               <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) người dùng đã chọn
@@ -274,20 +209,7 @@ export function UsersPageView({
         </table>
       </div>
 
-      <ConfirmDialog
-        open={confirmModal.open}
-        onOpenChange={(open) => setConfirmModal((prev) => ({ ...prev, open }))}
-        title={confirmModal.title}
-        description={confirmModal.description}
-        isPending={isDeleting}
-        onConfirm={() => {
-          const action = confirmModal.action;
-          setConfirmModal((prev) => ({ ...prev, open: false }));
-          startTransition(async () => {
-            await action();
-          });
-        }}
-      />
+      <DeleteConfirmModal target={deleteTarget} onClose={() => setDeleteTarget(null)} />
     </section>
   );
 }

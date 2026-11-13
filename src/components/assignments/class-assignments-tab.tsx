@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { AnswerVisibilityMode, validateAssignmentConfig } from "@/lib/assignment-config";
 import { Button } from "@/components/ui/button";
-import { formatDeleteWarnings } from "@/lib/delete-warning";
+import { DeleteConfirmModal, type DeleteTarget } from "@/components/shared/delete-confirm-modal";
 import { AssignmentEditModal } from "@/components/assignments/assignment-edit-modal";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -50,7 +50,6 @@ import {
 } from "@/components/assignments/teacher-grading-modal";
 import {
   AssignmentAlertModal,
-  ConfirmDeleteAssignmentModal,
   ConfirmRegradeAssignmentModal,
   CreateModeChoiceModal,
   ExamResultModal,
@@ -113,14 +112,7 @@ export function ClassAssignmentsTab({
     type: "warning" | "error" | "success" | "info";
   } | null>(null);
 
-  const [confirmDeleteModal, setConfirmDeleteModal] = useState<{
-    isOpen: boolean;
-    assignmentId: string;
-    title: string;
-    assignedClassCount?: number;
-    assignedClassNames?: string[];
-    deleteScope: "CURRENT_CLASS" | "ALL_CLASSES";
-  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const [regradeModal, setRegradeModal] = useState<{
     isOpen: boolean;
@@ -232,31 +224,15 @@ export function ClassAssignmentsTab({
   }, [classId]);
 
   const handleDeleteAssignment = (assignment: any) => {
-    setConfirmDeleteModal({
-      isOpen: true,
-      assignmentId: assignment.id,
-      title: assignment.title,
-      assignedClassCount: assignment.assignedClassCount || 1,
-      assignedClassNames: assignment.assignedClassNames || [],
-      deleteScope: "CURRENT_CLASS",
-    });
-  };
-
-  const executeDeleteAssignment = () => {
-    if (!confirmDeleteModal) return;
-    const { assignmentId, deleteScope } = confirmDeleteModal;
-    setConfirmDeleteModal(null);
-
-    startTransition(async () => {
-      let res = await deleteAssignmentAction(
-        assignmentId,
-        classId,
-        deleteScope === "ALL_CLASSES"
-      );
-      if (res.requiresConfirm && window.confirm(formatDeleteWarnings(res.warnings))) {
-        res = await deleteAssignmentAction(assignmentId, classId, deleteScope === "ALL_CLASSES", true);
-      }
-      if (res.success) {
+    setDeleteTarget({
+      kind: "ASSIGNMENT",
+      ids: [assignment.id],
+      classId,
+      title: "Xác nhận xóa bài tập",
+      description: `Bạn có chắc muốn xóa bài tập "${assignment.title}"? Hệ thống sẽ chuyển trạng thái sang xóa mềm để bảo toàn lịch sử học tập.`,
+      confirmLabel: "Xác nhận xóa",
+      onExecute: (confirmed) => deleteAssignmentAction(assignment.id, classId, false, confirmed),
+      onSuccess: (res) => {
         if (res.deletedFromAll) {
           showAlert("Thành công", "Đã xóa hoàn toàn bài tập ở tất cả các lớp học!", "success");
         } else {
@@ -267,9 +243,7 @@ export function ClassAssignmentsTab({
           );
         }
         loadAssignments();
-      } else {
-        showAlert("Lỗi", res.error || "Xóa bài tập thất bại!", "error");
-      }
+      },
     });
   };
 
@@ -1045,12 +1019,7 @@ export function ClassAssignmentsTab({
 
       <AssignmentAlertModal alertModal={alertModal} onClose={() => setAlertModal(null)} />
 
-      <ConfirmDeleteAssignmentModal
-        confirmDeleteModal={confirmDeleteModal}
-        isPending={isPending}
-        onClose={() => setConfirmDeleteModal(null)}
-        onConfirm={executeDeleteAssignment}
-      />
+      <DeleteConfirmModal target={deleteTarget} onClose={() => setDeleteTarget(null)} />
 
       <ConfirmRegradeAssignmentModal
         regradeModal={regradeModal}

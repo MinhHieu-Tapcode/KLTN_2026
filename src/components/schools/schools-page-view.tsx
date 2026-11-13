@@ -1,7 +1,5 @@
 "use client";
-import { formatDeleteWarnings } from "@/lib/delete-warning";
-
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect } from "react";
 import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +9,7 @@ import {
   checkSchoolManagerScheduleConflictAction,
   changeSchoolManagerAction,
 } from "@/actions/schools";
-import { ConfirmDialog } from "@/components/shared/common-widgets";
+import { DeleteConfirmModal, type DeleteTarget } from "@/components/shared/delete-confirm-modal";
 import { SchoolDetailDrawer } from "@/components/schools/school-detail-drawer";
 import { SchoolClassesModal } from "@/components/schools/school-classes-modal";
 import {
@@ -42,9 +40,8 @@ export function SchoolsPageView({
   const [search, setSearch] = useState("");
   const [statusFilter] = useState<"ACTIVE" | "INACTIVE" | "ALL">("ACTIVE");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [isDeleting, startTransition] = useTransition();
   const [localSchools, setLocalSchools] = useState(schools);
-  const [actionError, setActionError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [selectedSchoolDetail, setSelectedSchoolDetail] = useState<any>(null);
   const [selectedSchoolForClasses, setSelectedSchoolForClasses] = useState<any>(null);
   const [managersList, setManagersList] = useState<any[]>(managers);
@@ -147,81 +144,32 @@ export function SchoolsPageView({
     );
   };
 
-  const [confirmModal, setConfirmModal] = useState<{
-    open: boolean;
-    title: string;
-    description: string;
-    action: () => Promise<void>;
-  }>({
-    open: false,
-    title: "",
-    description: "",
-    action: async () => {},
-  });
-
   const handleBatchDelete = () => {
     const idsToDelete = [...selectedIds];
-    setConfirmModal({
-      open: true,
+    setDeleteTarget({
+      kind: "SCHOOL",
+      ids: idsToDelete,
       title: "Xác nhận xóa các trường học đã chọn",
       description: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} trường học đã chọn khỏi hệ thống?`,
-      action: async () => {
-        setActionError("");
+      onExecute: (confirmed) => deleteMultipleSchoolsAction(idsToDelete, confirmed),
+      onSuccess: () => {
         setLocalSchools((prev) => prev.filter((s) => !idsToDelete.includes(s.id)));
         setSelectedIds([]);
-        const res = await deleteMultipleSchoolsAction(idsToDelete);
-        if (res?.requiresConfirm) {
-          setLocalSchools(schools);
-          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
-          setActionError("");
-          setLocalSchools((prev) => prev.filter((s) => !idsToDelete.includes(s.id)));
-          const forced = await deleteMultipleSchoolsAction(idsToDelete, true);
-          if (!forced?.success) {
-            setLocalSchools(schools);
-            setActionError(forced?.error || "Không thể xóa các trường học đã chọn!");
-            return;
-          }
-          onRefresh();
-          return;
-        }
-        if (!res?.success) {
-          setLocalSchools(schools);
-          setActionError(res?.error || "Không thể xóa các trường học đã chọn!");
-          return;
-        }
         onRefresh();
       },
     });
   };
 
   const handleDeleteSingle = (id: string, name: string, code: string) => {
-    setConfirmModal({
-      open: true,
+    setDeleteTarget({
+      kind: "SCHOOL",
+      ids: [id],
       title: "Xác nhận xóa trường học",
       description: `Bạn có chắc chắn muốn xóa trường "${name}" (Mã trường: ${code}) khỏi hệ thống?`,
-      action: async () => {
-        setActionError("");
+      onExecute: (confirmed) => deleteSchoolAction(id, confirmed),
+      onSuccess: () => {
         setLocalSchools((prev) => prev.filter((s) => s.id !== id));
-        const res = await deleteSchoolAction(id);
-        if (res?.requiresConfirm) {
-          setLocalSchools(schools);
-          if (!window.confirm(formatDeleteWarnings(res.warnings))) return;
-          setActionError("");
-          setLocalSchools((prev) => prev.filter((s) => s.id !== id));
-          const forced = await deleteSchoolAction(id, true);
-          if (!forced?.success) {
-            setLocalSchools(schools);
-            setActionError(forced?.error || "Không thể xóa trường học!");
-            return;
-          }
-          onRefresh();
-          return;
-        }
-        if (!res?.success) {
-          setLocalSchools(schools);
-          setActionError(res?.error || "Không thể xóa trường học!");
-          return;
-        }
+        setSelectedIds((prev) => prev.filter((x) => x !== id));
         onRefresh();
       },
     });
@@ -229,18 +177,6 @@ export function SchoolsPageView({
 
   return (
     <section className="panel">
-      {actionError && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
-          <span>{actionError}</span>
-          <button
-            type="button"
-            onClick={() => setActionError("")}
-            className="ml-3 text-xs font-bold text-red-600 hover:underline"
-          >
-            Đóng
-          </button>
-        </div>
-      )}
       <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#94A3B8]" />
@@ -258,7 +194,7 @@ export function SchoolsPageView({
               variant="destructive"
               size="sm"
               onClick={handleBatchDelete}
-              disabled={isDeleting}
+              disabled={Boolean(deleteTarget)}
               className="rounded-xl shadow-sm"
             >
               <Trash2 className="size-4 mr-1.5" /> Xóa ({selectedIds.length}) trường đã chọn
@@ -422,20 +358,7 @@ export function SchoolsPageView({
         onRefresh={onRefresh}
       />
 
-      <ConfirmDialog
-        open={confirmModal.open}
-        onOpenChange={(open) => setConfirmModal((prev) => ({ ...prev, open }))}
-        title={confirmModal.title}
-        description={confirmModal.description}
-        isPending={isDeleting}
-        onConfirm={() => {
-          const action = confirmModal.action;
-          setConfirmModal((prev) => ({ ...prev, open: false }));
-          startTransition(async () => {
-            await action();
-          });
-        }}
-      />
+      <DeleteConfirmModal target={deleteTarget} onClose={() => setDeleteTarget(null)} />
 
       <SchoolUpsertModals
         managerChangeModal={managerChangeModal}

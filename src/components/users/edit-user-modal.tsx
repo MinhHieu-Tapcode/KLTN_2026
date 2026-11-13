@@ -33,6 +33,7 @@ export function EditUserModal({
 }) {
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<RoleCode>(user.role?.code || "STUDENT");
 
   const initialSchools =
@@ -326,20 +327,44 @@ export function EditUserModal({
             </p>
           </div>
 
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
             {canDelete ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  if (confirm(`Bạn có chắc chắn muốn xóa tài khoản "${user.profile?.fullName || user.username}" khỏi hệ thống?`)) {
-                    onDeleteUser?.(user.id, user.profile?.fullName || user.username);
-                  }
-                }}
-                className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 hover:border-red-300 font-semibold text-xs"
-              >
-                <Trash2 className="size-3.5 mr-1 text-red-500" /> Xóa tài khoản
-              </Button>
+              confirmDeleteOpen ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                  <span className="font-medium">
+                    Xác nhận xóa &ldquo;{user.profile?.fullName || user.username}&rdquo;?
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDeleteOpen(false)}
+                    className="h-7 px-2.5 text-xs"
+                  >
+                    Hủy
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setConfirmDeleteOpen(false);
+                      onDeleteUser?.(user.id, user.profile?.fullName || user.username);
+                    }}
+                    className="h-7 bg-red-600 px-2.5 text-xs text-white hover:bg-red-700"
+                  >
+                    Xác nhận xóa
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirmDeleteOpen(true)}
+                  className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 hover:border-red-300 font-semibold text-xs"
+                >
+                  <Trash2 className="size-3.5 mr-1 text-red-500" /> Xóa tài khoản
+                </Button>
+              )
             ) : <div />}
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={onClose}>
