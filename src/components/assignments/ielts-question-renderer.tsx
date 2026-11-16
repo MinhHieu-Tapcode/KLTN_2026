@@ -8,6 +8,7 @@ import { MatchingHeadingsView } from "@/components/assignments/matching-headings
 import { SummaryCompletionView } from "@/components/assignments/summary-completion-view";
 import { SpeakingPartView } from "@/components/assignments/speaking-part-view";
 import { WritingTaskView } from "@/components/assignments/writing-task-view";
+import { mergeWritingPrompt } from "@/components/assignments/task-prompt-text";
 import {
   QuestionGroupCluster,
   SimpaceBookingFormCard,
@@ -427,7 +428,7 @@ export function StandaloneQuestionCard({
       <div id={`q-card-${qNum}`}>
         <WritingTaskView
           taskType={isTask1 ? "TASK_1" : "TASK_2"}
-          prompt={q.passageText ? `${q.passageText}\n\n${q.prompt || ""}` : q.prompt}
+          prompt={mergeWritingPrompt(q.passageText, q.prompt)}
           chartImageUrl={q.imageUrl || null}
           value={studentAnswers[answerKey] || ""}
           onChange={(val) => {

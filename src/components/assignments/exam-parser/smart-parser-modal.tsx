@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useTransition, useEffect } from "react";
-import * as XLSX from "xlsx";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +36,13 @@ import { InvariantsBanner } from "@/components/assignments/invariants-banner";
 import { IeltsExamPlayer } from "@/components/assignments/ielts-exam-player";
 import { EbookTwoColumnViewer } from "./ebook-two-column-viewer";
 import { useExamParserDraft } from "./hooks/use-exam-parser-draft";
+import { useAutoFigureCrop } from "./hooks/use-auto-figure-crop";
+import { ParsedGroupSummary } from "./parsed-group-summary";
+import { UnassignedPanel } from "./unassigned-panel";
+import { findQuestionsMissingAnswer } from "@/lib/exam-parser/answer-normalizer";
+import { applyImportedAnswers, downloadAnswerTemplate } from "@/lib/exam-parser/answer-excel";
+import type { ImportedAnswer } from "@/components/assignments/excel-answer-importer";
+import { pickStructuresForQuestions } from "@/lib/exam-parser/publish-helpers";
 import {
   AssignmentConfigFields,
   AssignmentConfigState,
@@ -102,6 +108,7 @@ export function SmartParserModal({
   });
 
   const { hasDraft, savedTime, saveDraft, getDraft, clearDraft } = useExamParserDraft(primaryClassId);
+  const { autoCropStatus, runAutoCrop } = useAutoFigureCrop(setParsedEbookData, showAlert);
 
   // Tự động lưu nháp mỗi khi dữ liệu Ebook thay đổi
   useEffect(() => {
@@ -198,6 +205,8 @@ export function SmartParserModal({
         );
         setSelectedQuestionNumbers(allNums);
         setIsQuestionsFinalized(false);
+        // Tự cắt ảnh đề gốc cho nhóm dạng ảnh / Map / Diagram / Writing Task 1 (chạy nền, không chặn giao diện)
+        void runAutoCrop(res.parsedData, file);
         showAlert(
           "Nhận diện đề thi thành công!",
           `Đã trích xuất cấu trúc đề thi từ "${file.name}" thành Ebook 2 cột (${allNums.length} câu hỏi). Hãy kiểm tra, đính kèm ảnh Bản đồ/Biểu đồ (nếu có) và chốt danh sách câu hỏi!`,
@@ -232,46 +241,27 @@ export function SmartParserModal({
       showAlert("Chưa chốt câu hỏi", "Vui lòng bấm 'Chốt danh sách câu hỏi sử dụng' trước khi tải file mẫu!", "warning");
       return;
     }
-    const allValidNums = new Set((parsedEbookData?.questions || []).map((q: any) => q.questionNumber));
-    const sortedNums = Array.from(selectedQuestionNumbers).filter((n) => allValidNums.has(n)).sort((a, b) => a - b);
-    const templateData = sortedNums.map((num) => {
-      const targetQ = (parsedEbookData.questions || []).find((q: any) => q.questionNumber === num);
-      let note = "Điền đáp án chuẩn vào cột B";
-      if (targetQ?.type === "TRUE_FALSE_NG") note = "Điền TRUE, FALSE hoặc NOT GIVEN";
-      else if (targetQ?.type === "MULTIPLE_CHOICE") note = "Điền chữ cái A, B, C hoặc D";
-      return { "Số câu": num, "Đáp án chuẩn": targetQ?.correctAnswer || "", "Ghi chú loại câu": note };
-    });
-    const ws = XLSX.utils.json_to_sheet(templateData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "DapAnIELTS");
-    XLSX.writeFile(wb, `SIMPACE_IELTS_${sortedNums.length}_Cau_Dap_An.xlsx`);
+    // 3 cột: Số câu | Đáp án chuẩn | Giải thích (kèm sheet "HuongDan" cách điền)
+    const chosen = (parsedEbookData?.questions || []).filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber));
+    downloadAnswerTemplate(chosen, `SIMPACE_IELTS_${chosen.length}_Cau_Dap_An.xlsx`);
   };
 
-  // Nạp đáp án từ Excel
-  const handleAnswersImported = (excelMap: Map<number, string>, fileName: string) => {
+  // Nạp đáp án + giải thích từ Excel (chuẩn hoá T/F/NG, chữ cái trắc nghiệm để chấm đúng)
+  const handleAnswersImported = (excelMap: Map<number, ImportedAnswer>, fileName: string) => {
     if (!parsedEbookData) return;
-    const updateQuestionList = (list: any[]) =>
-      list.map((q: any, idx: number) => {
-        const num = q.questionNumber || idx + 1;
-        const ans = excelMap.get(num);
-        if (ans !== undefined) {
-          const opts = q.options?.map((opt: any) => ({
-            ...opt,
-            isCorrect: opt.optionLabel.toUpperCase() === ans.toUpperCase(),
-          }));
-          return { ...q, correctAnswer: ans, options: opts || q.options };
-        }
-        return q;
-      });
-
-    const updatedQuestions = updateQuestionList(parsedEbookData.questions || []);
+    const updatedQuestions = applyImportedAnswers(parsedEbookData.questions || [], excelMap);
     const updatedSections = parsedEbookData.sections?.map((sec: any) => ({
       ...sec,
-      questions: updateQuestionList(sec.questions || []),
+      questions: applyImportedAnswers(sec.questions || [], excelMap),
     }));
+    const withExplanation = Array.from(excelMap.values()).filter((r) => r.explanation).length;
 
     setParsedEbookData({ ...parsedEbookData, questions: updatedQuestions, sections: updatedSections });
-    showAlert("Khớp đáp án thành công!", `Đã tự động điền đáp án chuẩn cho các câu hỏi từ "${fileName}".`, "success");
+    showAlert(
+      "Khớp đáp án thành công!",
+      `Đã điền đáp án cho ${excelMap.size} câu${withExplanation ? ` và giải thích cho ${withExplanation} câu` : ""} từ "${fileName}".`,
+      "success"
+    );
   };
 
   // Cập nhật từng trường của câu hỏi
@@ -389,6 +379,19 @@ export function SmartParserModal({
     const activeQuestions = (parsedEbookData.questions || []).filter((q: any) =>
       selectedQuestionNumbers.includes(q.questionNumber)
     );
+
+    // Hệ thống không còn gán đáp án mặc định: chặn phát hành khi câu tự chấm chưa có đáp án chuẩn
+    const missingAnswers = findQuestionsMissingAnswer(activeQuestions as any[]);
+    if (missingAnswers.length > 0) {
+      const nums = missingAnswers.map((q) => q.questionNumber);
+      showAlert(
+        "Còn câu chưa có đáp án chuẩn",
+        `Câu ${nums.slice(0, 15).join(", ")}${nums.length > 15 ? "..." : ""} chưa có đáp án. Hãy nhập đáp án hoặc nạp file Excel đáp án trước khi phát hành, nếu không học viên làm đúng vẫn bị chấm sai.`,
+        "error"
+      );
+      document.getElementById(`ebook-q-card-${nums[0]}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     const hasStructuredTablesOrFlowcharts =
       (parsedEbookData.tables && parsedEbookData.tables.length > 0) ||
       (parsedEbookData.flowcharts && parsedEbookData.flowcharts.length > 0);
@@ -447,8 +450,10 @@ export function SmartParserModal({
       // Chế độ: Tách thành từng bài tập riêng cho từng Section
       if ((hasMultipleSections && publishScope === "SEPARATE_SECTIONS") || (parsedEbookData.skill === "ALL_SKILLS" && parsedEbookData.sections)) {
         const multiple = parsedEbookData.sections.map((sec: any) => {
-          const secQ = (sec.questions || [])
-            .filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber))
+          const rawSecQ = (sec.questions || []).filter((q: any) => selectedQuestionNumbers.includes(q.questionNumber));
+          // Mỗi bài chỉ mang bảng / sơ đồ của chính phần thi đó
+          const secStructures = pickStructuresForQuestions(parsedEbookData, rawSecQ);
+          const secQ = rawSecQ
             .map((q: any, idx: number) => ({
               questionNumber: q.questionNumber || idx + 1,
               passageText: sec.passageText || parsedEbookData.passageText,
@@ -479,10 +484,8 @@ export function SmartParserModal({
             enableProctoring: true,
             maxTabSwitches: 3,
             questions: secQ,
-            flowcharts: parsedEbookData.flowcharts || [],
-            tables: parsedEbookData.tables || [],
-            matchingHeadings: parsedEbookData.matchingHeadings || [],
-            summaries: parsedEbookData.summaries || [],
+            ...secStructures,
+            parserVersion: parsedEbookData.engineInfo?.engine === "claude" ? 2 : 1,
           };
         }).filter((a: any) => a.questions.length > 0);
 
@@ -559,10 +562,8 @@ export function SmartParserModal({
         enableProctoring: true,
         maxTabSwitches: 3,
         questions: filteredQ,
-        flowcharts: parsedEbookData.flowcharts || [],
-        tables: parsedEbookData.tables || [],
-        matchingHeadings: parsedEbookData.matchingHeadings || [],
-        summaries: parsedEbookData.summaries || [],
+        ...pickStructuresForQuestions(parsedEbookData, questionsToSave),
+        parserVersion: parsedEbookData.engineInfo?.engine === "claude" ? 2 : 1,
       });
 
       if (res.success) {
@@ -779,6 +780,18 @@ export function SmartParserModal({
               {parsedEbookData.invariantsReport && (
                 <InvariantsBanner report={parsedEbookData.invariantsReport} />
               )}
+
+              {/* Trạng thái từng nhóm câu + ảnh đề gốc (pipeline Claude) */}
+              <ParsedGroupSummary
+                parsedEbookData={parsedEbookData}
+                setParsedEbookData={setParsedEbookData}
+                activeSectionId={activeEbookSectionId}
+                pdfFile={parserPdfFile}
+                autoCropStatus={autoCropStatus}
+                isLocked={isQuestionsFinalized}
+                showAlert={showAlert}
+              />
+              <UnassignedPanel items={parsedEbookData.unassigned} />
 
               {/* Ebook 2 Cột */}
               <EbookTwoColumnViewer

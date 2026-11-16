@@ -125,6 +125,7 @@ export async function createAssignmentAction(data: {
   tables?: any[];
   matchingHeadings?: any[];
   summaries?: any[];
+  parserVersion?: number;
   questions: Array<{
     questionNumber: number;
     passageText?: string;
@@ -422,6 +423,7 @@ export async function createMultipleAssignmentsAction(
     tables?: any[];
     matchingHeadings?: any[];
     summaries?: any[];
+    parserVersion?: number;
     questions: Array<any>;
   }>
 ): Promise<{ success: boolean; count?: number; assignmentIds?: string[]; error?: string }> {

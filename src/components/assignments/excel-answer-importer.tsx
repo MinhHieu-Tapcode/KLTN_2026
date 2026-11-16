@@ -5,10 +5,16 @@ import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet } from "lucide-react";
 
+/** Một dòng Excel: Cột A số câu, Cột B đáp án chuẩn, Cột C giải thích (tuỳ chọn) */
+export interface ImportedAnswer {
+  answer: string;
+  explanation: string;
+}
+
 interface ExcelAnswerImporterProps {
   isQuestionsFinalized: boolean;
   selectedQuestionNumbers: number[];
-  onAnswersImported: (answersMap: Map<number, string>, fileName: string) => void;
+  onAnswersImported: (answersMap: Map<number, ImportedAnswer>, fileName: string) => void;
   showAlert: (title: string, message: string, type?: "info" | "success" | "warning" | "error") => void;
   disabled?: boolean;
 }
@@ -56,7 +62,7 @@ export function ExcelAnswerImporter({
         return;
       }
 
-      const answersMap = new Map<number, string>();
+      const answersMap = new Map<number, ImportedAnswer>();
 
       // Duyệt qua từng dòng dữ liệu (tự động bỏ qua dòng tiêu đề)
       for (let i = 0; i < rows.length; i++) {
@@ -65,22 +71,24 @@ export function ExcelAnswerImporter({
 
         const colA = String(row[0] ?? "").trim();
         const colB = String(row[1] ?? "").trim();
+        // Cột C: giải thích đáp án (file mẫu cũ 2 cột vẫn đọc được, khi đó để trống)
+        const colC = String(row[2] ?? "").trim();
 
-        // Bỏ qua dòng tiêu đề nếu chứa chữ: Câu số, Câu, Question, No, STT...
-        if (/^(câu\s*số|câu|question|no|stt|q\b)/i.test(colA)) {
+        // Bỏ qua dòng tiêu đề nếu chứa chữ: Số câu, Câu số, Câu, Question, No, STT...
+        if (/^(số\s*câu|câu\s*số|câu|question|no|stt|q\b)/i.test(colA)) {
           continue;
         }
 
         const qNum = parseInt(colA.replace(/\D/g, ""), 10);
-        if (!isNaN(qNum) && qNum > 0 && colB.length > 0) {
-          answersMap.set(qNum, colB);
+        if (!isNaN(qNum) && qNum > 0 && (colB.length > 0 || colC.length > 0)) {
+          answersMap.set(qNum, { answer: colB, explanation: colC });
         }
       }
 
       if (answersMap.size === 0) {
         showAlert(
           "Không tìm thấy đáp án hợp lệ",
-          "Vui lòng đảm bảo Cột A là số thứ tự câu hỏi (ví dụ: 14, 15...) và Cột B là đáp án (ví dụ: 1, A, TRUE...)!",
+          "Vui lòng đảm bảo Cột A là số câu (ví dụ: 14, 15...), Cột B là đáp án chuẩn (ví dụ: A, TRUE, grape skins) và Cột C là giải thích (nếu có)!",
           "warning"
         );
         return;
@@ -121,7 +129,7 @@ export function ExcelAnswerImporter({
         className="h-8 text-xs font-semibold rounded-xl border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 hover:text-emerald-950 shadow-2xs gap-1.5"
       >
         <FileSpreadsheet className="size-3.5 text-emerald-700" />
-        Nạp Đáp án Excel (2 Cột)
+        Nạp Đáp án Excel (3 Cột)
       </Button>
     </div>
   );

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Mic, Square, Play, Pause, Clock, User, Upload, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { uploadMaterialFileClient } from "@/lib/upload-material-client";
+import { SpeakingPartHeader, SpeakingQuestionList } from "@/components/assignments/speaking-question-list";
 
 interface SpeakingPartViewProps {
   part: "PART_1" | "PART_2" | "PART_3";
@@ -16,10 +17,13 @@ interface SpeakingPartViewProps {
 }
 
 function parseCueCardFromText(rawText: string, explicitBullets?: string[]) {
+  // Câu hỏi phụ của giám khảo (sau phần nói) nằm sau dòng "Follow-up questions:"
+  const [cardPart, ...followParts] = (rawText || "").split(/^\s*follow-up questions:?\s*$/im);
+  const followUps = followParts.join("\n").trim();
   if (explicitBullets && explicitBullets.length > 0) {
-    return { mainTopic: rawText, bullets: explicitBullets };
+    return { mainTopic: cardPart.trim(), bullets: explicitBullets, followUps };
   }
-  const lines = (rawText || "")
+  const lines = cardPart
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
@@ -40,6 +44,7 @@ function parseCueCardFromText(rawText: string, explicitBullets?: string[]) {
   }
 
   return {
+    followUps,
     mainTopic: topicLines.join(" ") || "Talk about a place you would like to visit.",
     bullets:
       bullets.length > 0
@@ -76,7 +81,7 @@ export function SpeakingPartView({
   const [cuePhase, setCuePhase] = useState<"PREP" | "SPEAK">("PREP");
   const [notes, setNotes] = useState("");
 
-  const { mainTopic, bullets } = parseCueCardFromText(questionText, cueCardBulletPoints);
+  const { mainTopic, bullets, followUps } = parseCueCardFromText(questionText, cueCardBulletPoints);
 
   useEffect(() => {
     if (part !== "PART_2") return;
@@ -187,40 +192,27 @@ export function SpeakingPartView({
     <div className="space-y-4">
       {part !== "PART_2" ? (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-[#EA580C] text-white font-bold text-[11px]">
-              Speaking
-            </span>
-            <span className="text-xs font-extrabold text-slate-900">
-              {part === "PART_1" ? "Part 1 — Introduction & Interview" : "Part 3 — Two-way Discussion"}
-            </span>
-          </div>
-          <div className="p-4 rounded-2xl bg-[#FFF7ED] border border-orange-200/80 flex items-start gap-3">
-            <div className="size-9 rounded-full bg-[#EA580C] text-white flex items-center justify-center shrink-0">
-              <User className="size-4" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold text-[#EA580C] uppercase tracking-wider block mb-0.5">
-                Examiner Question
+          <SpeakingPartHeader part={part} />
+          <div className="p-4 rounded-2xl bg-[#FFF7ED] border border-orange-200/80 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="size-8 rounded-full bg-[#EA580C] text-white flex items-center justify-center shrink-0">
+                <User className="size-4" />
+              </div>
+              <span className="text-[11px] font-bold text-[#EA580C] uppercase tracking-wider">
+                Examiner Questions
               </span>
-              <p className="text-sm font-bold text-slate-900 leading-relaxed">
-                {questionText || "Do you live in a house or an apartment? Why do you prefer it?"}
-              </p>
             </div>
+            {/* Câu hỏi nhóm theo chủ đề (Topic 1, Topic 2...) thay vì dồn thành một đoạn */}
+            <SpeakingQuestionList
+              text={questionText}
+              emptyText="Do you live in a house or an apartment? Why do you prefer it?"
+            />
           </div>
         </div>
       ) : (
         /* GIAO DIỆN PART 2 - CUE CARD CHUẨN SIMPACE */
         <div className="space-y-4">
-          <div className="space-y-1">
-            <span className="px-2.5 py-0.5 rounded-full bg-[#EA580C] text-white font-bold text-[11px]">
-              Speaking
-            </span>
-            <h3 className="text-base font-extrabold text-slate-900 pt-0.5">Part 2 – Cue Card</h3>
-            <p className="text-xs text-slate-500">
-              Your cue card is below. You have 1 minute to prepare and up to 2 minutes to speak.
-            </p>
-          </div>
+          <SpeakingPartHeader part="PART_2" />
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
             {/* Khung trái: Thẻ Cue Card nền cam nhạt (kèm ảnh nếu có) */}
@@ -258,6 +250,16 @@ export function SpeakingPartView({
                   className="w-full p-2.5 text-xs rounded-xl border border-orange-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#EA580C] resize-none"
                 />
               </div>
+
+              {/* Câu hỏi phụ giám khảo hỏi sau khi thí sinh nói xong Part 2 */}
+              {followUps && (
+                <div className="pt-2 border-t border-orange-200/60 space-y-2">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#EA580C]">
+                    Câu hỏi phụ (sau khi nói xong)
+                  </span>
+                  <SpeakingQuestionList text={followUps} />
+                </div>
+              )}
             </div>
 
             {/* Khung phải: Đồng hồ tròn SIMPACE */}

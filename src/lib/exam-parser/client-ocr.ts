@@ -1,13 +1,13 @@
 "use client";
 
 // Ưu tiên nạp từ vendor cục bộ trong public/vendor/ để chạy offline/mạng nội bộ không sợ chết CDN
-const LOCAL_PDFJS = "/vendor/pdfjs/pdf.min.js";
-const LOCAL_PDFJS_WORKER = "/vendor/pdfjs/pdf.worker.min.js";
+export const LOCAL_PDFJS = "/vendor/pdfjs/pdf.min.js";
+export const LOCAL_PDFJS_WORKER = "/vendor/pdfjs/pdf.worker.min.js";
 const LOCAL_TESSERACT = "/vendor/tesseract/tesseract.min.js";
 
 // Dự phòng CDN nếu môi trường không phục vụ được file tĩnh cục bộ
-const CDN_PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-const CDN_PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+export const CDN_PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+export const CDN_PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const CDN_TESSERACT = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 
 function loadScriptOnce(src: string, globalKey: string): Promise<any> {
@@ -40,7 +40,7 @@ function loadScriptOnce(src: string, globalKey: string): Promise<any> {
 /**
  * Nạp thư viện với cơ chế Fallback: Thử tải local trước, nếu lỗi tự động tải từ CDN
  */
-async function loadScriptWithFallback(
+export async function loadScriptWithFallback(
   primarySrc: string,
   fallbackSrc: string,
   globalKey: string

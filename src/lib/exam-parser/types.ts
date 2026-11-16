@@ -74,6 +74,15 @@ export const ParsedQuestionSchema = z.object({
   flowchartBoxText: z.string().optional(),
   // Section chứa câu này (vd "reading_1"): số câu có thể trùng giữa các kỹ năng nên cần khoá phụ để phân biệt
   sectionKey: z.string().optional(),
+  // Các trường do pipeline Claude điền (docs/flows/exam-parser-claude-pipeline.md); pipeline cũ bỏ trống
+  ieltsQuestionType: z.string().optional(),
+  groupTitle: z.string().optional(),
+  // "IMAGE": nhóm câu chưa dựng được cấu trúc, hiển thị ảnh đề gốc + ô đáp án
+  renderMode: z.enum(["STRUCTURED", "IMAGE"]).optional(),
+  // Vị trí hình minh hoạ trong PDF để giao diện cắt ảnh: trang (từ 1) và vùng [ymin, xmin, ymax, xmax] thang 0-1000
+  figurePage: z.number().int().optional(),
+  figureBox: z.array(z.number()).length(4).optional(),
+  imageUrl: z.string().optional(),
 });
 
 export const ParsedSectionSchema = z.object({
@@ -135,6 +144,7 @@ export interface FlowchartGroup {
   instruction: string;
   boxes: FlowchartBox[];
   questionNumbers: number[];
+  sectionKey?: string;
 }
 
 export interface TableCompletionCell {
@@ -149,6 +159,7 @@ export interface TableCompletionGroup {
   headers: string[];
   rows: Array<Array<string | TableCompletionCell>>;
   questionNumbers: number[];
+  sectionKey?: string;
 }
 
 export interface HeadingItem {
@@ -167,6 +178,7 @@ export interface MatchingHeadingsGroup {
     paragraphLabel: string;
   }>;
   questionNumbers: number[];
+  sectionKey?: string;
 }
 
 export interface SummaryCompletionGroup {
@@ -175,6 +187,7 @@ export interface SummaryCompletionGroup {
   instruction?: string;
   summaryText: string;
   questionNumbers: number[];
+  sectionKey?: string;
 }
 
 // Một nhóm câu hỏi còn thiếu nội dung so với Skeleton (vd bảng nằm trong ảnh PDF)
@@ -204,4 +217,15 @@ export interface ParsedExamResult {
   coverageIssues?: string[];
   coverageGaps?: CoverageGap[];
   invariantsReport?: any;
+  // Thông tin pipeline Claude: bộ máy đã dùng, model, token tiêu thụ (để GV/Admin theo dõi chi phí)
+  engineInfo?: {
+    engine: "claude" | "legacy";
+    model?: string;
+    escalated?: boolean;
+    inputTokens?: number;
+    outputTokens?: number;
+    durationMs?: number;
+  };
+  // Nội dung không thuộc phần thi đã chọn (vd đề Writing lẫn cuối file Reading), để GV quyết định
+  unassigned?: Array<{ page: number; kind: string; text: string }>;
 }

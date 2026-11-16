@@ -121,6 +121,8 @@ export interface CreateAssignmentInput {
   tables?: any[];
   matchingHeadings?: any[];
   summaries?: any[];
+  // Phiên bản bộ bóc tách đề (2 = pipeline Claude), lưu trong JSON cột description
+  parserVersion?: number;
   questions: Array<{
     questionNumber: number;
     passageText?: string;
@@ -274,6 +276,7 @@ export async function createAssignmentService(
         tables: data.tables || [],
         matchingHeadings: data.matchingHeadings || [],
         summaries: data.summaries || [],
+        parserVersion: data.parserVersion ?? null,
         questionMediaMap,
       }),
       skill: data.skill || "READING",
@@ -338,6 +341,7 @@ export async function createAssignmentService(
           tables: data.tables || [],
           matchingHeadings: data.matchingHeadings || [],
           summaries: data.summaries || [],
+          parserVersion: data.parserVersion ?? null,
           questionMediaMap,
         }),
         skill: (data.skill as AssignmentSkill) || "READING",

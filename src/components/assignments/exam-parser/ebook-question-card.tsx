@@ -8,6 +8,7 @@ import { MultipleChoiceEditor } from "@/components/assignments/multiple-choice-e
 import { QuestionImageUploader } from "@/components/assignments/question-image-uploader";
 import { getIeltsSubtypesBySkill } from "@/lib/ielts-report-config";
 import { getQuestionTemplatePreset } from "@/lib/exam-parser/question-media-detector";
+import { getAnswerInputMode, getQuestionTypeOptions } from "@/lib/exam-parser/question-type-options";
 
 export interface EbookQuestionCardProps {
   question: any;
@@ -31,6 +32,9 @@ export function EbookQuestionCard({
   onApplyImageToRange,
 }: EbookQuestionCardProps) {
   const subtypeOptions = getIeltsSubtypesBySkill(assignmentSkill);
+  // Chỉ hiện loại câu hợp với kỹ năng đang soạn (đề Reading không có "Tự luận Viết" / "Ghi âm Nói")
+  const typeOptions = getQuestionTypeOptions(assignmentSkill, q.type);
+  const answerMode = getAnswerInputMode(q.type, q.options?.length || 0);
 
   const handleApplyPreset = () => {
     const preset = getQuestionTemplatePreset(
@@ -86,12 +90,11 @@ export function EbookQuestionCard({
             onChange={(e) => onUpdateField(q.questionNumber, "type", e.target.value)}
             className="h-6 text-[11px] rounded border border-slate-200 bg-white font-normal px-1 text-slate-700"
           >
-            <option value="MULTIPLE_CHOICE">Trắc nghiệm</option>
-            <option value="TRUE_FALSE_NG">True / False / NG</option>
-            <option value="FILL_IN_BLANK">Điền từ (Blank)</option>
-            <option value="MATCHING">Nối thông tin (Matching)</option>
-            <option value="ESSAY">Tự luận Viết</option>
-            <option value="SPEAKING_RECORD">Ghi âm Nói</option>
+            {typeOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -173,7 +176,7 @@ export function EbookQuestionCard({
       </div>
 
       {/* Ô đáp án chuẩn theo từng dạng */}
-      {(q.type === "MULTIPLE_CHOICE" || q.type === "MATCHING") && (
+      {answerMode === "CHOICE" && (
         <MultipleChoiceEditor
           questionNumber={q.questionNumber}
           options={q.options}
@@ -217,7 +220,7 @@ export function EbookQuestionCard({
         </div>
       )}
 
-      {q.type === "FILL_IN_BLANK" && (
+      {answerMode === "TEXT" && (
         <div className="space-y-1 pt-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold text-slate-500">

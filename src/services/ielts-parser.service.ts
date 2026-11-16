@@ -9,6 +9,7 @@ import { formatCoverageGap } from "@/lib/exam-parser/exam-skeleton";
 import { validateQuestion } from "@/lib/exam-parser/question-validator";
 import { extractDiagramQuestionsWithGemini } from "@/lib/exam-parser/gemini-vision-parser";
 import { cleanPromptRedundantNumbers } from "@/lib/exam-parser/clean-prompt";
+import { parseExamWithClaude, resolveExamParserEngine } from "./claude-exam-pipeline.service";
 
 export interface ParseIeltsExamInput {
   title: string;
@@ -21,9 +22,31 @@ export interface ParseIeltsExamInput {
 }
 
 /**
- * Bóc tách Đề thi IELTS từ tệp PDF / Word (.docx) hoặc văn bản thô sang cấu trúc Ebook 2 Cột tương tác
+ * Bóc tách Đề thi IELTS: ưu tiên pipeline Claude (đọc cả chữ lẫn ảnh trong PDF),
+ * quay về pipeline cũ (Groq + Gemini) khi chưa có khoá Claude hoặc Claude không dùng được.
+ * Đặc tả: docs/flows/exam-parser-claude-pipeline.md
  */
 export async function parseIeltsExamContent(
+  input: ParseIeltsExamInput
+): Promise<ParsedExamResult> {
+  if (resolveExamParserEngine() === "claude" && input.file && input.file.size > 0) {
+    const claude = await parseExamWithClaude(input);
+    if (claude.ok) return claude.data;
+    console.warn("[parseIeltsExamContent] Claude không dùng được, quay về pipeline cũ:", claude.reason);
+    const legacy = await parseIeltsExamContentLegacy(input);
+    const note = `Bộ đọc đề Claude không dùng được (${claude.reason}) nên đã dùng bộ bóc tách cũ, kết quả có thể thiếu câu nằm trong ảnh.`;
+    legacy.warnings = [...(legacy.warnings || []), note];
+    legacy.invariantsReport?.warnings?.push(note);
+    legacy.engineInfo = { engine: "legacy" };
+    return legacy;
+  }
+  return parseIeltsExamContentLegacy(input);
+}
+
+/**
+ * Pipeline cũ: bóc tách Đề thi IELTS từ tệp PDF / Word (.docx) hoặc văn bản thô sang cấu trúc Ebook 2 Cột tương tác
+ */
+async function parseIeltsExamContentLegacy(
   input: ParseIeltsExamInput
 ): Promise<ParsedExamResult> {
   const {
