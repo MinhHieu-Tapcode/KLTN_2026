@@ -1266,6 +1266,13 @@ export async function getClassReportService(params: {
     scope: "CLASS",
     classId: cls.id,
     periodKey: params.periodKey,
+    authorType: "TEACHER",
+  });
+  const classManagerComment = await getReportCommentService({
+    scope: "CLASS",
+    classId: cls.id,
+    periodKey: params.periodKey,
+    authorType: "MANAGER",
   });
 
   const weeklyTrend = buildTimeSeriesTrend(allGradedEvents, params.periodKey);
@@ -1321,6 +1328,7 @@ export async function getClassReportService(params: {
       questionTypeAccuracy,
       studentRows,
       classComment,
+      classManagerComment,
       operations: {
         flaggedCount: flaggedSubmissions.length,
         flaggedRatePercent:
@@ -1923,22 +1931,23 @@ export async function getStudentReportService(params: {
   }));
 
   // Nhận xét chung lớp & Nhận xét cá nhân (Mục 5)
-  const classComment = activeClass
-    ? await getReportCommentService({
-        scope: "CLASS",
-        classId: activeClass.id,
-        periodKey: params.periodKey,
-      })
-    : null;
+  const loadComment = (scope: "CLASS" | "STUDENT", authorType: "TEACHER" | "MANAGER") =>
+    activeClass
+      ? getReportCommentService({
+          scope,
+          classId: activeClass.id,
+          studentId: scope === "STUDENT" ? student.id : null,
+          periodKey: params.periodKey,
+          authorType,
+        })
+      : Promise.resolve(null);
 
-  const studentComment = activeClass
-    ? await getReportCommentService({
-        scope: "STUDENT",
-        classId: activeClass.id,
-        studentId: student.id,
-        periodKey: params.periodKey,
-      })
-    : null;
+  const [classComment, classManagerComment, studentComment, studentManagerComment] = await Promise.all([
+    loadComment("CLASS", "TEACHER"),
+    loadComment("CLASS", "MANAGER"),
+    loadComment("STUDENT", "TEACHER"),
+    loadComment("STUDENT", "MANAGER"),
+  ]);
 
   const allStudentSubmissions = normalizedAssignments.flatMap((a) => a.submissions);
   const studentTabSummary = computeTabSwitchSummary(allStudentSubmissions);
@@ -2036,7 +2045,9 @@ export async function getStudentReportService(params: {
       },
       comments: {
         classComment,
+        classManagerComment,
         studentComment,
+        studentManagerComment,
       },
     },
   };

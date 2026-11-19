@@ -1,16 +1,20 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Bell, CheckCircle2, MessageSquareText, RotateCcw, Save, Sparkles } from "lucide-react";
-import {
-  markReportCommentReadAction,
-  saveReportCommentAction,
-} from "@/actions/reports";
+import { MessageSquareText, RotateCcw, Save } from "lucide-react";
+import { saveReportCommentAction } from "@/actions/reports";
 import { ReportPeriodKey } from "@/lib/ielts-report-config";
 import { ReportCommentDTO } from "@/services/report-comment.service";
+import type { ReportCommentAuthorType } from "@/lib/permissions";
+
+export const COMMENT_AUTHOR_LABEL: Record<ReportCommentAuthorType, string> = {
+  TEACHER: "Giáo viên nhận xét",
+  MANAGER: "Quản nhiệm nhận xét",
+};
 
 export function ReportCommentEditorCard({
   scope,
+  authorType,
   classId,
   studentId,
   periodKey,
@@ -20,6 +24,7 @@ export function ReportCommentEditorCard({
   onSaved,
 }: {
   scope: "CLASS" | "STUDENT";
+  authorType: ReportCommentAuthorType;
   classId: string;
   studentId?: string | null;
   periodKey: ReportPeriodKey;
@@ -37,7 +42,7 @@ export function ReportCommentEditorCard({
     setSavedRecord(initialComment);
     setContent(initialComment?.content || "");
     setFeedback(null);
-  }, [initialComment, classId, studentId, periodKey]);
+  }, [initialComment, classId, studentId, periodKey, authorType]);
 
   const handleSave = async () => {
     const trimmed = content.trim();
@@ -53,6 +58,7 @@ export function ReportCommentEditorCard({
     setFeedback(null);
     const res = await saveReportCommentAction({
       scope,
+      authorType,
       classId,
       studentId,
       periodKey,
@@ -91,8 +97,11 @@ export function ReportCommentEditorCard({
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-900">
-              {scope === "CLASS" ? "Nhận xét chung của lớp" : "Nhận xét cá nhân cho học sinh"} —{" "}
-              <span className="text-[#EA580C]">{targetTitle}</span>
+              {COMMENT_AUTHOR_LABEL[authorType]}{" "}
+              <span className="font-medium text-slate-500">
+                ({scope === "CLASS" ? "nhận xét chung của lớp" : "nhận xét cá nhân"})
+              </span>{" "}
+              — <span className="text-[#EA580C]">{targetTitle}</span>
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
               Kỳ báo cáo: <strong className="text-slate-800 font-semibold">{periodLabel}</strong>
@@ -155,129 +164,6 @@ export function ReportCommentEditorCard({
           <Save className="h-3.5 w-3.5" strokeWidth={1.75} />
           {saving ? "Đang lưu..." : "Lưu nhận xét"}
         </button>
-      </div>
-    </div>
-  );
-}
-
-export function StudentReadOnlyCommentsView({
-  classComment,
-  studentComment,
-  periodLabel,
-}: {
-  classComment: ReportCommentDTO | null;
-  studentComment: ReportCommentDTO | null;
-  periodLabel: string;
-}) {
-  const [clsRead, setClsRead] = useState(classComment?.isReadByStudent ?? true);
-  const [stuRead, setStuRead] = useState(studentComment?.isReadByStudent ?? true);
-
-  useEffect(() => {
-    setClsRead(classComment?.isReadByStudent ?? true);
-    setStuRead(studentComment?.isReadByStudent ?? true);
-  }, [classComment, studentComment]);
-
-  const handleMarkRead = async (commentId: string, type: "CLASS" | "STUDENT") => {
-    await markReportCommentReadAction(commentId);
-    if (type === "CLASS") setClsRead(true);
-    else setStuRead(true);
-  };
-
-  const hasAnyComment = Boolean(classComment || studentComment);
-  const hasUnread = (Boolean(classComment) && !clsRead) || (Boolean(studentComment) && !stuRead);
-
-  const renderCard = (
-    title: string,
-    subtitle: string,
-    record: ReportCommentDTO | null,
-    isRead: boolean,
-    type: "CLASS" | "STUDENT"
-  ) => (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h4 className="text-sm font-bold text-slate-900">{title}</h4>
-            {record && !isRead && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 border border-orange-200 px-2.5 py-0.5 text-[11px] font-bold text-[#EA580C]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#EA580C] animate-pulse" />
-                Nhận xét mới
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>
-        </div>
-        {record && !isRead && (
-          <button
-            type="button"
-            onClick={() => handleMarkRead(record.id, type)}
-            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-all"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-            Đánh dấu đã đọc
-          </button>
-        )}
-      </div>
-
-      {record ? (
-        <div className="space-y-2.5">
-          <p className="whitespace-pre-line rounded-xl bg-slate-50/80 border border-slate-200/80 p-3.5 text-xs leading-relaxed text-slate-800">
-            {record.content}
-          </p>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-            <span className="inline-flex items-center gap-1.5 font-semibold text-[#EA580C]">
-              <Sparkles className="h-3.5 w-3.5 text-[#EA580C]" strokeWidth={1.75} />
-              Giáo viên nhận xét: {record.authorName} ({record.authorRole})
-            </span>
-            <span>Cập nhật: {new Date(record.updatedAt).toLocaleString("vi-VN")}</span>
-          </div>
-        </div>
-      ) : (
-        <p className="py-6 text-center text-xs italic text-slate-400">
-          Chưa có nhận xét cho kỳ báo cáo ({periodLabel}).
-        </p>
-      )}
-    </div>
-  );
-
-  return (
-    <div className="space-y-4">
-      {/* NOTE THÔNG BÁO MỀM MẠI KHI CÓ NHẬN XÉT DÀNH CHO HỌC SINH */}
-      {hasAnyComment && (
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-200/90 bg-amber-50/70 p-4 text-xs text-amber-900 shadow-none">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100/90 text-amber-700">
-            <Bell className="h-4 w-4" strokeWidth={1.75} />
-          </div>
-          <div className="flex-1 space-y-0.5">
-            <b className="text-xs font-bold text-amber-950">
-              {hasUnread
-                ? "Bạn có nhận xét mới từ Giáo viên bộ môn!"
-                : "Ghi chú & Nhận xét từ Giáo viên bộ môn"}
-            </b>
-            <p className="text-[11.5px] text-amber-800 leading-relaxed">
-              {hasUnread
-                ? "Thầy cô vừa gửi đánh giá kết quả làm bài thi IELTS của bạn cho kỳ này. Hãy đọc kỹ các lời khuyên bên dưới để khắc phục điểm yếu và nâng cao điểm Band nhé."
-                : "Dưới đây là toàn bộ nhận xét và định hướng ôn tập từ thầy cô dành riêng cho quá trình học tập của bạn."}
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {renderCard(
-          "1. Nhận xét chung của lớp",
-          `Áp dụng cho toàn bộ học sinh trong lớp — Kỳ ${periodLabel}`,
-          classComment,
-          clsRead,
-          "CLASS"
-        )}
-        {renderCard(
-          "2. Nhận xét cá nhân từ Giáo viên / Quản nhiệm",
-          `Đánh giá chuyên biệt cho kết quả của bạn — Kỳ ${periodLabel}`,
-          studentComment,
-          stuRead,
-          "STUDENT"
-        )}
       </div>
     </div>
   );

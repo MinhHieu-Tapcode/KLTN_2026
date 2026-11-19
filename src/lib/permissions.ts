@@ -61,6 +61,25 @@ export const ROLE_GROUPS = {
   REPORT_COMMENT_AUTHORS: ["ADMIN", "SCHOOL_MANAGER", "TEACHER"] as readonly RoleCode[],
 };
 
+/** Khung nhận xét trong báo cáo (khớp enum ReportCommentAuthorType trong schema.prisma) */
+export type ReportCommentAuthorType = "TEACHER" | "MANAGER";
+
+/**
+ * Vai trò nào được viết vào khung nhận xét nào:
+ * Giáo viên -> khung Giáo viên, Quản nhiệm -> khung Quản nhiệm, Quản trị viên -> cả hai khung.
+ */
+export function canWriteReportComment(
+  roleOrSession: string | SessionPayload | null | undefined,
+  authorType: ReportCommentAuthorType
+): boolean {
+  const role =
+    typeof roleOrSession === "string" ? roleOrSession : extractRoleCode(roleOrSession?.role);
+  if (role === "ADMIN") return true;
+  if (authorType === "TEACHER") return role === "TEACHER";
+  if (authorType === "MANAGER") return role === "SCHOOL_MANAGER";
+  return false;
+}
+
 export type AuthCheckResult =
   | { ok: true; session: SessionPayload }
   | { ok: false; error: string };

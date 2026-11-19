@@ -546,6 +546,12 @@ enum ReportCommentScope {
   STUDENT
 }
 
+// Khung nhận xét trong báo cáo: Giáo viên và Quản nhiệm mỗi bên một bản riêng, không ghi đè nhau
+enum ReportCommentAuthorType {
+  TEACHER // Khung "Giáo viên nhận xét"
+  MANAGER // Khung "Quản nhiệm nhận xét"
+}
+
 model SubmissionCriteriaScore {
   id                 String           @id @default(uuid())
   submissionAnswerId String
@@ -563,6 +569,7 @@ model SubmissionCriteriaScore {
 model ReportComment {
   id              String             @id @default(uuid())
   scope           ReportCommentScope @default(STUDENT)
+  authorType      ReportCommentAuthorType @default(TEACHER) // Khung nhận xét (Giáo viên / Quản nhiệm). Admin được viết vào cả hai khung
   classId         String
   studentId       String?            // Null nếu là nhận xét chung của lớp (scope = CLASS)
   periodKey       String             @default("30_DAYS")

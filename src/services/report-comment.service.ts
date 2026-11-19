@@ -1,9 +1,12 @@
 import { prisma, isDbAlive } from "@/lib/prisma";
 import { ReportPeriodKey, resolvePeriodRange } from "@/lib/ielts-report-config";
+import type { ReportCommentAuthorType } from "@/lib/permissions";
 
 export interface ReportCommentDTO {
   id: string;
   scope: "CLASS" | "STUDENT";
+  /** Khung nhận xét. Bản ghi cũ trong bộ nhớ không có trường này thì coi là TEACHER */
+  authorType?: ReportCommentAuthorType;
   classId: string;
   className?: string;
   studentId: string | null;
@@ -17,6 +20,8 @@ export interface ReportCommentDTO {
   isReadByStudent: boolean;
   updatedAt: string;
 }
+
+const authorTypeOf = (c: ReportCommentDTO): ReportCommentAuthorType => c.authorType ?? "TEACHER";
 
 const globalReportCommentsStore = globalThis as unknown as {
   memoryReportComments?: ReportCommentDTO[];
@@ -70,8 +75,10 @@ export async function getReportCommentService(params: {
   classId: string;
   studentId?: string | null;
   periodKey: ReportPeriodKey;
+  authorType?: ReportCommentAuthorType;
 }): Promise<ReportCommentDTO | null> {
   const { scope, classId, studentId, periodKey } = params;
+  const authorType = params.authorType ?? "TEACHER";
 
   const findInMemory = () => {
     const list = globalReportCommentsStore.memoryReportComments || [];
@@ -81,7 +88,8 @@ export async function getReportCommentService(params: {
           c.scope === scope &&
           c.classId === classId &&
           (scope === "CLASS" ? !c.studentId : c.studentId === studentId) &&
-          c.periodKey === periodKey
+          c.periodKey === periodKey &&
+          authorTypeOf(c) === authorType
       ) || null
     );
   };
@@ -98,6 +106,7 @@ export async function getReportCommentService(params: {
         classId,
         studentId: scope === "CLASS" ? null : studentId || undefined,
         periodKey,
+        authorType,
       },
       include: {
         class: { select: { name: true, code: true } },
@@ -116,6 +125,7 @@ export async function getReportCommentService(params: {
     return {
       id: record.id,
       scope: record.scope as "CLASS" | "STUDENT",
+      authorType: record.authorType,
       classId: record.classId,
       className: record.class?.name,
       studentId: record.studentId,
@@ -143,6 +153,7 @@ export async function upsertReportCommentService(params: {
   classId: string;
   studentId?: string | null;
   periodKey: ReportPeriodKey;
+  authorType: ReportCommentAuthorType;
   content: string;
   author: {
     userId: string;
@@ -169,12 +180,14 @@ export async function upsertReportCommentService(params: {
         c.scope === params.scope &&
         c.classId === params.classId &&
         (params.scope === "CLASS" ? !c.studentId : c.studentId === params.studentId) &&
-        c.periodKey === params.periodKey
+        c.periodKey === params.periodKey &&
+        authorTypeOf(c) === params.authorType
     );
 
     const dto: ReportCommentDTO = {
       id: idx >= 0 ? list[idx].id : `rc-${Date.now()}`,
       scope: params.scope,
+      authorType: params.authorType,
       classId: params.classId,
       studentId: params.scope === "CLASS" ? null : params.studentId || null,
       periodKey: params.periodKey,
@@ -237,6 +250,7 @@ export async function upsertReportCommentService(params: {
         classId: params.classId,
         studentId: params.scope === "CLASS" ? null : params.studentId || undefined,
         periodKey: params.periodKey,
+        authorType: params.authorType,
       },
     });
 
@@ -262,6 +276,7 @@ export async function upsertReportCommentService(params: {
       : await prisma.reportComment.create({
           data: {
             scope: params.scope,
+            authorType: params.authorType,
             classId: params.classId,
             studentId: params.scope === "CLASS" ? null : params.studentId || null,
             periodKey: params.periodKey,
@@ -286,6 +301,7 @@ export async function upsertReportCommentService(params: {
       comment: {
         id: saved.id,
         scope: saved.scope as "CLASS" | "STUDENT",
+        authorType: saved.authorType,
         classId: saved.classId,
         className: cls.name,
         studentId: saved.studentId,
@@ -336,4 +352,12 @@ export async function markReportCommentReadService(
   } catch {}
 
   return { success: true };
+}
+
+/** Bộ 4 nhận xét hiển thị trong báo cáo học viên: lớp / cá nhân × Giáo viên / Quản nhiệm */
+export interface ReportCommentsBundle {
+  classComment: ReportCommentDTO | null;
+  classManagerComment: ReportCommentDTO | null;
+  studentComment: ReportCommentDTO | null;
+  studentManagerComment: ReportCommentDTO | null;
 }

@@ -4,7 +4,7 @@ import { stripSensitive } from "@/lib/sanitize";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
+import { canWriteReportComment, checkAuth, checkRole, ROLE_GROUPS } from "@/lib/permissions";
 import { requireFeature } from "@/services/feature-access.service";
 import {
   assertClassAccess,
@@ -44,6 +44,9 @@ const studentReportSchema = z.object({
 
 const saveCommentSchema = z.object({
   scope: z.enum(["CLASS", "STUDENT"]),
+  authorType: z.enum(["TEACHER", "MANAGER"], {
+    errorMap: () => ({ message: "Khung nhận xét không hợp lệ!" }),
+  }),
   classId: z.string().min(1, "Vui lòng chọn lớp học!"),
   studentId: z.string().nullable().optional(),
   periodKey: periodKeySchema,
@@ -223,6 +226,7 @@ export async function getStudentReportAction(input: {
  */
 export async function saveReportCommentAction(input: {
   scope: "CLASS" | "STUDENT";
+  authorType: "TEACHER" | "MANAGER";
   classId: string;
   studentId?: string | null;
   periodKey: ReportPeriodKey;
@@ -250,6 +254,17 @@ export async function saveReportCommentAction(input: {
     };
   }
 
+  // Giáo viên chỉ viết khung Giáo viên, Quản nhiệm chỉ viết khung Quản nhiệm, Admin viết được cả hai
+  if (!canWriteReportComment(auth.session, parsed.data.authorType)) {
+    return {
+      success: false as const,
+      error:
+        parsed.data.authorType === "MANAGER"
+          ? "Chỉ Quản nhiệm hoặc Quản trị viên mới được viết vào khung nhận xét của Quản nhiệm!"
+          : "Chỉ Giáo viên hoặc Quản trị viên mới được viết vào khung nhận xét của Giáo viên!",
+    };
+  }
+
   const roleLabelMap: Record<string, string> = {
     ADMIN: "Quản trị viên",
     SCHOOL_MANAGER: "Quản nhiệm",
@@ -272,6 +287,7 @@ export async function saveReportCommentAction(input: {
     classId: parsed.data.classId,
     studentId: parsed.data.studentId,
     periodKey: parsed.data.periodKey,
+    authorType: parsed.data.authorType,
     content: parsed.data.content,
     author: {
       userId: auth.session.userId,

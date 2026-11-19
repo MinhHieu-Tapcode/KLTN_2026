@@ -18,8 +18,12 @@ import {
 } from "lucide-react";
 import { ReportPeriodKey } from "@/lib/ielts-report-config";
 import { MetricComparison, TabSwitchSummary } from "@/services/report-metrics.helper";
-import { ReportCommentDTO } from "@/services/report-comment.service";
-import { ReportCommentEditorCard, StudentReadOnlyCommentsView } from "./report-comment-section";
+import type { ReportCommentsBundle } from "@/services/report-comment.service";
+import {
+  hasUnreadReportComments,
+  StaffCommentPanels,
+  StudentCommentsPanels,
+} from "./report-comment-panels";
 import { ReportSelectDropdown } from "./report-select-dropdown";
 import {
   computeBandDeltaFromSeries,
@@ -93,7 +97,7 @@ export interface StudentReportData {
     dueDate: string | null;
   }>;
   questionTypeAnalysis: StudentQuestionTypeAnalysisData;
-  comments: { classComment: ReportCommentDTO | null; studentComment: ReportCommentDTO | null };
+  comments: ReportCommentsBundle;
 }
 
 export function StudentReportView({
@@ -353,11 +357,8 @@ export function StudentReportView({
             }`}
           >
             <MessageSquareText className="h-4 w-4" strokeWidth={1.75} />
-            <span>Nhận xét của Giáo viên</span>
-            {Boolean(
-              (report.comments.studentComment && !report.comments.studentComment.isReadByStudent) ||
-              (report.comments.classComment && !report.comments.classComment.isReadByStudent)
-            ) && (
+            <span>Nhận xét của Giáo viên &amp; Quản nhiệm</span>
+            {hasUnreadReportComments(report.comments) && (
               <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-200 px-2 py-0.5 text-[10.5px] font-bold text-[#EA580C] ml-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#EA580C] animate-pulse" />
                 Mới
@@ -643,21 +644,19 @@ export function StudentReportView({
       {activeTab === "COMMENTS" && (
         <div className="space-y-5">
           {userRole === "STUDENT" ? (
-            <StudentReadOnlyCommentsView
-              classComment={report.comments.classComment}
-              studentComment={report.comments.studentComment}
-              periodLabel={report.periodLabel}
-            />
+            <StudentCommentsPanels comments={report.comments} periodLabel={report.periodLabel} />
           ) : (
             report.studentInfo.classId && (
-              <ReportCommentEditorCard
+              <StaffCommentPanels
                 scope="STUDENT"
                 classId={report.studentInfo.classId}
                 studentId={report.studentInfo.id}
                 periodKey={report.periodKey}
                 periodLabel={report.periodLabel}
                 targetTitle={report.studentInfo.fullName}
-                initialComment={report.comments.studentComment}
+                userRole={userRole}
+                teacherComment={report.comments.studentComment}
+                managerComment={report.comments.studentManagerComment}
               />
             )
           )}

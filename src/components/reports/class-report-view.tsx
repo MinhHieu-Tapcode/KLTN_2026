@@ -19,7 +19,7 @@ import { ReportPeriodKey } from "@/lib/ielts-report-config";
 import { MetricComparison, TabSwitchSummary } from "@/services/report-metrics.helper";
 import { ReportCommentDTO } from "@/services/report-comment.service";
 import { ClassOperationsData, ClassOperationsTab } from "./class-operations-tab";
-import { ReportCommentEditorCard } from "./report-comment-section";
+import { StaffCommentPanels } from "./report-comment-panels";
 import {
   computeBandDeltaFromSeries,
   formatBandLabel,
@@ -95,6 +95,7 @@ export interface ClassReportData {
     avgTabSwitches?: number;
   }>;
   classComment: ReportCommentDTO | null;
+  classManagerComment: ReportCommentDTO | null;
   operations: ClassOperationsData;
 }
 
@@ -622,13 +623,15 @@ export function ClassReportView({
       )}
 
       {activeTab === "COMMENTS" && (
-        <ReportCommentEditorCard
+        <StaffCommentPanels
           scope="CLASS"
           classId={report.classId}
           periodKey={report.periodKey}
           periodLabel={report.periodLabel}
           targetTitle={`${report.classCode} — ${report.className}`}
-          initialComment={report.classComment}
+          userRole={userRole}
+          teacherComment={report.classComment}
+          managerComment={report.classManagerComment}
         />
       )}
     </div>
